@@ -458,6 +458,10 @@
         // Initialize with your existing assistant
         const myAssistant = ChatBot.init({
             apiType: 'assistants',
+            // Force SSE in production to avoid localhost WebSocket attempts
+            streamingMode: 'sse',
+            // Explicit API endpoint for SSE/AJAX
+            apiEndpoint: '/chat-unified.php',
             mode: 'floating',
             position: 'bottom-right',
             show: false, // Hidden initially, user can open it
