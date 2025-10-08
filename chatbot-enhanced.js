@@ -604,6 +604,22 @@
                     api_type: this.options.apiType
                 };
 
+                if (this.options.apiType === 'responses') {
+                    const responsesConfig = this.options.responsesConfig || {};
+                    Object.entries(responsesConfig).forEach(([key, value]) => {
+                        if (value === undefined || value === null || value === '') {
+                            return;
+                        }
+
+                        const normalizedKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+                        if (normalizedKey.length === 0) {
+                            return;
+                        }
+
+                        requestData[normalizedKey] = value;
+                    });
+                }
+
                 // Add file data if present
                 if (files.length > 0) {
                     requestData.file_data = await Promise.all(
@@ -730,6 +746,14 @@
                         conversation_id: requestData.conversation_id || '',
                         api_type: requestData.api_type || this.options.apiType || 'chat'
                     });
+
+                    if (requestData.prompt_id) {
+                        params.set('prompt_id', `${requestData.prompt_id}`);
+                    }
+
+                    if (requestData.prompt_version) {
+                        params.set('prompt_version', `${requestData.prompt_version}`);
+                    }
 
                     const url = `${this.options.apiEndpoint}?${params.toString()}`;
                     const eventSource = new EventSource(url);

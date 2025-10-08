@@ -67,9 +67,17 @@ class ChatHandler {
         $this->streamChatCompletion($messages, $conversationId);
     }
 
-    public function handleResponsesChat($message, $conversationId, $fileData = null) {
+    public function handleResponsesChat($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null) {
         $messages = $this->getConversationHistory($conversationId);
         $responsesConfig = $this->config['responses'];
+
+        $promptIdOverride = $this->normalizePromptValue($promptId);
+        $promptVersionOverride = $this->normalizePromptValue($promptVersion);
+        $configuredPromptId = $this->normalizePromptValue($responsesConfig['prompt_id'] ?? null);
+        $configuredPromptVersion = $this->normalizePromptValue($responsesConfig['prompt_version'] ?? null);
+
+        $effectivePromptId = $promptIdOverride ?? $configuredPromptId;
+        $effectivePromptVersion = $promptVersionOverride ?? $configuredPromptVersion;
 
         if (!empty($responsesConfig['system_message']) && empty($messages)) {
             array_unshift($messages, [
@@ -105,10 +113,10 @@ class ChatHandler {
             'stream' => true,
         ];
 
-        if (!empty($responsesConfig['prompt_id'])) {
-            $prompt = ['id' => $responsesConfig['prompt_id']];
-            if (!empty($responsesConfig['prompt_version'])) {
-                $prompt['version'] = $responsesConfig['prompt_version'];
+        if ($effectivePromptId !== null) {
+            $prompt = ['id' => $effectivePromptId];
+            if ($effectivePromptVersion !== null) {
+                $prompt['version'] = $effectivePromptVersion;
             }
             $payload['prompt'] = $prompt;
         }
@@ -342,6 +350,18 @@ class ChatHandler {
         }
 
         return $formatted;
+    }
+
+    private function normalizePromptValue($value) {
+        if (is_string($value)) {
+            $value = trim($value);
+        }
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return $value;
     }
 
     private function extractTextDelta(array $event) {
