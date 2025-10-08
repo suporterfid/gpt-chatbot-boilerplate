@@ -1,5 +1,5 @@
 /**
- * Enhanced GPT Chatbot Widget - Supports both Chat Completions and Assistants API
+ * Enhanced GPT Chatbot Widget - Supports both Chat Completions and Responses API
  * Real-time streaming chatbot with SSE and WebSocket support
  * 
  * @author Open Source Community  
@@ -21,7 +21,7 @@
         show: false,
 
         // API settings
-        apiType: 'chat', // 'chat' or 'assistants'
+        apiType: 'responses', // 'chat' or 'responses'
         // Resolved at runtime relative to script location if not provided
         apiEndpoint: null,
         // Only used if explicitly provided; not attempted by default
@@ -33,13 +33,10 @@
         maxFileSize: 10485760, // 10MB
         allowedFileTypes: ['txt', 'pdf', 'doc', 'docx', 'jpg', 'png'],
 
-        // Assistant-specific settings
-        assistantConfig: {
-            assistantId: '',
-            enableTools: false,
-            enableCodeInterpreter: false,
-            enableFileSearch: false,
-            customFunctions: [],
+        // Responses-specific settings
+        responsesConfig: {
+            promptId: '',
+            promptVersion: '',
         },
 
         // Theme customization
@@ -88,9 +85,14 @@
      */
     class EnhancedChatBot {
         constructor(container, options = {}) {
-            this.container = typeof container === 'string' ? 
+            this.container = typeof container === 'string' ?
                 document.querySelector(container) : container;
             this.options = this.mergeConfig(DEFAULT_CONFIG, options);
+
+            // Backwards compatibility: map deprecated assistantConfig into responsesConfig
+            if (options.assistantConfig && !options.responsesConfig) {
+                this.options.responsesConfig = Object.assign({}, options.assistantConfig);
+            }
 
             // State
             this.messages = [];
@@ -201,9 +203,9 @@
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                         <path d="M12 2C6.48 2 2 6.48 2 12C2 13.54 2.36 14.99 3.01 16.28L2.1 21.9L7.72 20.99C9.01 21.64 10.46 22 12 22C17.52 22 22 17.52 22 12S17.52 2 12 2Z" fill="currentColor"/>
                     </svg>
-                    ${this.options.apiType === 'assistants' ? 
-                        '<div class="api-indicator">GPT</div>' : 
-                        '<div class="api-indicator">AI</div>'
+                    ${this.options.apiType === 'chat' ?
+                        '<div class="api-indicator">CHAT</div>' :
+                        '<div class="api-indicator">RESP</div>'
                     }
                 </div>
                 <div class="chatbot-container" style="display: none;">
@@ -279,7 +281,7 @@
                     </div>
                     <div class="chatbot-footer">
                         <small class="chatbot-powered-by">
-                            Powered by <a href="#" target="_blank">OpenAI ${this.options.apiType === 'assistants' ? 'Assistants' : 'GPT'}</a>
+                            Powered by <a href="#" target="_blank">OpenAI ${this.options.apiType === 'chat' ? 'Chat Completions' : 'Responses'}</a>
                         </small>
                     </div>
                 </div>
@@ -804,13 +806,18 @@
                     runId: data.run_id
                 });
 
+                if (data.response_id && this.currentMessageElement) {
+                    this.currentMessageElement.dataset.responseId = data.response_id;
+                }
+
                 if (data.run_id) {
                     this.currentRunId = data.run_id;
                 }
 
             } else if (data.type === 'chunk') {
-                if (this.currentMessageElement) {
-                    this.appendToMessage(this.currentMessageElement, data.content);
+                const chunkContent = this.resolveStreamText(data);
+                if (this.currentMessageElement && chunkContent) {
+                    this.appendToMessage(this.currentMessageElement, chunkContent);
                 }
 
             } else if (data.type === 'done') {
@@ -834,25 +841,108 @@
         }
 
         /**
-         * Handle tool calls from Assistants API
+         * Normalize streaming payloads from Chat Completions or Responses API
+         */
+        resolveStreamText(data) {
+            if (typeof data.content === 'string') {
+                return data.content;
+            }
+
+            if (Array.isArray(data.content)) {
+                return data.content.join('');
+            }
+
+            if (data.delta) {
+                if (typeof data.delta === 'string') {
+                    return data.delta;
+                }
+
+                if (typeof data.delta === 'object') {
+                    if (typeof data.delta.text === 'string') {
+                        return data.delta.text;
+                    }
+
+                    if (typeof data.delta.output_text === 'string') {
+                        return data.delta.output_text;
+                    }
+
+                    if (Array.isArray(data.delta.content)) {
+                        return data.delta.content
+                            .map(segment => (segment && segment.text) ? segment.text : '')
+                            .join('');
+                    }
+                }
+            }
+
+            return '';
+        }
+
+        /**
+         * Handle tool calls from Responses API
          */
         handleToolCall(data) {
             const toolName = data.tool_name;
-            const toolArgs = data.arguments;
+            let toolArgs = data.arguments;
+            const callId = data.call_id || null;
+
+            if (typeof toolArgs === 'string') {
+                try {
+                    const parsed = JSON.parse(toolArgs);
+                    toolArgs = parsed;
+                } catch (err) {
+                    // Keep plain string when parsing fails
+                }
+            }
 
             // Show tool execution in UI
             if (this.currentMessageElement) {
-                const toolIndicator = document.createElement('div');
-                toolIndicator.className = 'tool-execution';
-                toolIndicator.innerHTML = `
-                    <div class="tool-info">
-                        <span class="tool-icon">🔧</span>
-                        <span class="tool-name">Executing: ${toolName}</span>
-                    </div>
-                `;
+                let toolIndicator = null;
+                if (callId) {
+                    toolIndicator = this.currentMessageElement.querySelector(`.tool-execution[data-call-id="${callId}"]`);
+                }
 
-                const bubble = this.currentMessageElement.querySelector('.chatbot-message-bubble');
-                bubble.appendChild(toolIndicator);
+                if (!toolIndicator) {
+                    toolIndicator = document.createElement('div');
+                    toolIndicator.className = 'tool-execution';
+                    if (callId) {
+                        toolIndicator.dataset.callId = callId;
+                    }
+
+                    toolIndicator.innerHTML = `
+                        <div class="tool-info">
+                            <span class="tool-icon">🔧</span>
+                            <span class="tool-name">Executing: ${toolName}</span>
+                            ${data.status === 'completed' ? '<span class="tool-status">(completed)</span>' : ''}
+                        </div>
+                    `;
+
+                    const bubble = this.currentMessageElement.querySelector('.chatbot-message-bubble');
+                    bubble.appendChild(toolIndicator);
+                } else {
+                    const statusNode = toolIndicator.querySelector('.tool-status');
+                    if (data.status === 'completed') {
+                        if (statusNode) {
+                            statusNode.textContent = '(completed)';
+                        } else {
+                            const statusEl = document.createElement('span');
+                            statusEl.className = 'tool-status';
+                            statusEl.textContent = '(completed)';
+                            toolIndicator.querySelector('.tool-info').appendChild(statusEl);
+                        }
+                    }
+                }
+
+                if (toolArgs && typeof toolArgs === 'object') {
+                    const argsBlock = document.createElement('pre');
+                    argsBlock.className = 'tool-arguments';
+                    argsBlock.textContent = JSON.stringify(toolArgs, null, 2);
+                    toolIndicator.appendChild(argsBlock);
+                } else if (toolArgs) {
+                    const argsText = document.createElement('div');
+                    argsText.className = 'tool-arguments';
+                    argsText.textContent = toolArgs;
+                    toolIndicator.appendChild(argsText);
+                }
             }
 
             // Trigger callback
@@ -860,7 +950,8 @@
                 this.options.onToolCall({
                     name: toolName,
                     arguments: toolArgs,
-                    runId: this.currentRunId
+                    runId: this.currentRunId,
+                    status: data.status || 'in_progress'
                 });
             }
         }

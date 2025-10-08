@@ -1,6 +1,6 @@
 <?php
 /**
- * GPT Chatbot Configuration - Enhanced with Assistants API Support
+ * GPT Chatbot Configuration - Enhanced with Responses API Support
  */
 
 // Load environment variables from .env file if it exists
@@ -16,8 +16,8 @@ if (file_exists(__DIR__ . '/.env')) {
 }
 
 $config = [
-    // API Configuration - Choose between 'chat' or 'assistants'
-    'api_type' => $_ENV['API_TYPE'] ?? getenv('API_TYPE') ?: 'chat',
+    // API Configuration - Choose between 'chat' or 'responses'
+    'api_type' => $_ENV['API_TYPE'] ?? getenv('API_TYPE') ?: 'responses',
 
     // OpenAI Configuration
     'openai' => [
@@ -37,20 +37,17 @@ $config = [
         'system_message' => $_ENV['SYSTEM_MESSAGE'] ?? getenv('SYSTEM_MESSAGE') ?: 'You are a helpful AI assistant.',
     ],
 
-    // Assistants API Configuration
-    'assistants' => [
-        'assistant_id' => $_ENV['ASSISTANT_ID'] ?? getenv('ASSISTANT_ID') ?: '',
-        'create_assistant' => filter_var($_ENV['CREATE_ASSISTANT'] ?? getenv('CREATE_ASSISTANT') ?: 'false', FILTER_VALIDATE_BOOLEAN),
-        'assistant_name' => $_ENV['ASSISTANT_NAME'] ?? getenv('ASSISTANT_NAME') ?: 'ChatBot Assistant',
-        'assistant_description' => $_ENV['ASSISTANT_DESCRIPTION'] ?? getenv('ASSISTANT_DESCRIPTION') ?: 'A helpful AI assistant for website visitors',
-        'assistant_instructions' => $_ENV['ASSISTANT_INSTRUCTIONS'] ?? getenv('ASSISTANT_INSTRUCTIONS') ?: 'You are a helpful AI assistant. Answer questions clearly and concisely.',
-        'model' => $_ENV['ASSISTANT_MODEL'] ?? getenv('ASSISTANT_MODEL') ?: 'gpt-3.5-turbo',
-        'temperature' => (float)($_ENV['ASSISTANT_TEMPERATURE'] ?? getenv('ASSISTANT_TEMPERATURE') ?: 0.7),
-        'tools' => explode(',', $_ENV['ASSISTANT_TOOLS'] ?? getenv('ASSISTANT_TOOLS') ?: ''),
-        'file_search' => filter_var($_ENV['ASSISTANT_FILE_SEARCH'] ?? getenv('ASSISTANT_FILE_SEARCH') ?: 'false', FILTER_VALIDATE_BOOLEAN),
-        'code_interpreter' => filter_var($_ENV['ASSISTANT_CODE_INTERPRETER'] ?? getenv('ASSISTANT_CODE_INTERPRETER') ?: 'false', FILTER_VALIDATE_BOOLEAN),
-        'max_completion_tokens' => (int)($_ENV['ASSISTANT_MAX_TOKENS'] ?? getenv('ASSISTANT_MAX_TOKENS') ?: 1000),
-        'thread_cleanup_hours' => (int)($_ENV['THREAD_CLEANUP_HOURS'] ?? getenv('THREAD_CLEANUP_HOURS') ?: 24),
+    // Responses API Configuration
+    'responses' => [
+        'model' => $_ENV['RESPONSES_MODEL'] ?? getenv('RESPONSES_MODEL') ?: ($_ENV['OPENAI_MODEL'] ?? getenv('OPENAI_MODEL') ?: 'gpt-4.1-mini'),
+        'temperature' => (float)($_ENV['RESPONSES_TEMPERATURE'] ?? getenv('RESPONSES_TEMPERATURE') ?: ($_ENV['OPENAI_TEMPERATURE'] ?? getenv('OPENAI_TEMPERATURE') ?: 0.7)),
+        'max_output_tokens' => (int)($_ENV['RESPONSES_MAX_OUTPUT_TOKENS'] ?? getenv('RESPONSES_MAX_OUTPUT_TOKENS') ?: 1024),
+        'top_p' => (float)($_ENV['RESPONSES_TOP_P'] ?? getenv('RESPONSES_TOP_P') ?: ($_ENV['OPENAI_TOP_P'] ?? getenv('OPENAI_TOP_P') ?: 1.0)),
+        'frequency_penalty' => (float)($_ENV['RESPONSES_FREQUENCY_PENALTY'] ?? getenv('RESPONSES_FREQUENCY_PENALTY') ?: ($_ENV['OPENAI_FREQUENCY_PENALTY'] ?? getenv('OPENAI_FREQUENCY_PENALTY') ?: 0.0)),
+        'presence_penalty' => (float)($_ENV['RESPONSES_PRESENCE_PENALTY'] ?? getenv('RESPONSES_PRESENCE_PENALTY') ?: ($_ENV['OPENAI_PRESENCE_PENALTY'] ?? getenv('OPENAI_PRESENCE_PENALTY') ?: 0.0)),
+        'system_message' => $_ENV['RESPONSES_SYSTEM_MESSAGE'] ?? getenv('RESPONSES_SYSTEM_MESSAGE') ?: ($_ENV['SYSTEM_MESSAGE'] ?? getenv('SYSTEM_MESSAGE') ?: 'You are a helpful AI assistant.'),
+        'prompt_id' => $_ENV['RESPONSES_PROMPT_ID'] ?? getenv('RESPONSES_PROMPT_ID') ?: '',
+        'prompt_version' => $_ENV['RESPONSES_PROMPT_VERSION'] ?? getenv('RESPONSES_PROMPT_VERSION') ?: '',
     ],
 
     // Session & Storage Configuration
@@ -113,11 +110,10 @@ if (empty($config['openai']['api_key'])) {
     error_log('WARNING: OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.');
 }
 
-// Validate API type specific configuration
-if ($config['api_type'] === 'assistants') {
-    if (empty($config['assistants']['assistant_id']) && !$config['assistants']['create_assistant']) {
-        error_log('WARNING: Assistant API requires ASSISTANT_ID or CREATE_ASSISTANT=true');
-    }
+// Validate API type
+if (!in_array($config['api_type'], ['chat', 'responses'], true)) {
+    error_log('WARNING: Invalid API_TYPE configured. Falling back to responses.');
+    $config['api_type'] = 'responses';
 }
 
 // Create storage directory if needed

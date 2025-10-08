@@ -1,19 +1,15 @@
 <?php
 /**
- * Unified Chat Handler for both Chat Completions and Assistants API
+ * Unified Chat Handler for Chat Completions and Responses API
  */
 
 class ChatHandler {
     private $config;
     private $openAIClient;
-    private $assistantManager;
-    private $threadManager;
 
     public function __construct($config) {
         $this->config = $config;
         $this->openAIClient = new OpenAIClient($config['openai']);
-        $this->assistantManager = new AssistantManager($this->openAIClient, $config);
-        $this->threadManager = new ThreadManager($this->openAIClient, $config);
     }
 
     public function validateRequest($message, $conversationId, $fileData = null) {
@@ -71,37 +67,204 @@ class ChatHandler {
         $this->streamChatCompletion($messages, $conversationId);
     }
 
-    public function handleAssistantChat($message, $conversationId, $fileData = null) {
-        // Get or create assistant
-        $assistantId = $this->assistantManager->getOrCreateAssistant();
-        if (function_exists('log_debug')) {
-            log_debug("Assistant chat start conv=$conversationId assistant=$assistantId msgLen=" . strlen($message));
+    public function handleResponsesChat($message, $conversationId, $fileData = null) {
+        $messages = $this->getConversationHistory($conversationId);
+        $responsesConfig = $this->config['responses'];
+
+        if (!empty($responsesConfig['system_message']) && empty($messages)) {
+            array_unshift($messages, [
+                'role' => 'system',
+                'content' => $responsesConfig['system_message']
+            ]);
         }
 
-        // Get or create thread
-        $threadId = $this->threadManager->getOrCreateThread($conversationId);
-        if (function_exists('log_debug')) {
-            log_debug("Using thread $threadId for conv=$conversationId");
-        }
-
-        // Upload file if provided
         $fileIds = [];
         if ($fileData) {
-            $fileIds = $this->uploadFiles($fileData);
+            $fileIds = $this->uploadFiles($fileData, 'user_data');
         }
 
-        // Add message to thread
-        $this->openAIClient->addMessageToThread($threadId, [
+        $userMessage = [
             'role' => 'user',
             'content' => $message,
-            'file_ids' => $fileIds
-        ]);
+        ];
 
-        // Create and stream run
-        if (function_exists('log_debug')) {
-            log_debug("Starting run for thread=$threadId conv=$conversationId");
+        if (!empty($fileIds)) {
+            $userMessage['file_ids'] = $fileIds;
         }
-        $this->streamAssistantRun($threadId, $assistantId, $conversationId);
+
+        $messages[] = $userMessage;
+
+        $payload = [
+            'model' => $responsesConfig['model'],
+            'input' => $this->formatMessagesForResponses($messages),
+            'temperature' => $responsesConfig['temperature'],
+            'top_p' => $responsesConfig['top_p'],
+            'frequency_penalty' => $responsesConfig['frequency_penalty'],
+            'presence_penalty' => $responsesConfig['presence_penalty'],
+            'max_output_tokens' => $responsesConfig['max_output_tokens'],
+            'stream' => true,
+        ];
+
+        if (!empty($responsesConfig['prompt_id'])) {
+            $prompt = ['id' => $responsesConfig['prompt_id']];
+            if (!empty($responsesConfig['prompt_version'])) {
+                $prompt['version'] = $responsesConfig['prompt_version'];
+            }
+            $payload['prompt'] = $prompt;
+        }
+
+        $messageStarted = false;
+        $fullResponse = '';
+        $responseId = null;
+        $toolCalls = [];
+
+        $this->openAIClient->streamResponse($payload, function($event) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls) {
+            if (!isset($event['type'])) {
+                return;
+            }
+
+            $eventType = $event['type'];
+
+            if ($eventType === 'response.created') {
+                $responseId = $event['response']['id'] ?? ($event['id'] ?? $responseId);
+                if (!$messageStarted) {
+                    sendSSEEvent('message', [
+                        'type' => 'start',
+                        'response_id' => $responseId
+                    ]);
+                    $messageStarted = true;
+                }
+                return;
+            }
+
+            if (strpos($eventType, 'response.output_text.delta') === 0 || strpos($eventType, 'response.refusal.delta') === 0) {
+                $chunk = $this->extractTextDelta($event);
+                if ($chunk !== '') {
+                    if (!$messageStarted) {
+                        $responseId = $event['response']['id'] ?? $responseId;
+                        sendSSEEvent('message', [
+                            'type' => 'start',
+                            'response_id' => $responseId
+                        ]);
+                        $messageStarted = true;
+                    }
+
+                    $fullResponse .= $chunk;
+
+                    sendSSEEvent('message', [
+                        'type' => 'chunk',
+                        'content' => $chunk,
+                        'response_id' => $responseId
+                    ]);
+                }
+                return;
+            }
+
+            if (strpos($eventType, 'response.output_tool_call.delta') === 0) {
+                $delta = $event['delta'] ?? [];
+                $callId = $delta['id'] ?? $delta['call_id'] ?? null;
+                if (!$callId && isset($delta['tool_call_id'])) {
+                    $callId = $delta['tool_call_id'];
+                }
+
+                if ($callId) {
+                    if (!isset($toolCalls[$callId])) {
+                        $toolCalls[$callId] = [
+                            'tool_name' => $delta['tool_name'] ?? $delta['name'] ?? ($delta['function']['name'] ?? ''),
+                            'arguments' => ''
+                        ];
+                    }
+
+                    if (isset($delta['tool_name']) || isset($delta['name']) || isset($delta['function']['name'])) {
+                        $toolCalls[$callId]['tool_name'] = $delta['tool_name'] ?? $delta['name'] ?? ($delta['function']['name'] ?? $toolCalls[$callId]['tool_name']);
+                    }
+
+                    if (isset($delta['arguments'])) {
+                        $toolCalls[$callId]['arguments'] .= $delta['arguments'];
+                    } elseif (isset($delta['function']['arguments'])) {
+                        $toolCalls[$callId]['arguments'] .= $delta['function']['arguments'];
+                    }
+
+                    sendSSEEvent('message', [
+                        'type' => 'tool_call',
+                        'tool_name' => $toolCalls[$callId]['tool_name'],
+                        'arguments' => $toolCalls[$callId]['arguments'],
+                        'call_id' => $callId
+                    ]);
+                }
+                return;
+            }
+
+            if ($eventType === 'response.required_action') {
+                $responseId = $event['response']['id'] ?? $responseId;
+                $toolCallsData = $event['response']['required_action']['submit_tool_outputs']['tool_calls'] ?? [];
+
+                if (!empty($toolCallsData)) {
+                    $toolOutputs = [];
+                    foreach ($toolCallsData as $toolCall) {
+                        $result = $this->executeTool($toolCall);
+                        $toolOutputs[] = [
+                            'tool_call_id' => $toolCall['id'] ?? ($toolCall['call_id'] ?? ''),
+                            'output' => is_string($result) ? $result : json_encode($result)
+                        ];
+
+                        sendSSEEvent('message', [
+                            'type' => 'tool_call',
+                            'tool_name' => $toolCall['name'] ?? ($toolCall['function']['name'] ?? ''),
+                            'arguments' => $toolCall['arguments'] ?? ($toolCall['function']['arguments'] ?? ''),
+                            'call_id' => $toolCall['id'] ?? ($toolCall['call_id'] ?? ''),
+                            'status' => 'completed'
+                        ]);
+                    }
+
+                    if (!empty($toolOutputs) && $responseId) {
+                        try {
+                            $this->openAIClient->submitResponseToolOutputs($responseId, $toolOutputs);
+                        } catch (Exception $e) {
+                            sendSSEEvent('error', [
+                                'message' => 'Failed to submit tool outputs',
+                                'code' => 'TOOL_OUTPUT_ERROR'
+                            ]);
+                        }
+                    }
+                }
+                return;
+            }
+
+            if ($eventType === 'response.completed') {
+                $finishReason = $event['response']['status'] ?? 'completed';
+                if ($fullResponse !== '') {
+                    $messages[] = [
+                        'role' => 'assistant',
+                        'content' => $fullResponse
+                    ];
+                }
+
+                $this->saveConversationHistory($conversationId, $messages);
+
+                sendSSEEvent('message', [
+                    'type' => 'done',
+                    'finish_reason' => $finishReason,
+                    'response_id' => $responseId
+                ]);
+
+                // Reset state for potential follow-up events
+                $messageStarted = false;
+                $fullResponse = '';
+                $responseId = null;
+                $toolCalls = [];
+                return;
+            }
+
+            if ($eventType === 'response.error' || $eventType === 'response.failed') {
+                $errorMessage = $event['error']['message'] ?? ($event['response']['error']['message'] ?? 'Unknown error');
+                sendSSEEvent('error', [
+                    'message' => $errorMessage,
+                    'code' => $event['error']['code'] ?? 'RESPONSE_ERROR'
+                ]);
+                return;
+            }
+        });
     }
 
     private function streamChatCompletion($messages, $conversationId) {
@@ -116,9 +279,11 @@ class ChatHandler {
             'stream' => true
         ];
 
-        $this->openAIClient->streamChatCompletion($payload, function($chunk) use ($conversationId, $messages) {
-            static $messageStarted = false;
-            static $fullResponse = '';
+        $messageStarted = false;
+        $fullResponse = '';
+
+        $this->openAIClient->streamChatCompletion($payload, function($chunk) use (&$messageStarted, &$fullResponse, $conversationId, $messages) {
+            $messagesCopy = $messages;
 
             if (isset($chunk['choices'][0]['delta']['content'])) {
                 if (!$messageStarted) {
@@ -136,12 +301,11 @@ class ChatHandler {
             }
 
             if (isset($chunk['choices'][0]['finish_reason'])) {
-                // Save conversation including assistant response
-                $messages[] = [
+                $messagesCopy[] = [
                     'role' => 'assistant',
                     'content' => $fullResponse
                 ];
-                $this->saveConversationHistory($conversationId, $messages);
+                $this->saveConversationHistory($conversationId, $messagesCopy);
 
                 sendSSEEvent('message', [
                     'type' => 'done',
@@ -151,109 +315,72 @@ class ChatHandler {
         });
     }
 
-    private function streamAssistantRun($threadId, $assistantId, $conversationId) {
-        $runPayload = [
-            'assistant_id' => $assistantId,
-            'temperature' => $this->config['assistants']['temperature'],
-            'max_completion_tokens' => $this->config['assistants']['max_completion_tokens'],
-            'stream' => true
-        ];
+    private function formatMessagesForResponses(array $messages) {
+        $formatted = [];
 
-        $this->openAIClient->streamAssistantRun($threadId, $runPayload, function($event) use ($conversationId, $threadId) {
-            static $messageStarted = false;
-            static $currentMessage = '';
-
-            switch ($event['event']) {
-                case 'thread.run.created':
-                    sendSSEEvent('message', [
-                        'type' => 'run_created',
-                        'run_id' => $event['data']['id']
-                    ]);
-                    break;
-
-                case 'thread.message.delta':
-                    if (!$messageStarted) {
-                        sendSSEEvent('message', ['type' => 'start']);
-                        $messageStarted = true;
-                    }
-
-                    $delta = $event['data']['delta'];
-                    if (isset($delta['content'][0]['text']['value'])) {
-                        $content = $delta['content'][0]['text']['value'];
-                        $currentMessage .= $content;
-
-                        sendSSEEvent('message', [
-                            'type' => 'chunk',
-                            'content' => $content
-                        ]);
-                    }
-                    break;
-
-                case 'thread.run.completed':
-                    // Update thread mapping
-                    $this->threadManager->updateThreadMapping($conversationId, $threadId);
-
-                    sendSSEEvent('message', [
-                        'type' => 'done',
-                        'run_status' => 'completed'
-                    ]);
-                    if (function_exists('log_debug')) {
-                        log_debug("Run completed for thread=$threadId conv=$conversationId responseLen=" . strlen($currentMessage));
-                    }
-                    break;
-
-                case 'thread.run.failed':
-                    sendSSEEvent('error', [
-                        'message' => 'Assistant run failed',
-                        'details' => $event['data']['last_error'] ?? 'Unknown error'
-                    ]);
-                    if (function_exists('log_debug')) {
-                        log_debug("Run failed for thread=$threadId conv=$conversationId error=" . json_encode($event['data']['last_error'] ?? 'Unknown'), 'error');
-                    }
-                    break;
-
-                case 'thread.run.requires_action':
-                    // Handle function calling
-                    $this->handleRequiredAction($event['data'], $threadId);
-                    break;
-            }
-        });
-    }
-
-    private function handleRequiredAction($runData, $threadId) {
-        $toolCalls = $runData['required_action']['submit_tool_outputs']['tool_calls'];
-        $toolOutputs = [];
-
-        foreach ($toolCalls as $toolCall) {
-            $result = $this->executeTool($toolCall);
-            $toolOutputs[] = [
-                'tool_call_id' => $toolCall['id'],
-                'output' => json_encode($result)
+        foreach ($messages as $message) {
+            $content = $message['content'] ?? '';
+            $formattedMessage = [
+                'role' => $message['role'],
+                'content' => [
+                    [
+                        'type' => 'input_text',
+                        'text' => $content
+                    ]
+                ]
             ];
+
+            if (!empty($message['file_ids'])) {
+                $formattedMessage['attachments'] = array_map(function($fileId) {
+                    return [
+                        'file_id' => $fileId
+                    ];
+                }, $message['file_ids']);
+            }
+
+            $formatted[] = $formattedMessage;
         }
 
-        // Submit tool outputs
-        $this->openAIClient->submitToolOutputs($threadId, $runData['id'], $toolOutputs);
+        return $formatted;
     }
 
-    private function executeTool($toolCall) {
-        // Implement custom function calling logic here
-        $function = $toolCall['function'];
-        $functionName = $function['name'];
-        $arguments = json_decode($function['arguments'], true);
+    private function extractTextDelta(array $event) {
+        if (isset($event['delta'])) {
+            $delta = $event['delta'];
 
-        // Example function execution
-        switch ($functionName) {
-            case 'get_weather':
-                return $this->getWeather($arguments['location'] ?? '');
-            case 'search_knowledge':
-                return $this->searchKnowledge($arguments['query'] ?? '');
-            default:
-                return ['error' => 'Unknown function: ' . $functionName];
+            if (is_string($delta)) {
+                return $delta;
+            }
+
+            if (is_array($delta)) {
+                if (isset($delta['text'])) {
+                    return $delta['text'];
+                }
+
+                if (isset($delta['output_text'])) {
+                    return $delta['output_text'];
+                }
+
+                if (isset($delta['content']) && is_array($delta['content'])) {
+                    $text = '';
+                    foreach ($delta['content'] as $segment) {
+                        if (is_array($segment) && isset($segment['text'])) {
+                            $text .= $segment['text'];
+                        }
+                    }
+                    return $text;
+                }
+            }
         }
+
+        if (isset($event['text'])) {
+            return $event['text'];
+        }
+
+        return '';
     }
 
-    private function uploadFiles($fileData) {
+    private function uploadFiles($fileData, $purpose = 'user_data') {
         $fileIds = [];
 
         if (!is_array($fileData)) {
@@ -261,7 +388,7 @@ class ChatHandler {
         }
 
         foreach ($fileData as $file) {
-            $fileId = $this->openAIClient->uploadFile($file);
+            $fileId = $this->openAIClient->uploadFile($file, $purpose);
             if ($fileId) {
                 $fileIds[] = $fileId;
             }
@@ -361,14 +488,30 @@ class ChatHandler {
         }
     }
 
-    // Example custom functions for tool calling
+    private function executeTool($toolCall) {
+        $function = $toolCall['function'] ?? [
+            'name' => $toolCall['name'] ?? '',
+            'arguments' => $toolCall['arguments'] ?? '{}'
+        ];
+
+        $functionName = $function['name'];
+        $arguments = json_decode($function['arguments'] ?? '{}', true) ?: [];
+
+        switch ($functionName) {
+            case 'get_weather':
+                return $this->getWeather($arguments['location'] ?? '');
+            case 'search_knowledge':
+                return $this->searchKnowledge($arguments['query'] ?? '');
+            default:
+                return ['error' => 'Unknown function: ' . $functionName];
+        }
+    }
+
     private function getWeather($location) {
-        // Implement weather API integration
         return ['weather' => 'sunny', 'temperature' => '25°C', 'location' => $location];
     }
 
     private function searchKnowledge($query) {
-        // Implement knowledge base search
         return ['results' => 'Knowledge base search for: ' . $query];
     }
 }
