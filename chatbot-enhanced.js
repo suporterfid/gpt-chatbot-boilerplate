@@ -134,6 +134,28 @@
         }
 
         /**
+         * Detect base path of the script file (folder containing chatbot-enhanced.js)
+         */
+        detectBasePath() {
+            try {
+                let scriptSrc = '';
+                if (document.currentScript && document.currentScript.src) {
+                    scriptSrc = document.currentScript.src;
+                } else {
+                    const scripts = document.getElementsByTagName('script');
+                    const found = Array.from(scripts).find(s => (s.src || '').indexOf('chatbot-enhanced.js') !== -1) || scripts[scripts.length - 1];
+                    scriptSrc = found ? found.src : '';
+                }
+                const url = new URL(scriptSrc, window.location.href);
+                // Return absolute path from root, ending with '/'
+                return url.pathname.replace(/[^\/]+$/, '');
+            } catch (e) {
+                // Fallback to current page path folder
+                return (window.location.pathname || '/').replace(/[^\/]+$/, '');
+            }
+        }
+
+        /**
          * Initialize the chatbot
          */
         init() {
@@ -1273,24 +1295,3 @@
     window.EnhancedChatBot = EnhancedChatBot;
 
 })(window, document);
-        /**
-         * Detect base path of the script file (folder containing chatbot-enhanced.js)
-         */
-        detectBasePath() {
-            try {
-                let scriptSrc = '';
-                if (document.currentScript && document.currentScript.src) {
-                    scriptSrc = document.currentScript.src;
-                } else {
-                    const scripts = document.getElementsByTagName('script');
-                    const found = Array.from(scripts).find(s => (s.src || '').indexOf('chatbot-enhanced.js') !== -1) || scripts[scripts.length - 1];
-                    scriptSrc = found ? found.src : '';
-                }
-                const url = new URL(scriptSrc, window.location.href);
-                // Return absolute path from root, ending with '/'
-                return url.pathname.replace(/[^\/]+$/, '');
-            } catch (e) {
-                // Fallback to current page path folder
-                return (window.location.pathname || '/').replace(/[^\/]+$/, '');
-            }
-        }
