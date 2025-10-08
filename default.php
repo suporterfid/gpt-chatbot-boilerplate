@@ -492,11 +492,16 @@
             onMessage: function(message) {
                 // Track assistant interactions
                 if (message.role === 'assistant') {
-                    // Your analytics code here
-                    gtag('event', 'assistant_message', {
-                        'assistant_id': 'sst_6HwOy1cHxdhBm2aFFa7h6Eci',
-                        'message_length': message.content.length
-                    });
+                    // Only send analytics if Google Analytics gtag is available
+                    if (typeof window.gtag === 'function') {
+                        window.gtag('event', 'assistant_message', {
+                            'assistant_id': 'sst_6HwOy1cHxdhBm2aFFa7h6Eci',
+                            'message_length': message.content.length
+                        });
+                    } else {
+                        // Optional: comment out or keep for debugging
+                        // console.debug('gtag not defined; skipping analytics event');
+                    }
                 }
             }
         });
