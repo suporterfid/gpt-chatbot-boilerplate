@@ -532,3 +532,40 @@
         animation: none;
     }
 }
+
+/* Tool call indicators */
+.tool-execution {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(31, 184, 205, 0.08);
+    border: 1px solid rgba(31, 184, 205, 0.2);
+    font-size: 12px;
+    color: var(--chatbot-muted-color);
+}
+
+.tool-execution .tool-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.tool-execution .tool-icon {
+    font-size: 14px;
+}
+
+.tool-execution .tool-status {
+    color: #059669;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.tool-execution .tool-arguments {
+    white-space: pre-wrap;
+    font-family: 'Courier New', Courier, monospace;
+    background: rgba(0, 0, 0, 0.03);
+    padding: 6px 8px;
+    border-radius: 6px;
+    color: var(--chatbot-text-color);
+}

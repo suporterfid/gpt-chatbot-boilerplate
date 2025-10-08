@@ -435,7 +435,7 @@
                             <li>Floating widget with custom branding</li>
                             <li>File upload support for deeper analysis</li>
                             <li>Event hooks for monitoring performance</li>
-                            <li>Ready for Assistants API integrations</li>
+                            <li>Ready for OpenAI Responses API integrations</li>
                         </ul>
                         <p class="hero-subtitle">Your AI assistant is available in the bottom right corner!</p>
                     </aside>
@@ -455,9 +455,9 @@
     <?php $cb_ver = @filemtime(__DIR__ . DIRECTORY_SEPARATOR . 'chatbot-enhanced.js') ?: time(); ?>
     <script src="chatbot-enhanced.js?v=<?php echo $cb_ver; ?>"></script>
     <script>
-        // Initialize with your existing assistant
+        // Initialize with your Responses-powered assistant
         const myAssistant = ChatBot.init({
-            apiType: 'assistants',
+            apiType: 'responses',
             // Dynamic streaming mode: auto for localhost, SSE elsewhere
             streamingMode: (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'auto' : 'sse',
             // Use relative endpoint for portability (leave unset to auto-detect based on script path)
@@ -467,8 +467,8 @@
             position: 'bottom-right',
             show: false, // Hidden initially, user can open it
 
-            // Assistant configuration is resolved on the server from .env
-            // (No assistantId exposed in frontend)
+            // Responses configuration is resolved on the server from .env
+            // (Prompt IDs or other metadata stay server-side)
 
             // Branding and customization
             title: 'AI Assistant',

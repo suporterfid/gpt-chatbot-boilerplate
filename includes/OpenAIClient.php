@@ -1,6 +1,6 @@
 <?php
 /**
- * Enhanced OpenAI Client with support for both Chat Completions and Assistants API
+ * Enhanced OpenAI Client with support for both Chat Completions and Responses API
  */
 
 class OpenAIClient {
@@ -23,7 +23,7 @@ class OpenAIClient {
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_HTTPHEADER => $this->getHeaders(),
+            CURLOPT_HTTPHEADER => $this->getHeaders(['Accept: text/event-stream']),
             CURLOPT_WRITEFUNCTION => function($ch, $data) use ($callback) {
                 static $buffer = '';
 
@@ -69,55 +69,17 @@ class OpenAIClient {
         }
     }
 
-    // Assistants API Methods
-    public function createAssistant($config) {
-        $payload = [
-            'name' => $config['name'],
-            'description' => $config['description'],
-            'instructions' => $config['instructions'],
-            'model' => $config['model'],
-            'temperature' => $config['temperature']
-        ];
+    public function streamResponse(array $payload, callable $callback) {
+        $payload['stream'] = true;
 
-        if (!empty($config['tools'])) {
-            $payload['tools'] = $config['tools'];
-        }
-
-        return $this->makeRequest('POST', '/assistants', $payload);
-    }
-
-    public function getAssistant($assistantId) {
-        return $this->makeRequest('GET', '/assistants/' . $assistantId);
-    }
-
-    public function createThread($metadata = []) {
-        $payload = ['metadata' => $metadata];
-        return $this->makeRequest('POST', '/threads', $payload);
-    }
-
-    public function getThread($threadId) {
-        return $this->makeRequest('GET', '/threads/' . $threadId);
-    }
-
-    public function addMessageToThread($threadId, $message) {
-        return $this->makeRequest('POST', '/threads/' . $threadId . '/messages', $message);
-    }
-
-    public function getThreadMessages($threadId, $params = []) {
-        $query = http_build_query($params);
-        $url = '/threads/' . $threadId . '/messages' . ($query ? '?' . $query : '');
-        return $this->makeRequest('GET', $url);
-    }
-
-    public function streamAssistantRun($threadId, $runConfig, $callback) {
         $ch = curl_init();
 
         curl_setopt_array($ch, [
-            CURLOPT_URL => $this->baseUrl . '/threads/' . $threadId . '/runs',
+            CURLOPT_URL => $this->baseUrl . '/responses',
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($runConfig),
-            CURLOPT_HTTPHEADER => $this->getHeaders(),
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_HTTPHEADER => $this->getHeaders(['Accept: text/event-stream']),
             CURLOPT_WRITEFUNCTION => function($ch, $data) use ($callback) {
                 static $buffer = '';
 
@@ -127,7 +89,9 @@ class OpenAIClient {
 
                 foreach ($lines as $line) {
                     $line = trim($line);
-                    if (empty($line)) continue;
+                    if ($line === '') {
+                        continue;
+                    }
 
                     if (strpos($line, 'data: ') === 0) {
                         $json = substr($line, 6);
@@ -137,7 +101,7 @@ class OpenAIClient {
                         }
 
                         $decoded = json_decode($json, true);
-                        if ($decoded) {
+                        if ($decoded !== null) {
                             $callback($decoded);
                         }
                     }
@@ -163,12 +127,17 @@ class OpenAIClient {
         }
     }
 
-    public function submitToolOutputs($threadId, $runId, $toolOutputs) {
-        $payload = ['tool_outputs' => $toolOutputs];
-        return $this->makeRequest('POST', '/threads/' . $threadId . '/runs/' . $runId . '/submit_tool_outputs', $payload);
+    public function createResponse(array $payload) {
+        return $this->makeRequest('POST', '/responses', $payload);
     }
 
-    public function uploadFile($fileData) {
+    public function submitResponseToolOutputs($responseId, array $toolOutputs) {
+        return $this->makeRequest('POST', '/responses/' . $responseId . '/submit_tool_outputs', [
+            'tool_outputs' => $toolOutputs,
+        ]);
+    }
+
+    public function uploadFile($fileData, $purpose = 'user_data') {
         $ch = curl_init();
 
         // Create temporary file
@@ -176,20 +145,24 @@ class OpenAIClient {
         file_put_contents($tempFile, base64_decode($fileData['data']));
 
         $postFields = [
-            'purpose' => 'assistants',
+            'purpose' => $purpose,
             'file' => new CURLFile($tempFile, $fileData['type'], $fileData['name'])
         ];
+
+        $headers = [
+            'Authorization: Bearer ' . $this->apiKey,
+        ];
+
+        if (!empty($this->organization)) {
+            $headers[] = 'OpenAI-Organization: ' . $this->organization;
+        }
 
         curl_setopt_array($ch, [
             CURLOPT_URL => $this->baseUrl . '/files',
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => $postFields,
-            CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $this->apiKey,
-                'OpenAI-Organization: ' . $this->organization,
-                'OpenAI-Beta: assistants=v2'
-            ],
+            CURLOPT_HTTPHEADER => $headers,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
 
@@ -249,18 +222,17 @@ class OpenAIClient {
         return json_decode($result, true);
     }
 
-    private function getHeaders() {
+    private function getHeaders(array $additionalHeaders = []) {
         $headers = [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $this->apiKey,
-            'OpenAI-Beta: assistants=v2',
         ];
 
         if (!empty($this->organization)) {
             $headers[] = 'OpenAI-Organization: ' . $this->organization;
         }
 
-        return $headers;
+        return array_merge($headers, $additionalHeaders);
     }
 }
 ?>

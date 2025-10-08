@@ -1,12 +1,10 @@
 <?php
 /**
- * Unified Chat Endpoint - Supports both Chat Completions and Assistants API
+ * Unified Chat Endpoint - Supports both Chat Completions and Responses API
  */
 
 require_once 'config.php';
 require_once 'includes/OpenAIClient.php';
-require_once 'includes/AssistantManager.php';
-require_once 'includes/ThreadManager.php';
 require_once 'includes/ChatHandler.php';
 
 // Logging helper
@@ -102,6 +100,11 @@ try {
         $conversationId = 'conv_' . uniqid();
     }
 
+    if ($apiType === 'assistants') {
+        log_debug('Legacy API type "assistants" detected. Falling back to responses.', 'warn');
+        $apiType = 'responses';
+    }
+
     // Validate and sanitize input
     $chatHandler->validateRequest($message, $conversationId, $fileData);
 
@@ -112,8 +115,8 @@ try {
     ]);
 
     // Route to appropriate handler
-    if ($apiType === 'assistants') {
-        $chatHandler->handleAssistantChat($message, $conversationId, $fileData);
+    if ($apiType === 'responses') {
+        $chatHandler->handleResponsesChat($message, $conversationId, $fileData);
     } else {
         $chatHandler->handleChatCompletion($message, $conversationId);
     }

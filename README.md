@@ -1,40 +1,38 @@
 # Enhanced GPT Chatbot Web Integration Boilerplate
 
-An advanced open-source boilerplate for embedding GPT-powered chatbots on any website with **dual API support** (Chat Completions + Assistants API), real-time streaming, white-label customization, and easy deployment.
+An advanced open-source boilerplate for embedding GPT-powered chatbots on any website with **dual API support** (Chat Completions + Responses API), real-time streaming, white-label customization, and easy deployment.
 
-## 🚀 New Features in v2.0
+## 🚀 New Features in v2.1
 
 ### 🔥 **Dual API Support**
-- **Chat Completions API**: Traditional stateless chat interface
-- **Assistants API**: Advanced features with persistent threads, tools, and file processing
-- **Easy switching** between APIs via configuration
-- **Automatic fallback** and error handling
+- **Chat Completions API**: Traditional stateless chat interface.
+- **Responses API**: Prompt-template aware streaming with tool calling and file attachments.
+- **One toggle** via configuration to switch between APIs.
+- **Automatic fallback** and robust error handling.
 
-### 🛠️ **Assistants API Features**
-- **Persistent Conversations**: Threads managed server-side
-- **File Upload & Processing**: Support for documents, images, and more
-- **Built-in Tools**: Code Interpreter, File Search
-- **Custom Functions**: Define your own function calling
-- **Advanced Reasoning**: Enhanced AI capabilities
+### 🧠 **Responses API Enhancements**
+- **Prompt Templates**: Reference saved prompts via `RESPONSES_PROMPT_ID` and optional versioning.
+- **Inline + referenced prompts**: Mix local context with reusable system instructions.
+- **Tool Calls**: Stream tool call deltas and auto-submit outputs when enabled.
+- **File Attachments**: Upload user files directly with the appropriate `user_data` purpose.
 
 ### 📎 **File Upload Support**
-- **Multiple file types**: PDF, DOC, images, text files
-- **File size validation** and type restrictions
-- **Visual file preview** before sending
-- **Drag & drop interface** (coming soon)
+- Multiple file types (PDF, DOC, images, text files).
+- File size validation and type restrictions.
+- Visual file preview before sending.
 
 ### 🎯 **Enhanced UI/UX**
-- **API type indicators** showing which API is active
-- **Tool execution visualization** for Assistants API
-- **File attachment display** in messages
-- **Improved responsive design**
+- API type indicators showing the active workflow.
+- Tool execution visualization for Responses API events.
+- File attachment display in messages.
+- Improved responsive design.
 
 ## 📋 Requirements
 
-- PHP 8.0+ with cURL extension
-- Apache or Nginx web server
-- OpenAI API key
-- Optional: Docker for containerized deployment
+- PHP 8.0+ with cURL extension.
+- Apache or Nginx web server.
+- OpenAI API key.
+- Optional: Docker for containerized deployment.
 
 ## 🚀 Quick Start
 
@@ -59,22 +57,17 @@ OPENAI_MODEL=gpt-3.5-turbo
 docker-compose up -d
 ```
 
-### Option 2: Assistants API (Advanced)
+### Option 2: Responses API (Advanced)
 
-1. Configure for Assistants API in `.env`:
+1. Configure for Responses API in `.env`:
 ```bash
-API_TYPE=assistants
+API_TYPE=responses
 OPENAI_API_KEY=your_openai_api_key_here
-
-# Option A: Use existing assistant
-ASSISTANT_ID=asst_your_assistant_id_here
-
-# Option B: Auto-create assistant
-CREATE_ASSISTANT=true
-ASSISTANT_NAME=My Website Assistant
-ASSISTANT_INSTRUCTIONS=You are a helpful assistant for website visitors
-ASSISTANT_CODE_INTERPRETER=true
-ASSISTANT_FILE_SEARCH=true
+RESPONSES_MODEL=gpt-4.1-mini
+RESPONSES_PROMPT_ID=pmpt_your_prompt_id   # optional, reference a saved prompt
+RESPONSES_PROMPT_VERSION=1                # optional, defaults to latest
+RESPONSES_TEMPERATURE=0.7
+RESPONSES_MAX_OUTPUT_TOKENS=1024
 ```
 
 2. Enable file uploads (optional):
@@ -109,29 +102,27 @@ ChatBot.init({
 </script>
 ```
 
-### Advanced Assistants API Integration
+### Advanced Responses API Integration
 
 ```html
 <script src="chatbot-enhanced.js"></script>
 <script>
 ChatBot.init({
     mode: 'inline',
-    apiType: 'assistants',
+    apiType: 'responses',
     apiEndpoint: '/chat-unified.php',
     enableFileUpload: true,
 
     assistant: {
-        name: 'AI Assistant',
-        welcomeMessage: 'Hello! I can help with questions, analyze documents, and run code. What would you like to do?'
+        name: 'AI Guide',
+        welcomeMessage: 'Hello! I can help with questions, analyze documents, and trigger tools.'
     },
 
-    assistantConfig: {
-        enableTools: true,
-        enableCodeInterpreter: true,
-        enableFileSearch: true
+    responsesConfig: {
+        promptId: 'pmpt_your_prompt_id',
+        promptVersion: '1'
     },
 
-    // Callbacks for advanced features
     onToolCall: function(toolData) {
         console.log('Tool executed:', toolData);
     },
@@ -167,7 +158,7 @@ The enhanced version supports both APIs through a single configuration:
 ```php
 // config.php
 return [
-    'api_type' => 'assistants', // 'chat' or 'assistants'
+    'api_type' => 'responses', // 'chat' or 'responses'
 
     // Chat Completions settings
     'chat' => [
@@ -176,12 +167,13 @@ return [
         'system_message' => 'You are a helpful assistant.'
     ],
 
-    // Assistants API settings
-    'assistants' => [
-        'assistant_id' => 'asst_your_id',
-        'create_assistant' => false,
-        'tools' => ['code_interpreter', 'file_search'],
-        'custom_functions' => ['get_weather', 'search_knowledge']
+    // Responses API settings
+    'responses' => [
+        'model' => 'gpt-4.1-mini',
+        'temperature' => 0.7,
+        'max_output_tokens' => 1024,
+        'prompt_id' => 'pmpt_your_prompt_id',
+        'prompt_version' => '1'
     ]
 ];
 ```
@@ -204,54 +196,51 @@ return [
 ├── chat-unified.php          # Unified endpoint for both APIs
 ├── chatbot-enhanced.js       # Enhanced JavaScript client
 ├── includes/
-│   ├── ChatHandler.php       # Unified chat handler
-│   ├── OpenAIClient.php      # Enhanced OpenAI client
-│   ├── AssistantManager.php  # Assistant management
-│   └── ThreadManager.php     # Thread management
-├── config.php               # Enhanced configuration
-└── .env.example            # Updated environment template
+│   ├── ChatHandler.php       # Unified chat handler for chat & responses
+│   └── OpenAIClient.php      # OpenAI client with streaming helpers
+├── config.php                # Unified configuration loader
+└── .env.example              # Environment template
 ```
 
 ### API Flow Comparison
 
 #### Chat Completions API Flow
-1. User sends message
-2. Add to conversation history
-3. Stream response from OpenAI
-4. Save to session/storage
+1. User sends message.
+2. Add to conversation history.
+3. Stream response from OpenAI.
+4. Save to session/storage.
 
-#### Assistants API Flow  
-1. User sends message (+ files)
-2. Create/get thread
-3. Add message to thread
-4. Create run with streaming
-5. Handle tool calls if needed
-6. Update thread mapping
+#### Responses API Flow
+1. User sends message (+ optional files).
+2. Build payload from local history + optional prompt reference.
+3. Stream `/responses` events (text deltas, tool calls, completions).
+4. Auto-submit tool outputs when required.
+5. Persist conversation locally for context reuse.
 
 ## 🎨 Enhanced UI Features
 
 ### API Type Indicators
-- Visual indicators showing which API is active
-- Different styling for Chat vs Assistants modes
-- Run ID tracking for Assistants API
+- Visual indicators showing the active API.
+- Distinct styling cues for Chat vs Responses modes.
+- Response ID tracking for saved prompt runs.
 
 ### File Upload Interface
-- Drag & drop file selection
-- File preview with size and type
-- Upload progress indicators
-- File attachment display in messages
+- Drag & drop file selection.
+- File preview with size and type.
+- Upload progress indicators.
+- File attachment display in messages.
 
 ### Tool Execution Visualization
-- Real-time tool execution indicators
-- Function call parameter display  
-- Tool result integration
+- Real-time tool execution indicators.
+- Function call parameter display.
+- Tool result integration in the stream.
 
 ## 🔐 Security Enhancements
 
-- **File upload validation**: Type, size, and content checking
-- **Thread isolation**: Secure thread-to-conversation mapping
-- **Function call sandboxing**: Safe custom function execution
-- **Enhanced rate limiting**: Per-API-type limits
+- **File upload validation**: Type, size, and content checking.
+- **Conversation isolation**: Local session/file storage per conversation.
+- **Function call sandboxing**: Safe custom function execution examples.
+- **Enhanced rate limiting**: Request throttling per client.
 
 ## 📚 API Reference
 
@@ -261,11 +250,11 @@ return [
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `apiType` | string | `'chat'` | API to use: `'chat'` or `'assistants'` |
+| `apiType` | string | `'responses'` | API to use: `'chat'` or `'responses'` |
 | `enableFileUpload` | boolean | `false` | Enable file upload functionality |
-| `assistantConfig` | object | `{}` | Assistants API specific settings |
+| `responsesConfig` | object | `{}` | Responses API prompt reference settings |
 
-#### New Callbacks
+#### Callbacks
 
 ```javascript
 ChatBot.init({
@@ -274,14 +263,11 @@ ChatBot.init({
     },
     onFileUpload: function(files) {
         // Handle file upload
-    },
-    onThreadCreate: function(threadId) {
-        // Handle thread creation (Assistants API)
     }
 });
 ```
 
-### Enhanced PHP Endpoints
+### Enhanced PHP Endpoint
 
 #### POST /chat-unified.php
 
@@ -292,7 +278,7 @@ Unified endpoint supporting both APIs.
 {
     "message": "Hello",
     "conversation_id": "conv_123",
-    "api_type": "assistants",
+    "api_type": "responses",
     "file_data": [
         {
             "name": "document.pdf",
@@ -304,12 +290,11 @@ Unified endpoint supporting both APIs.
 ```
 
 **SSE Response Events:**
-- `start`: Chat/run started
-- `run_created`: Assistant run created (Assistants API)
-- `chunk`: Content chunk
-- `tool_call`: Function call execution (Assistants API)
-- `done`: Chat/run completed
-- `error`: Error occurred
+- `start`: Stream started (includes optional `response_id`).
+- `chunk`: Content delta.
+- `tool_call`: Tool call details and status updates.
+- `done`: Conversation finished with status metadata.
+- `error`: Error occurred.
 
 ## 🚀 Deployment
 
@@ -317,13 +302,18 @@ Unified endpoint supporting both APIs.
 
 ```bash
 # API Selection
-API_TYPE=assistants
+API_TYPE=responses
 
-# Assistants API
-ASSISTANT_ID=asst_your_assistant_id
-CREATE_ASSISTANT=false
-ASSISTANT_TOOLS=code_interpreter,file_search
-THREAD_CLEANUP_HOURS=24
+# OpenAI Configuration
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# Responses API
+RESPONSES_MODEL=gpt-4.1-mini
+RESPONSES_PROMPT_ID=pmpt_your_prompt_id
+RESPONSES_PROMPT_VERSION=1
+RESPONSES_MAX_OUTPUT_TOKENS=1024
+RESPONSES_TEMPERATURE=0.7
 
 # File Upload
 ENABLE_FILE_UPLOAD=true
@@ -337,80 +327,33 @@ STORAGE_PATH=/var/chatbot/data
 
 ### Production Considerations
 
-- **File storage**: Configure appropriate storage for uploaded files
-- **Thread cleanup**: Set up cron job for old thread cleanup
-- **Resource limits**: Monitor API usage and costs
-- **Backup strategy**: Backup thread mappings and conversation data
+- **File storage**: Configure appropriate storage for uploaded files.
+- **Prompt management**: Version control saved prompts and fallback strategies.
+- **Resource limits**: Monitor API usage and costs.
+- **Backup strategy**: Backup conversation history if persisted to disk.
 
-## 🔄 Migration from v1.0
+## 🔄 Migration from v2.0 (Assistants API)
 
-### Updating Existing Installations
-
-1. **Backup existing data**:
-```bash
-cp -r . ../chatbot-backup
-```
-
-2. **Update files**:
-```bash
-git pull origin main
-```
-
-3. **Update configuration**:
-```bash
-# Add new environment variables to .env
-echo "API_TYPE=chat" >> .env
-```
-
-4. **Test both APIs**:
-```bash
-# Test Chat Completions
-curl -X POST -H "Content-Type: application/json"   -d '{"message": "Hello", "api_type": "chat"}'   http://localhost:8080/chat-unified.php
-
-# Test Assistants API (if configured)
-curl -X POST -H "Content-Type: application/json"   -d '{"message": "Hello", "api_type": "assistants"}'   http://localhost:8080/chat-unified.php
-```
-
-### JavaScript Client Updates
-
-Use `chatbot-enhanced.js` (see `default.php` demo):
-
-```html
-<!-- Include enhanced widget -->
-<script src="chatbot-enhanced.js"></script>
-
-<script>
-// Configuration remains compatible
-ChatBot.init({
-    // Existing options work as before
-    // New options available for enhanced features
-    apiType: 'assistants',
-    apiEndpoint: '/chat-unified.php',
-    enableFileUpload: true  // New option
-});
-</script>
-```
+1. **Update configuration**: Replace `API_TYPE=assistants` with `API_TYPE=responses` and remove assistant-specific env vars.
+2. **Set prompt IDs**: If you previously relied on assistant instructions, save them as a prompt via `/v1/prompts` and set `RESPONSES_PROMPT_ID`.
+3. **Deploy updated code**: This release removes `AssistantManager` and `ThreadManager`—ensure custom code no longer references them.
+4. **Test both modes**: Verify chat completions and responses streaming with your prompt templates.
 
 ## 🧪 Testing
 
-### API Testing
-
 ```bash
 # Test Chat Completions API
-./test-chat-api.sh
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"message": "Hello", "api_type": "chat"}' \
+  http://localhost:8080/chat-unified.php
 
-# Test Assistants API  
-./test-assistants-api.sh
+# Test Responses API
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"message": "Hello", "api_type": "responses"}' \
+  http://localhost:8080/chat-unified.php
 
 # Test file upload
 ./test-file-upload.sh
-```
-
-### Load Testing
-
-```bash
-# Test with multiple concurrent users
-ab -n 1000 -c 50 -p test-message.json   -T application/json   http://localhost:8080/chat-unified.php
 ```
 
 ## 🤝 Contributing
@@ -437,7 +380,7 @@ MIT License - feel free to use this in commercial and personal projects.
 ## 📞 Support
 
 - 📖 [Documentation](docs/)
-- 🐛 [Issues](https://github.com/suporterfid/gpt-chatbot-boilerplate/issues)  
+- 🐛 [Issues](https://github.com/suporterfid/gpt-chatbot-boilerplate/issues)
 - 💬 [Discussions](https://github.com/suporterfid/gpt-chatbot-boilerplate/discussions)
 - 📧 [Email Support](mailto:support@example.com)
 
