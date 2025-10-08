@@ -1834,9 +1834,14 @@
         show() {
             if (this.options.mode !== 'floating') return;
 
-            this.chatContainer.style.display = 'block';
-            this.chatContainer.setAttribute('aria-hidden', 'false');
-            this.widget.classList.add('is-open');
+            if (this.chatContainer) {
+                this.chatContainer.style.removeProperty('display');
+                this.chatContainer.setAttribute('aria-hidden', 'false');
+            }
+
+            if (this.widget) {
+                this.widget.classList.add('is-open');
+            }
 
             if (this.toggleButton) {
                 this.toggleButton.style.display = 'none';
@@ -1862,9 +1867,14 @@
         hide() {
             if (this.options.mode !== 'floating') return;
 
-            this.chatContainer.style.display = 'none';
-            this.chatContainer.setAttribute('aria-hidden', 'true');
-            this.widget.classList.remove('is-open');
+            if (this.chatContainer) {
+                this.chatContainer.style.display = 'none';
+                this.chatContainer.setAttribute('aria-hidden', 'true');
+            }
+
+            if (this.widget) {
+                this.widget.classList.remove('is-open');
+            }
 
             if (this.toggleButton) {
                 this.toggleButton.style.display = 'flex';
