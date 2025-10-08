@@ -60,7 +60,7 @@ This guide covers various deployment scenarios for the GPT Chatbot Boilerplate, 
        </Directory>
        
        # Enable SSE streaming
-       <Location "/chat.php">
+       <Location "/chat-unified.php">
            SetEnv no-gzip 1
            SetEnv no-buffer 1
        </Location>
@@ -90,7 +90,7 @@ This guide covers various deployment scenarios for the GPT Chatbot Boilerplate, 
        listen 80;
        server_name chatbot.local;
        root /path/to/gpt-chatbot-boilerplate;
-       index index.html index.php;
+       index default.php index.php;
        
        location / {
            try_files $uri $uri/ /index.php$is_args$args;
@@ -107,7 +107,7 @@ This guide covers various deployment scenarios for the GPT Chatbot Boilerplate, 
            proxy_buffering off;
        }
        
-       location /chat.php {
+       location /chat-unified.php {
            add_header X-Accel-Buffering no;
            fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
@@ -173,7 +173,7 @@ This guide covers various deployment scenarios for the GPT Chatbot Boilerplate, 
        listen 80;
        server_name yourdomain.com www.yourdomain.com;
        root /var/www/chatbot;
-       index index.html index.php;
+       index default.php index.php;
        
        # Security headers
        add_header X-Frame-Options "SAMEORIGIN" always;
@@ -209,7 +209,7 @@ This guide covers various deployment scenarios for the GPT Chatbot Boilerplate, 
        }
        
        # SSE endpoint
-       location /chat.php {
+       location /chat-unified.php {
            add_header X-Accel-Buffering no;
            add_header Cache-Control "no-cache, no-store, must-revalidate";
            add_header Pragma "no-cache";
@@ -415,7 +415,7 @@ curl http://localhost:8080
    
    # Create public/index.php (if not exists)
    mkdir -p public
-   cp index.html public/
+   cp default.php public/
    ```
 
 2. **Deploy**:
@@ -443,7 +443,7 @@ LoadModule headers_module modules/mod_headers.so
 </IfModule>
 
 # SSE-specific configuration
-<Location "/chat.php">
+<Location "/chat-unified.php">
     SetEnv no-gzip 1
     SetEnv no-buffer 1
     Header always set Cache-Control "no-cache, no-store, must-revalidate"
@@ -482,7 +482,7 @@ server {
     server_name yourdomain.com www.yourdomain.com;
     
     root /var/www/chatbot;
-    index index.html index.php;
+    index default.php index.php;
     
     # SSL configuration
     ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
@@ -528,7 +528,7 @@ server {
     }
     
     # SSE endpoint optimization
-    location /chat.php {
+    location /chat-unified.php {
         add_header X-Accel-Buffering no;
         add_header Cache-Control "no-cache, no-store, must-revalidate";
         add_header Pragma "no-cache";

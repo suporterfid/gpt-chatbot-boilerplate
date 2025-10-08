@@ -18,7 +18,7 @@ RUN a2enmod headers
 
 # Configure Apache for SSE
 RUN echo "LoadModule headers_module modules/mod_headers.so" >> /etc/apache2/apache2.conf
-RUN echo "<Location "/chat.php">" >> /etc/apache2/apache2.conf
+RUN echo "<Location "/chat-unified.php">" >> /etc/apache2/apache2.conf
 RUN echo "    SetEnv no-gzip 1" >> /etc/apache2/apache2.conf
 RUN echo "    SetEnv no-buffer 1" >> /etc/apache2/apache2.conf
 RUN echo "</Location>" >> /etc/apache2/apache2.conf

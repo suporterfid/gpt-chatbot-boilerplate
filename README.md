@@ -373,13 +373,10 @@ curl -X POST -H "Content-Type: application/json"   -d '{"message": "Hello", "api
 
 ### JavaScript Client Updates
 
-Replace `chatbot.js` with `chatbot-enhanced.js`:
+Use `chatbot-enhanced.js` (see `default.php` demo):
 
 ```html
-<!-- Old -->
-<script src="chatbot.js"></script>
-
-<!-- New -->
+<!-- Include enhanced widget -->
 <script src="chatbot-enhanced.js"></script>
 
 <script>
@@ -387,7 +384,8 @@ Replace `chatbot.js` with `chatbot-enhanced.js`:
 ChatBot.init({
     // Existing options work as before
     // New options available for enhanced features
-    apiType: 'assistants', // New option
+    apiType: 'assistants',
+    apiEndpoint: '/chat-unified.php',
     enableFileUpload: true  // New option
 });
 </script>

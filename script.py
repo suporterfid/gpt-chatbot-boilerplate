@@ -71,13 +71,13 @@ Add the chatbot to any website with a simple script tag:
 ```html
 <!-- Include the chatbot CSS and JS -->
 <link rel="stylesheet" href="path/to/chatbot.css">
-<script src="path/to/chatbot.js"></script>
+<script src="chatbot-enhanced.js"></script>
 
 <!-- Floating chatbot (auto-positioned) -->
 <script>
 ChatBot.init({
     mode: 'floating',
-    apiEndpoint: '/chat.php',
+    apiEndpoint: '/chat-unified.php',
     title: 'Support Chat',
     assistant: {
         name: 'Sarah',
@@ -133,7 +133,7 @@ ChatBot.init({
 ChatBot.init({
     // Connection settings
     streamingMode: 'auto',    // 'sse', 'websocket', 'ajax', 'auto'
-    apiEndpoint: '/chat.php', // API endpoint URL
+    apiEndpoint: '/chat-unified.php', // API endpoint URL
     maxMessages: 100,         // Max messages to keep in memory
     
     // UI settings
@@ -204,8 +204,8 @@ WEBSOCKET_HOST=0.0.0.0
 
 ```
 ├── README.md              # This file
-├── index.html            # Demo page
-├── chatbot.js            # Main JavaScript widget
+├── default.php           # Demo page
+├── chatbot-enhanced.js   # Main JavaScript widget
 ├── chatbot.css           # Default styling
 ├── chat.php              # SSE streaming endpoint
 ├── chat_websocket.php    # WebSocket handler
@@ -240,7 +240,7 @@ WEBSOCKET_HOST=0.0.0.0
 2. **Apache Configuration** (if using SSE):
    ```apache
    # Enable SSE streaming
-   <Location "/chat.php">
+   <Location "/chat-unified.php">
        SetEnv no-gzip 1
        SetEnv no-buffer 1
    </Location>
@@ -248,7 +248,7 @@ WEBSOCKET_HOST=0.0.0.0
 
 3. **Nginx Configuration** (if using SSE):
    ```nginx
-   location /chat.php {
+   location /chat-unified.php {
        proxy_buffering off;
        proxy_cache off;
        add_header X-Accel-Buffering no;
@@ -306,7 +306,7 @@ Initializes the chatbot widget.
 
 ### PHP API Endpoints
 
-#### POST /chat.php
+#### POST /chat-unified.php
 Main chat endpoint with SSE streaming.
 
 **Request:**
@@ -364,7 +364,7 @@ Contributions are welcome! Please read our contributing guidelines and submit pu
 Made with ❤️ by the open source community
 """,
     
-    'chatbot.js': """/**
+    'chatbot-enhanced.js': """/**
  * GPT Chatbot Widget - Open Source Boilerplate
  * Real-time streaming chatbot with SSE and WebSocket support
  * 
@@ -387,7 +387,7 @@ Made with ❤️ by the open source community
         show: false,
         
         // API settings
-        apiEndpoint: '/chat.php',
+        apiEndpoint: '/chat-unified.php',
         websocketEndpoint: 'ws://localhost:8080',
         streamingMode: 'auto', // 'sse', 'websocket', 'ajax', 'auto'
         maxMessages: 50,
@@ -2527,7 +2527,7 @@ RUN a2enmod headers
 
 # Configure Apache for SSE
 RUN echo "LoadModule headers_module modules/mod_headers.so" >> /etc/apache2/apache2.conf
-RUN echo "<Location \"/chat.php\">" >> /etc/apache2/apache2.conf
+RUN echo "<Location \"/chat-unified.php\">" >> /etc/apache2/apache2.conf
 RUN echo "    SetEnv no-gzip 1" >> /etc/apache2/apache2.conf
 RUN echo "    SetEnv no-buffer 1" >> /etc/apache2/apache2.conf
 RUN echo "</Location>" >> /etc/apache2/apache2.conf
@@ -2619,7 +2619,7 @@ networks:
     driver: bridge
 """,
 
-    'index.html': """<!DOCTYPE html>
+    'default.php': """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -2902,13 +2902,13 @@ networks:
             <h3>Basic Integration</h3>
             <pre><code>&lt;!-- Include the chatbot files --&gt;
 &lt;link rel="stylesheet" href="chatbot.css"&gt;
-&lt;script src="chatbot.js"&gt;&lt;/script&gt;
+<script src="chatbot-enhanced.js"></script>
 
 &lt;!-- Initialize floating chatbot --&gt;
 &lt;script&gt;
 ChatBot.init({
     mode: 'floating',
-    apiEndpoint: '/chat.php',
+    apiEndpoint: '/chat-unified.php',
     title: 'Support Chat',
     assistant: {
         name: 'Assistant',
@@ -3033,7 +3033,7 @@ php -S localhost:8080</code></pre>
     </div>
 
     <!-- Load the chatbot -->
-    <script src="chatbot.js"></script>
+    <script src="chatbot-enhanced.js"></script>
     
     <script>
         // Demo variables
@@ -3076,7 +3076,7 @@ php -S localhost:8080</code></pre>
 
         // Check configuration status
         function checkConfiguration() {
-            fetch('/chat.php', {
+            fetch('/chat-unified.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: 'test', test: true })

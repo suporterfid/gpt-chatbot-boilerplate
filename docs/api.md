@@ -35,7 +35,7 @@ Initializes a new chatbot instance.
 // Floating mode
 const chatbot = ChatBot.init({
     mode: 'floating',
-    apiEndpoint: '/chat.php'
+    apiEndpoint: '/chat-unified.php'
 });
 
 // Inline mode
@@ -71,7 +71,7 @@ ChatBot.destroyAll();
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `apiEndpoint` | string | `'/chat.php'` | SSE/AJAX endpoint URL |
+| `apiEndpoint` | string | `'/chat-unified.php'` | SSE/AJAX endpoint URL |
 | `websocketEndpoint` | string | `'ws://localhost:8080'` | WebSocket server URL |
 | `streamingMode` | string | `'auto'` | Connection mode: `'auto'`, `'sse'`, `'websocket'`, `'ajax'` |
 | `maxMessages` | number | `50` | Maximum messages in memory |
@@ -253,7 +253,7 @@ The widget can be auto-initialized using data attributes:
 
 ## HTTP API Endpoints
 
-### POST /chat.php
+### POST /chat-unified.php
 
 Main chat endpoint that handles both SSE streaming and regular AJAX requests.
 
@@ -337,7 +337,7 @@ data: null
 }
 ```
 
-### GET /chat.php
+### GET /chat-unified.php
 
 Alternative GET endpoint for SSE streaming (useful for EventSource API).
 
@@ -349,7 +349,7 @@ Alternative GET endpoint for SSE streaming (useful for EventSource API).
 
 **Example:**
 ```
-GET /chat.php?message=Hello&conversation_id=conv_abc123
+GET /chat-unified.php?message=Hello&conversation_id=conv_abc123
 ```
 
 #### Response
@@ -652,7 +652,7 @@ When rate limited, the API returns:
 ### Handling Rate Limits
 
 ```javascript
-fetch('/chat.php', {
+fetch('/chat-unified.php', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: 'Hello' })
@@ -687,12 +687,12 @@ fetch('/chat.php', {
 <body>
     <div id="chat-container"></div>
     
-    <script src="chatbot.js"></script>
+    <script src="chatbot-enhanced.js"></script>
     <script>
         ChatBot.init('#chat-container', {
             mode: 'inline',
             height: '500px',
-            apiEndpoint: '/chat.php',
+            apiEndpoint: '/chat-unified.php',
             assistant: {
                 name: 'Assistant',
                 welcomeMessage: 'Hello! How can I help you today?'
@@ -834,7 +834,7 @@ const customChatbot = new CustomChatBot('#chat-container', {
 ```php
 <?php
 // Custom endpoint extending the base functionality
-require_once 'chat.php';
+require_once 'chat-unified.php';
 
 class CustomChatHandler extends ChatHandler {
     public function preprocessMessage($message, $context) {
@@ -961,7 +961,7 @@ describe('ChatBot', () => {
 curl -N -H "Accept: text/event-stream" \
   -X POST -H "Content-Type: application/json" \
   -d '{"message": "Hello", "conversation_id": "test"}' \
-  http://localhost:8080/chat.php
+  http://localhost:8080/chat-unified.php
 
 # Test health endpoint
 curl http://localhost:8080/health
@@ -970,7 +970,7 @@ curl http://localhost:8080/health
 for i in {1..70}; do
   curl -X POST -H "Content-Type: application/json" \
     -d '{"message": "test"}' \
-    http://localhost:8080/chat.php
+    http://localhost:8080/chat-unified.php
 done
 ```
 
@@ -979,13 +979,14 @@ done
 ```bash
 # Using Apache Bench
 ab -n 1000 -c 10 -p post_data.json -T application/json \
-  http://localhost:8080/chat.php
+  http://localhost:8080/chat-unified.php
 
 # Using wrk
 wrk -t12 -c400 -d30s --script=post.lua \
-  http://localhost:8080/chat.php
+  http://localhost:8080/chat-unified.php
 ```
 
 ---
 
-This API documentation covers all the main interfaces and usage patterns for the GPT Chatbot Boilerplate. For additional examples and use cases, see the [main README](README.md) or check the demo implementation in `index.html`.
+This API documentation covers all the main interfaces and usage patterns for the GPT Chatbot Boilerplate. For additional examples and use cases, see the [main README](README.md) or check the demo implementation in `default.php`.
+
