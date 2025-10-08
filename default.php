@@ -467,10 +467,8 @@
             position: 'bottom-right',
             show: false, // Hidden initially, user can open it
 
-            // Your assistant configuration
-            assistantConfig: {
-                assistantId: 'sst_6HwOy1cHxdhBm2aFFa7h6Eci'
-            },
+            // Assistant configuration is resolved on the server from .env
+            // (No assistantId exposed in frontend)
 
             // Branding and customization
             title: 'AI Assistant',
@@ -492,7 +490,7 @@
 
             // Event handlers
             onConnect: function() {
-                console.log('Connected to assistant:', 'sst_6HwOy1cHxdhBm2aFFa7h6Eci');
+                console.log('Connected to assistant backend');
             },
 
             onMessage: function(message) {
@@ -501,7 +499,6 @@
                     // Only send analytics if Google Analytics gtag is available
                     if (typeof window.gtag === 'function') {
                         window.gtag('event', 'assistant_message', {
-                            'assistant_id': 'sst_6HwOy1cHxdhBm2aFFa7h6Eci',
                             'message_length': message.content.length
                         });
                     } else {
