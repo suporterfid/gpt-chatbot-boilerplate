@@ -123,7 +123,19 @@ class OpenAIClient {
         }
 
         if ($httpCode !== 200) {
-            throw new Exception('OpenAI API error: HTTP ' . $httpCode);
+            // Attempt to retrieve detailed error by reissuing a non-streaming request
+            try {
+                $retryPayload = $payload;
+                $retryPayload['stream'] = false;
+                // Make a direct request to capture error body
+                $response = $this->makeRequest('POST', '/responses', $retryPayload);
+                // If API returned 2xx unexpectedly, treat as error-less
+                // but still signal upstream with a generic message
+                throw new Exception('OpenAI API error: HTTP ' . $httpCode);
+            } catch (Exception $e) {
+                // Enrich message with detailed context
+                throw new Exception('OpenAI API error: HTTP ' . $httpCode . ' - ' . $e->getMessage());
+            }
         }
     }
 

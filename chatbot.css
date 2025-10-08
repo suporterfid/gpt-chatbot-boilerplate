@@ -170,6 +170,44 @@
     background: rgba(255, 255, 255, 0.18);
 }
 
+/* Header controls */
+.chatbot-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.chatbot-maximize {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.chatbot-maximize:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+/* Maximized state */
+.chatbot-widget.is-maximized .chatbot-container {
+    width: min(96vw, 920px);
+    height: min(90vh, 90dvh);
+}
+
+.chatbot-widget.chatbot-floating.is-maximized {
+    right: 20px;
+    bottom: 20px;
+}
+
+.chatbot-widget.chatbot-floating.position-left.is-maximized {
+    left: 20px;
+    right: auto;
+}
+
 /* Messages container */
 .chatbot-messages {
     flex: 1;
@@ -177,6 +215,7 @@
     padding: 16px;
     background: var(--chatbot-background-color);
     scroll-behavior: smooth;
+    overscroll-behavior: contain;
 }
 
 .chatbot-messages::-webkit-scrollbar {

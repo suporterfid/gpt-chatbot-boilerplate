@@ -353,6 +353,7 @@
                     <a href="#features">Features</a>
                     <a href="#overview">How it works</a>
                     <a href="#assistant">Assistant</a>
+                    <a href="https://github.com/suporterfid/gpt-chatbot-boilerplate" target="_blank" rel="noopener">GitHub</a>
                 </nav>
             </div>
         </header>
@@ -447,6 +448,7 @@
             <div class="container footer-inner">
                 <span>&copy; <?php echo date('Y'); ?> GPT Assistant Boilerplate. All rights reserved.</span>
                 <span>Designed for clarity, performance, and innovation.</span>
+                <span><a href="https://github.com/suporterfid/gpt-chatbot-boilerplate" target="_blank" rel="noopener">View on GitHub</a></span>
             </div>
         </footer>
     </div>
@@ -508,6 +510,17 @@
                 }
             }
         });
+
+        // Hook the CTA button to open the assistant
+        (function(){
+            var btn = document.querySelector('.cta-button');
+            if (btn) {
+                btn.addEventListener('click', function(e){
+                    e.preventDefault();
+                    try { myAssistant && myAssistant.show && myAssistant.show(); } catch (_) {}
+                });
+            }
+        })();
 
         // Optional: Auto-open assistant based on user behavior
         setTimeout(() => {

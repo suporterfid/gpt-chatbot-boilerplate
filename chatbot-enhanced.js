@@ -249,9 +249,12 @@
                             </p>
                         </div>
                     </div>
-                    ${this.options.mode === 'floating' ? 
-                        '<button class="chatbot-close" title="Close Chat">✕</button>' : ''
-                    }
+                    <div class="chatbot-header-controls">
+                        <button class="chatbot-maximize" title="Maximize" aria-pressed="false">▢</button>
+                        ${this.options.mode === 'floating' ? 
+                            '<button class="chatbot-close" title="Close Chat">✕</button>' : ''
+                        }
+                    </div>
                 </div>
                 <div class="chatbot-messages" id="chatbot-messages-${this.conversationId}">
                     <!-- Messages will be added here -->
@@ -333,6 +336,8 @@
             this.sendButton = this.widget.querySelector('.chatbot-send');
             this.toggleButton = this.widget.querySelector('.chatbot-toggle');
             this.closeButton = this.widget.querySelector('.chatbot-close');
+            this.maximizeButton = this.widget.querySelector('.chatbot-maximize');
+            this.header = this.widget.querySelector('.chatbot-header');
             this.statusIndicator = this.widget.querySelector('.chatbot-status-indicator');
             this.statusText = this.widget.querySelector('.chatbot-status-text');
 
@@ -410,6 +415,16 @@
             // Close button (floating mode)
             if (this.closeButton) {
                 this.closeButton.addEventListener('click', () => this.hide());
+            }
+
+            // Maximize/restore button
+            if (this.maximizeButton) {
+                this.maximizeButton.addEventListener('click', () => this.toggleMaximize());
+            }
+
+            // Double-click header to toggle maximize
+            if (this.header) {
+                this.header.addEventListener('dblclick', () => this.toggleMaximize());
             }
 
             // Send button
@@ -1292,6 +1307,19 @@
             } else {
                 this.hide();
             }
+        }
+
+        /**
+         * Toggle maximize state
+         */
+        toggleMaximize() {
+            this.isMaximized = !this.isMaximized;
+            this.widget.classList.toggle('is-maximized', this.isMaximized);
+            if (this.maximizeButton) {
+                this.maximizeButton.setAttribute('aria-pressed', this.isMaximized ? 'true' : 'false');
+                this.maximizeButton.title = this.isMaximized ? 'Restore' : 'Maximize';
+            }
+            this.scrollToBottom();
         }
 
         /**

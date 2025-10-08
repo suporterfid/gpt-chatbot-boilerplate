@@ -38,6 +38,9 @@ WORKDIR /var/www/html
 # Copy application files
 COPY . .
 
+# Composer runs as root during build; silence warnings and allow git in this repo
+ENV COMPOSER_ALLOW_SUPERUSER=1
+
 # Set permissions
 RUN chown -R www-data:www-data /var/www/html
 RUN chmod -R 755 /var/www/html
@@ -46,7 +49,8 @@ RUN chmod -R 755 /var/www/html
 RUN mkdir -p logs && chown www-data:www-data logs
 
 # Install PHP dependencies (if composer.json exists)
-RUN if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader; fi
+RUN git config --global --add safe.directory /var/www/html \
+    && if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader; fi
 
 # Expose port
 EXPOSE 80

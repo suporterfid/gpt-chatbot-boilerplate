@@ -107,8 +107,6 @@ class ChatHandler {
             'input' => $this->formatMessagesForResponses($messages),
             'temperature' => $responsesConfig['temperature'],
             'top_p' => $responsesConfig['top_p'],
-            'frequency_penalty' => $responsesConfig['frequency_penalty'],
-            'presence_penalty' => $responsesConfig['presence_penalty'],
             'max_output_tokens' => $responsesConfig['max_output_tokens'],
             'stream' => true,
         ];
@@ -126,7 +124,8 @@ class ChatHandler {
         $responseId = null;
         $toolCalls = [];
 
-        $this->openAIClient->streamResponse($payload, function($event) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls) {
+        $streamFn = function($p) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls) {
+            $this->openAIClient->streamResponse($p, function($event) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls) {
             if (!isset($event['type'])) {
                 return;
             }
@@ -273,6 +272,39 @@ class ChatHandler {
                 return;
             }
         });
+        };
+
+        try {
+            $streamFn($payload);
+        } catch (Exception $e) {
+            $err = $e->getMessage();
+            $hasPrompt = isset($payload['prompt']);
+            $clientErr = (strpos($err, 'HTTP 400') !== false) || (strpos($err, 'HTTP 404') !== false) || (strpos($err, 'HTTP 422') !== false);
+
+            // Retry without prompt if prompt reference likely invalid
+            if ($hasPrompt && $clientErr) {
+                sendSSEEvent('message', [ 'type' => 'notice', 'message' => 'Prompt unavailable. Retrying without prompt.' ]);
+                unset($payload['prompt']);
+                try {
+                    $streamFn($payload);
+                    return;
+                } catch (Exception $inner) {
+                    // Fall through to model fallback below
+                    $err = $inner->getMessage();
+                    $clientErr = (strpos($err, 'HTTP 400') !== false) || (strpos($err, 'HTTP 404') !== false) || (strpos($err, 'HTTP 422') !== false);
+                }
+            }
+
+            // Retry with a safe model if model might be invalid
+            if ($clientErr && isset($payload['model']) && $payload['model'] !== 'gpt-4o-mini') {
+                sendSSEEvent('message', [ 'type' => 'notice', 'message' => 'Model unsupported. Falling back to gpt-4o-mini.' ]);
+                $payload['model'] = 'gpt-4o-mini';
+                $streamFn($payload);
+                return;
+            }
+
+            throw $e;
+        }
     }
 
     private function streamChatCompletion($messages, $conversationId) {
