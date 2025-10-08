@@ -1,17 +1,33 @@
-# GPT Chatbot Web Integration Boilerplate
+# Enhanced GPT Chatbot Web Integration Boilerplate
 
-An open-source boilerplate for embedding a GPT-powered chatbot on any website with real-time streaming, white-label customization, and easy deployment.
+An advanced open-source boilerplate for embedding GPT-powered chatbots on any website with **dual API support** (Chat Completions + Assistants API), real-time streaming, white-label customization, and easy deployment.
 
-## 🚀 Features
+## 🚀 New Features in v2.0
 
-- **Real-Time Streaming**: Support for both Server-Sent Events (SSE) and WebSockets with automatic fallback
-- **White-Label Ready**: Completely customizable UI with no hardcoded branding
-- **Easy Integration**: Drop-in script tag for any website
-- **Mobile Responsive**: Works perfectly on all devices
-- **Secure**: API keys protected on server-side with input validation
-- **Docker Support**: Complete containerized setup for easy deployment
-- **Multi-Turn Conversations**: Maintains conversation context
-- **Connection Recovery**: Auto-reconnection and error handling
+### 🔥 **Dual API Support**
+- **Chat Completions API**: Traditional stateless chat interface
+- **Assistants API**: Advanced features with persistent threads, tools, and file processing
+- **Easy switching** between APIs via configuration
+- **Automatic fallback** and error handling
+
+### 🛠️ **Assistants API Features**
+- **Persistent Conversations**: Threads managed server-side
+- **File Upload & Processing**: Support for documents, images, and more
+- **Built-in Tools**: Code Interpreter, File Search
+- **Custom Functions**: Define your own function calling
+- **Advanced Reasoning**: Enhanced AI capabilities
+
+### 📎 **File Upload Support**
+- **Multiple file types**: PDF, DOC, images, text files
+- **File size validation** and type restrictions
+- **Visual file preview** before sending
+- **Drag & drop interface** (coming soon)
+
+### 🎯 **Enhanced UI/UX**
+- **API type indicators** showing which API is active
+- **Tool execution visualization** for Assistants API
+- **File attachment display** in messages
+- **Improved responsive design**
 
 ## 📋 Requirements
 
@@ -22,339 +38,413 @@ An open-source boilerplate for embedding a GPT-powered chatbot on any website wi
 
 ## 🚀 Quick Start
 
-### Option 1: Docker (Recommended)
+### Option 1: Chat Completions API (Simple)
 
-1. Clone the repository:
+1. Clone and configure:
 ```bash
-git clone https://github.com/your-repo/gpt-chatbot-boilerplate.git
+git clone https://github.com/suporterfid/gpt-chatbot-boilerplate.git
 cd gpt-chatbot-boilerplate
-```
-
-2. Copy environment variables:
-```bash
 cp .env.example .env
 ```
 
-3. Edit `.env` and add your OpenAI API key:
-```
+2. Edit `.env` for Chat Completions:
+```bash
+API_TYPE=chat
 OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-3.5-turbo
 ```
 
-4. Start with Docker:
+3. Start with Docker:
 ```bash
 docker-compose up -d
 ```
 
-5. Open http://localhost:8080 in your browser
+### Option 2: Assistants API (Advanced)
 
-### Option 2: Manual Setup
-
-1. Clone the repository to your web server directory
-2. Copy `config.php.example` to `config.php` and add your OpenAI API key
-3. Ensure PHP has cURL extension enabled
-4. For WebSocket support, install Composer dependencies:
+1. Configure for Assistants API in `.env`:
 ```bash
-composer install
+API_TYPE=assistants
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Option A: Use existing assistant
+ASSISTANT_ID=asst_your_assistant_id_here
+
+# Option B: Auto-create assistant
+CREATE_ASSISTANT=true
+ASSISTANT_NAME=My Website Assistant
+ASSISTANT_INSTRUCTIONS=You are a helpful assistant for website visitors
+ASSISTANT_CODE_INTERPRETER=true
+ASSISTANT_FILE_SEARCH=true
 ```
 
-## 💻 Integration
+2. Enable file uploads (optional):
+```bash
+ENABLE_FILE_UPLOAD=true
+MAX_FILE_SIZE=10485760
+ALLOWED_FILE_TYPES=txt,pdf,doc,docx,jpg,png
+```
 
-### Basic Integration
+3. Start the application:
+```bash
+docker-compose up -d
+```
 
-Add the chatbot to any website with a simple script tag:
+## 💻 Integration Examples
+
+### Basic Chat Completions Integration
 
 ```html
-<!-- Include the chatbot CSS and JS -->
-<link rel="stylesheet" href="path/to/chatbot.css">
-<script src="path/to/chatbot.js"></script>
-
-<!-- Floating chatbot (auto-positioned) -->
+<script src="chatbot-enhanced.js"></script>
 <script>
 ChatBot.init({
     mode: 'floating',
-    apiEndpoint: '/chat.php',
+    apiType: 'chat',
+    apiEndpoint: '/chat-unified.php',
     title: 'Support Chat',
     assistant: {
-        name: 'Sarah',
+        name: 'ChatBot',
         welcomeMessage: 'Hi! How can I help you today?'
     }
 });
 </script>
 ```
 
-### Inline Integration
+### Advanced Assistants API Integration
 
 ```html
-<!-- Container for inline chatbot -->
-<div id="chatbot-container"></div>
-
+<script src="chatbot-enhanced.js"></script>
 <script>
-ChatBot.init('#chatbot-container', {
+ChatBot.init({
     mode: 'inline',
-    height: '500px',
-    theme: {
-        primaryColor: '#007bff',
-        backgroundColor: '#f8f9fa'
+    apiType: 'assistants',
+    apiEndpoint: '/chat-unified.php',
+    enableFileUpload: true,
+
+    assistant: {
+        name: 'AI Assistant',
+        welcomeMessage: 'Hello! I can help with questions, analyze documents, and run code. What would you like to do?'
+    },
+
+    assistantConfig: {
+        enableTools: true,
+        enableCodeInterpreter: true,
+        enableFileSearch: true
+    },
+
+    // Callbacks for advanced features
+    onToolCall: function(toolData) {
+        console.log('Tool executed:', toolData);
+    },
+
+    onFileUpload: function(files) {
+        console.log('Files uploaded:', files);
     }
 });
 </script>
 ```
 
-## 🎨 Customization
-
-### Theme Configuration
+### File Upload Configuration
 
 ```javascript
 ChatBot.init({
-    theme: {
-        primaryColor: '#1FB8CD',        // Primary brand color
-        backgroundColor: '#F5F5F5',     // Background color
-        fontFamily: 'Arial, sans-serif', // Font family
-        borderRadius: '8px',            // Border radius
-        shadow: '0 4px 12px rgba(0,0,0,0.15)' // Box shadow
-    },
+    enableFileUpload: true,
+    maxFileSize: 10485760, // 10MB
+    allowedFileTypes: ['txt', 'pdf', 'doc', 'docx', 'jpg', 'png'],
+
     assistant: {
-        name: 'Your Assistant',         // Assistant name
-        avatar: '/path/to/avatar.png',  // Avatar image URL
-        welcomeMessage: 'Hello!',       // Welcome message
-        placeholder: 'Ask me anything...' // Input placeholder
-    }
-});
-```
-
-### Advanced Configuration
-
-```javascript
-ChatBot.init({
-    // Connection settings
-    streamingMode: 'auto',    // 'sse', 'websocket', 'ajax', 'auto'
-    apiEndpoint: '/chat.php', // API endpoint URL
-    maxMessages: 100,         // Max messages to keep in memory
-
-    // UI settings
-    mode: 'floating',         // 'inline' or 'floating'
-    position: 'bottom-right', // 'bottom-right' or 'bottom-left'
-    width: '400px',
-    height: '600px',
-
-    // Callbacks
-    onMessage: function(message) {
-        console.log('New message:', message);
-    },
-    onError: function(error) {
-        console.error('Chat error:', error);
-    },
-    onConnect: function() {
-        console.log('Connected to chat');
+        welcomeMessage: 'Hi! You can ask questions or upload files for analysis.',
+        processingFile: 'Processing your file...'
     }
 });
 ```
 
 ## 🔧 Configuration
 
-### Server Configuration (config.php)
+### Dual API Configuration
+
+The enhanced version supports both APIs through a single configuration:
 
 ```php
-<?php
+// config.php
 return [
-    'openai' => [
-        'api_key' => getenv('OPENAI_API_KEY') ?: 'your_api_key_here',
-        'model' => getenv('OPENAI_MODEL') ?: 'gpt-3.5-turbo',
-        'temperature' => 0.7,
-        'max_tokens' => 1000,
-    ],
+    'api_type' => 'assistants', // 'chat' or 'assistants'
+
+    // Chat Completions settings
     'chat' => [
-        'max_messages' => 50,
-        'session_timeout' => 3600, // 1 hour
-        'rate_limit' => 60, // requests per minute
+        'model' => 'gpt-3.5-turbo',
+        'temperature' => 0.7,
+        'system_message' => 'You are a helpful assistant.'
     ],
-    'security' => [
-        'allowed_origins' => ['*'], // CORS origins
-        'validate_referer' => false,
-        'api_key_validation' => true,
+
+    // Assistants API settings
+    'assistants' => [
+        'assistant_id' => 'asst_your_id',
+        'create_assistant' => false,
+        'tools' => ['code_interpreter', 'file_search'],
+        'custom_functions' => ['get_weather', 'search_knowledge']
     ]
 ];
 ```
 
-### Environment Variables (.env)
+### File Upload Configuration
 
-```bash
-# OpenAI Configuration
-OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-3.5-turbo
-
-# Server Configuration
-DEBUG=false
-LOG_LEVEL=info
-CORS_ORIGINS=*
-
-# WebSocket Configuration (optional)
-WEBSOCKET_PORT=8080
-WEBSOCKET_HOST=0.0.0.0
+```php
+'chat_config' => [
+    'enable_file_upload' => true,
+    'max_file_size' => 10485760, // 10MB
+    'allowed_file_types' => ['txt', 'pdf', 'doc', 'docx', 'jpg', 'png']
+]
 ```
 
-## 🏗️ Architecture
+## 🏗️ Enhanced Architecture
 
 ### File Structure
 
 ```
-├── README.md              # This file
-├── index.html            # Demo page
-├── chatbot.js            # Main JavaScript widget
-├── chatbot.css           # Default styling
-├── chat.php              # SSE streaming endpoint
-├── chat_websocket.php    # WebSocket handler
-├── websocket-server.php  # Standalone WebSocket server
-├── config.php            # Configuration file
-├── composer.json         # PHP dependencies
-├── docker-compose.yml    # Docker Compose setup
-├── Dockerfile            # Docker container
-├── .env.example          # Environment variables template
-└── docs/                 # Additional documentation
-    ├── deployment.md     # Deployment guide
-    ├── customization.md  # Customization examples
-    └── api.md           # API documentation
+├── chat-unified.php          # Unified endpoint for both APIs
+├── chatbot-enhanced.js       # Enhanced JavaScript client
+├── includes/
+│   ├── ChatHandler.php       # Unified chat handler
+│   ├── OpenAIClient.php      # Enhanced OpenAI client
+│   ├── AssistantManager.php  # Assistant management
+│   └── ThreadManager.php     # Thread management
+├── config.php               # Enhanced configuration
+└── .env.example            # Updated environment template
 ```
 
-### Connection Flow
+### API Flow Comparison
 
-1. **Auto-Detection**: Client tries WebSocket first, falls back to SSE, then AJAX
-2. **SSE Mode**: Long-lived HTTP connection with text/event-stream
-3. **WebSocket Mode**: Full-duplex communication (requires websocket-server.php)
-4. **AJAX Mode**: Traditional request/response (fallback)
+#### Chat Completions API Flow
+1. User sends message
+2. Add to conversation history
+3. Stream response from OpenAI
+4. Save to session/storage
 
-## 🚀 Deployment
+#### Assistants API Flow  
+1. User sends message (+ files)
+2. Create/get thread
+3. Add message to thread
+4. Create run with streaming
+5. Handle tool calls if needed
+6. Update thread mapping
 
-### Production Deployment
+## 🎨 Enhanced UI Features
 
-1. **Server Requirements**:
-   - PHP 8.0+ with cURL and session support
-   - Web server (Apache/Nginx) with SSE support
-   - SSL certificate recommended
+### API Type Indicators
+- Visual indicators showing which API is active
+- Different styling for Chat vs Assistants modes
+- Run ID tracking for Assistants API
 
-2. **Apache Configuration** (if using SSE):
-   ```apache
-   # Enable SSE streaming
-   <Location "/chat.php">
-       SetEnv no-gzip 1
-       SetEnv no-buffer 1
-   </Location>
-   ```
+### File Upload Interface
+- Drag & drop file selection
+- File preview with size and type
+- Upload progress indicators
+- File attachment display in messages
 
-3. **Nginx Configuration** (if using SSE):
-   ```nginx
-   location /chat.php {
-       proxy_buffering off;
-       proxy_cache off;
-       add_header X-Accel-Buffering no;
-   }
-   ```
+### Tool Execution Visualization
+- Real-time tool execution indicators
+- Function call parameter display  
+- Tool result integration
 
-### Docker Production Setup
+## 🔐 Security Enhancements
 
-```yaml
-version: '3.8'
-services:
-  chatbot:
-    build: .
-    ports:
-      - "80:80"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_MODEL=gpt-3.5-turbo
-    volumes:
-      - ./logs:/var/log/apache2
-    restart: unless-stopped
-```
-
-## 🔐 Security
-
-This boilerplate implements several security best practices:
-
-- **API Key Protection**: OpenAI API key is kept server-side only
-- **Input Validation**: All user inputs are validated and sanitized
-- **Rate Limiting**: Configurable rate limiting to prevent abuse
-- **CORS Control**: Configurable CORS origins
-- **Session Security**: Secure session handling for conversation history
-- **Error Handling**: Proper error messages without sensitive information disclosure
+- **File upload validation**: Type, size, and content checking
+- **Thread isolation**: Secure thread-to-conversation mapping
+- **Function call sandboxing**: Safe custom function execution
+- **Enhanced rate limiting**: Per-API-type limits
 
 ## 📚 API Reference
 
-### JavaScript API
+### Enhanced JavaScript API
 
-#### ChatBot.init(container, options)
-Initializes the chatbot widget.
+#### Configuration Options
 
-**Parameters:**
-- `container` (string|Element): CSS selector or DOM element (optional for floating mode)
-- `options` (object): Configuration options
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `apiType` | string | `'chat'` | API to use: `'chat'` or `'assistants'` |
+| `enableFileUpload` | boolean | `false` | Enable file upload functionality |
+| `assistantConfig` | object | `{}` | Assistants API specific settings |
 
-**Returns:** ChatBot instance
+#### New Callbacks
 
-#### Instance Methods
+```javascript
+ChatBot.init({
+    onToolCall: function(toolData) {
+        // Handle tool execution
+    },
+    onFileUpload: function(files) {
+        // Handle file upload
+    },
+    onThreadCreate: function(threadId) {
+        // Handle thread creation (Assistants API)
+    }
+});
+```
 
-- `sendMessage(message)`: Send a message programmatically
-- `clearHistory()`: Clear conversation history
-- `show()`: Show the chatbot (floating mode)
-- `hide()`: Hide the chatbot (floating mode)
-- `destroy()`: Remove the chatbot from DOM
+### Enhanced PHP Endpoints
 
-### PHP API Endpoints
+#### POST /chat-unified.php
 
-#### POST /chat.php
-Main chat endpoint with SSE streaming.
+Unified endpoint supporting both APIs.
 
 **Request:**
 ```json
 {
-    "message": "Hello, how are you?",
-    "conversation_id": "optional_conversation_id"
+    "message": "Hello",
+    "conversation_id": "conv_123",
+    "api_type": "assistants",
+    "file_data": [
+        {
+            "name": "document.pdf",
+            "type": "application/pdf",
+            "data": "base64_encoded_data"
+        }
+    ]
 }
 ```
 
-**Response:** Server-Sent Events stream
+**SSE Response Events:**
+- `start`: Chat/run started
+- `run_created`: Assistant run created (Assistants API)
+- `chunk`: Content chunk
+- `tool_call`: Function call execution (Assistants API)
+- `done`: Chat/run completed
+- `error`: Error occurred
 
-#### WebSocket /websocket-server.php
-WebSocket endpoint for real-time communication.
+## 🚀 Deployment
 
-## 🐛 Troubleshooting
+### Environment Variables
 
-### Common Issues
+```bash
+# API Selection
+API_TYPE=assistants
 
-1. **SSE Not Working**:
-   - Check server configuration for output buffering
-   - Verify Content-Type: text/event-stream header
-   - Disable gzip compression for SSE endpoints
+# Assistants API
+ASSISTANT_ID=asst_your_assistant_id
+CREATE_ASSISTANT=false
+ASSISTANT_TOOLS=code_interpreter,file_search
+THREAD_CLEANUP_HOURS=24
 
-2. **WebSocket Connection Failed**:
-   - Ensure websocket-server.php is running
-   - Check firewall settings for WebSocket port
-   - Verify Ratchet dependencies are installed
+# File Upload
+ENABLE_FILE_UPLOAD=true
+MAX_FILE_SIZE=10485760
+ALLOWED_FILE_TYPES=txt,pdf,doc,docx,jpg,png
 
-3. **CORS Errors**:
-   - Configure allowed origins in config.php
-   - Add proper CORS headers
+# Storage
+STORAGE_TYPE=file
+STORAGE_PATH=/var/chatbot/data
+```
 
-4. **High Server Load**:
-   - Implement proper connection limits
-   - Use WebSocket mode for high-traffic sites
-   - Configure appropriate rate limiting
+### Production Considerations
+
+- **File storage**: Configure appropriate storage for uploaded files
+- **Thread cleanup**: Set up cron job for old thread cleanup
+- **Resource limits**: Monitor API usage and costs
+- **Backup strategy**: Backup thread mappings and conversation data
+
+## 🔄 Migration from v1.0
+
+### Updating Existing Installations
+
+1. **Backup existing data**:
+```bash
+cp -r . ../chatbot-backup
+```
+
+2. **Update files**:
+```bash
+git pull origin main
+```
+
+3. **Update configuration**:
+```bash
+# Add new environment variables to .env
+echo "API_TYPE=chat" >> .env
+```
+
+4. **Test both APIs**:
+```bash
+# Test Chat Completions
+curl -X POST -H "Content-Type: application/json"   -d '{"message": "Hello", "api_type": "chat"}'   http://localhost:8080/chat-unified.php
+
+# Test Assistants API (if configured)
+curl -X POST -H "Content-Type: application/json"   -d '{"message": "Hello", "api_type": "assistants"}'   http://localhost:8080/chat-unified.php
+```
+
+### JavaScript Client Updates
+
+Replace `chatbot.js` with `chatbot-enhanced.js`:
+
+```html
+<!-- Old -->
+<script src="chatbot.js"></script>
+
+<!-- New -->
+<script src="chatbot-enhanced.js"></script>
+
+<script>
+// Configuration remains compatible
+ChatBot.init({
+    // Existing options work as before
+    // New options available for enhanced features
+    apiType: 'assistants', // New option
+    enableFileUpload: true  // New option
+});
+</script>
+```
+
+## 🧪 Testing
+
+### API Testing
+
+```bash
+# Test Chat Completions API
+./test-chat-api.sh
+
+# Test Assistants API  
+./test-assistants-api.sh
+
+# Test file upload
+./test-file-upload.sh
+```
+
+### Load Testing
+
+```bash
+# Test with multiple concurrent users
+ab -n 1000 -c 50 -p test-message.json   -T application/json   http://localhost:8080/chat-unified.php
+```
+
+## 🤝 Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Development Setup
+
+```bash
+# Install development dependencies
+composer install --dev
+
+# Run tests
+./vendor/bin/phpunit
+
+# Start development server
+docker-compose -f docker-compose.dev.yml up
+```
 
 ## 📝 License
 
 MIT License - feel free to use this in commercial and personal projects.
 
-## 🤝 Contributing
-
-Contributions are welcome! Please read our contributing guidelines and submit pull requests.
-
 ## 📞 Support
 
-- 📖 Documentation: [Link to docs]
-- 🐛 Issues: [GitHub Issues]
-- 💬 Discussions: [GitHub Discussions]
+- 📖 [Documentation](docs/)
+- 🐛 [Issues](https://github.com/suporterfid/gpt-chatbot-boilerplate/issues)  
+- 💬 [Discussions](https://github.com/suporterfid/gpt-chatbot-boilerplate/discussions)
+- 📧 [Email Support](mailto:support@example.com)
 
 ---
+
+**⭐ If this project helps you, please give it a star!**
 
 Made with ❤️ by the open source community
