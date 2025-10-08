@@ -873,10 +873,12 @@
             const messageContent = document.createElement('div');
             messageContent.className = 'message-text';
 
+            const initialContent = message.content || '';
+
             if (this.options.enableMarkdown) {
-                messageContent.innerHTML = this.formatMessage(message.content);
+                messageContent.innerHTML = this.formatMessage(initialContent);
             } else {
-                messageContent.textContent = message.content;
+                messageContent.textContent = initialContent;
             }
 
             bubble.appendChild(messageContent);
@@ -889,10 +891,11 @@
                 message.files.forEach(file => {
                     const fileItem = document.createElement('div');
                     fileItem.className = 'message-file-item';
+                    const fileSize = file.file ? file.file.size : file.size;
                     fileItem.innerHTML = `
                         <span class="file-icon">📄</span>
                         <span class="file-name">${file.name}</span>
-                        <span class="file-size">${this.formatFileSize(file.file.size)}</span>
+                        <span class="file-size">${this.formatFileSize(fileSize || 0)}</span>
                     `;
                     filesContainer.appendChild(fileItem);
                 });
@@ -909,6 +912,12 @@
 
             content.appendChild(bubble);
             messageDiv.appendChild(content);
+
+            messageDiv.dataset.rawContent = initialContent;
+
+            if (message.streaming) {
+                messageDiv.classList.add('chatbot-streaming');
+            }
 
             if (this.options.animations) {
                 messageDiv.style.opacity = '0';
@@ -940,6 +949,209 @@
         }
 
         /**
+         * Append content to streaming message
+         */
+        appendToMessage(messageElement, content) {
+            if (!messageElement) return;
+
+            const messageText = messageElement.querySelector('.message-text');
+            if (!messageText) return;
+
+            const previousContent = messageElement.dataset.rawContent || '';
+            const updatedContent = previousContent + content;
+
+            messageElement.dataset.rawContent = updatedContent;
+
+            if (this.options.enableMarkdown) {
+                messageText.innerHTML = this.formatMessage(updatedContent);
+            } else {
+                messageText.textContent = updatedContent;
+            }
+
+            if (this.options.autoScroll) {
+                this.scrollToBottom();
+            }
+        }
+
+        /**
+         * Finalize streaming message
+         */
+        finalizeMessage(messageElement) {
+            if (!messageElement) return;
+            messageElement.classList.remove('chatbot-streaming');
+        }
+
+        /**
+         * Format timestamp for display
+         */
+        formatTimestamp(timestamp) {
+            const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        /**
+         * Escape HTML content
+         */
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        /**
+         * Set typing indicator visibility
+         */
+        setTyping(isTyping) {
+            this.isTyping = isTyping;
+
+            if (!this.typingContainer) return;
+
+            if (!this.options.showTypingIndicator) {
+                this.typingContainer.style.display = 'none';
+                return;
+            }
+
+            this.typingContainer.style.display = isTyping ? 'flex' : 'none';
+        }
+
+        /**
+         * Update connection status indicators
+         */
+        setConnectionStatus(connected) {
+            this.isConnected = connected;
+
+            if (this.statusIndicator) {
+                this.statusIndicator.className = `chatbot-status-indicator ${connected ? 'connected' : 'disconnected'}`;
+            }
+
+            if (this.statusText) {
+                this.statusText.textContent = connected ? 'Online' : 'Connecting...';
+            }
+
+            if (connected && this.options.onConnect) {
+                this.options.onConnect();
+            } else if (!connected && this.options.onDisconnect) {
+                this.options.onDisconnect();
+            }
+        }
+
+        /**
+         * Handle errors and notify UI
+         */
+        handleError(error) {
+            console.error('EnhancedChatBot error:', error);
+
+            this.showError('Sorry, I encountered an error. Please try again.');
+            this.setTyping(false);
+
+            if (this.options.onError) {
+                this.options.onError(error);
+            }
+        }
+
+        /**
+         * Auto-resize textarea based on content
+         */
+        autoResizeTextarea() {
+            if (!this.inputField) return;
+
+            this.inputField.style.height = 'auto';
+            this.inputField.style.height = Math.min(this.inputField.scrollHeight, 160) + 'px';
+        }
+
+        /**
+         * Scroll message view to bottom
+         */
+        scrollToBottom() {
+            if (!this.messageContainer) return;
+
+            requestAnimationFrame(() => {
+                this.messageContainer.scrollTop = this.messageContainer.scrollHeight;
+            });
+        }
+
+        /**
+         * Show widget (floating mode)
+         */
+        show() {
+            if (this.options.mode !== 'floating') return;
+
+            this.chatContainer.style.display = 'block';
+
+            if (this.toggleButton) {
+                this.toggleButton.style.display = 'none';
+            }
+
+            if (this.options.animations) {
+                this.chatContainer.style.opacity = '0';
+                this.chatContainer.style.transform = 'translateY(20px) scale(0.95)';
+                requestAnimationFrame(() => {
+                    this.chatContainer.style.transition = 'all 0.3s ease';
+                    this.chatContainer.style.opacity = '1';
+                    this.chatContainer.style.transform = 'translateY(0) scale(1)';
+                });
+            }
+
+            setTimeout(() => this.inputField && this.inputField.focus(), 300);
+        }
+
+        /**
+         * Hide widget (floating mode)
+         */
+        hide() {
+            if (this.options.mode !== 'floating') return;
+
+            this.chatContainer.style.display = 'none';
+
+            if (this.toggleButton) {
+                this.toggleButton.style.display = 'flex';
+            }
+        }
+
+        /**
+         * Toggle widget visibility
+         */
+        toggle() {
+            if (this.options.mode !== 'floating') return;
+
+            if (this.chatContainer.style.display === 'none' || this.chatContainer.style.display === '') {
+                this.show();
+            } else {
+                this.hide();
+            }
+        }
+
+        /**
+         * Clear conversation history and reset view
+         */
+        clearHistory() {
+            this.messages = [];
+
+            if (this.messageContainer) {
+                this.messageContainer.innerHTML = '';
+            }
+
+            if (this.options.enableFileUpload) {
+                this.clearFiles();
+            }
+
+            this.showWelcomeMessage();
+        }
+
+        /**
+         * Send message programmatically
+         */
+        sendMessageProgrammatically(message) {
+            this.addMessage({
+                role: 'user',
+                content: message,
+                timestamp: new Date()
+            });
+
+            this.sendMessage(message);
+        }
+
+        /**
          * Show error message
          */
         showError(message) {
@@ -950,10 +1162,6 @@
                 error: true
             });
         }
-
-        // ... (continuing with existing methods from the original implementation)
-        // The rest of the methods remain similar to the original implementation
-        // but with enhanced features for file handling and dual API support
 
         /**
          * Generate unique conversation ID
@@ -979,8 +1187,22 @@
             return result;
         }
 
-        // Additional methods for enhanced functionality...
-        // (keeping existing methods from the original implementation)
+        /**
+         * Destroy widget instance
+         */
+        destroy() {
+            if (this.eventSource) {
+                this.eventSource.close();
+            }
+
+            if (this.websocket) {
+                this.websocket.close();
+            }
+
+            if (this.widget && this.widget.parentNode) {
+                this.widget.parentNode.removeChild(this.widget);
+            }
+        }
     }
 
     // Static methods
