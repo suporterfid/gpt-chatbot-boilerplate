@@ -111,6 +111,9 @@
             this.fileInput = null;
             this.filePreview = null;
 
+            // Bind methods used as callbacks/scheduled work to ensure correct context
+            this.scrollToBottom = this.scrollToBottom.bind(this);
+
             this.init();
         }
 
@@ -830,7 +833,11 @@
             this.messageContainer.appendChild(messageElement);
 
             if (this.options.autoScroll) {
-                this.scrollToBottom();
+                if (typeof this.scrollToBottom === 'function') {
+                    this.scrollToBottom();
+                } else if (this.messageContainer) {
+                    this.messageContainer.scrollTop = this.messageContainer.scrollHeight;
+                }
             }
 
             // Callback
@@ -969,7 +976,11 @@
             }
 
             if (this.options.autoScroll) {
-                this.scrollToBottom();
+                if (typeof this.scrollToBottom === 'function') {
+                    this.scrollToBottom();
+                } else if (this.messageContainer) {
+                    this.messageContainer.scrollTop = this.messageContainer.scrollHeight;
+                }
             }
         }
 
