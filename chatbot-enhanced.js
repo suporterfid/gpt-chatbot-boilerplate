@@ -14,7 +14,7 @@
     const DEFAULT_CONFIG = {
         // Basic settings
         mode: 'inline', // 'inline' or 'floating'
-        position: 'bottom-right', // 'bottom-right' or 'bottom-left'
+        position: 'bottom-right', // 'bottom-right', 'bottom-left', 'top-right', 'top-left'
         title: 'Chat Assistant',
         height: '400px',
         width: '350px',
@@ -70,6 +70,56 @@
         showTypingIndicator: true,
         showFilePreview: true,
 
+        layout: {
+            density: 'comfortable', // 'compact', 'comfortable', 'spacious'
+            floatingTogglePosition: 'auto',
+            header: {
+                showAvatar: true,
+                showTitle: true,
+                showStatusBadge: true,
+                showApiTypePill: true,
+                showPoweredBy: true,
+                showMaximize: true,
+                showClose: true
+            },
+            badges: {
+                showConnection: true,
+                showActiveMode: true
+            },
+            container: {
+                width: null,
+                height: null,
+                minHeight: '320px',
+                maxHeight: '85vh'
+            }
+        },
+
+        timeline: {
+            showTimestamps: undefined,
+            showApiBadges: true,
+            showRoleAvatars: true,
+            showToolEvents: true
+        },
+
+        accessibility: {
+            ariaLabel: 'AI assistant chat window',
+            liveRegion: 'polite',
+            announceErrors: true
+        },
+
+        proactive: {
+            enabled: false,
+            message: 'Hi there! Need any help?',
+            delay: 5000,
+            autoOpen: false,
+            autoOpenDelay: 6000,
+            dismissForHours: 12,
+            storageKey: 'chatbot-proactive-dismissed',
+            ctas: [
+                // { label: 'Ask a question', type: 'message', message: 'What can you do?' }
+            ]
+        },
+
         // Callbacks
         onMessage: null,
         onError: null,
@@ -88,6 +138,19 @@
             this.container = typeof container === 'string' ?
                 document.querySelector(container) : container;
             this.options = this.mergeConfig(DEFAULT_CONFIG, options);
+            this.layoutOptions = this.options.layout || {};
+            this.timelineOptions = Object.assign({
+                showTimestamps: typeof this.options.timestamps === 'boolean' ? this.options.timestamps : undefined,
+                showApiBadges: true,
+                showRoleAvatars: true,
+                showToolEvents: true
+            }, this.options.timeline || {});
+            if (typeof this.timelineOptions.showTimestamps === 'undefined') {
+                this.timelineOptions.showTimestamps = !!this.options.timestamps;
+            }
+            this.options.timestamps = this.timelineOptions.showTimestamps;
+            this.accessibilityOptions = Object.assign({}, DEFAULT_CONFIG.accessibility, this.options.accessibility || {});
+            this.proactiveOptions = Object.assign({}, DEFAULT_CONFIG.proactive, this.options.proactive || {});
 
             // Backwards compatibility: map deprecated assistantConfig into responsesConfig
             if (options.assistantConfig && !options.responsesConfig) {
@@ -105,6 +168,8 @@
             this.currentMessageElement = null;
             this.uploadedFiles = [];
             this.currentRunId = null;
+            this.proactiveTimer = null;
+            this.proactiveAutoOpenTimer = null;
 
             // UI Elements
             this.widget = null;
@@ -175,7 +240,7 @@
          * Create the chatbot widget HTML structure
          */
         createWidget() {
-            const widgetHTML = this.options.mode === 'floating' ? 
+            const widgetHTML = this.options.mode === 'floating' ?
                 this.createFloatingWidget() : this.createInlineWidget();
 
             if (this.options.mode === 'floating') {
@@ -190,6 +255,7 @@
             }
 
             this.cacheElements();
+            this.applyLayoutPreferences();
         }
 
         /**
@@ -197,22 +263,37 @@
          */
         createFloatingWidget() {
             const widget = document.createElement('div');
-            widget.className = 'chatbot-widget chatbot-floating enhanced';
+            widget.classList.add('chatbot-widget', 'chatbot-floating', 'enhanced');
+
+            const placement = this.resolveFloatingPosition();
+            widget.classList.add(`position-${placement}`);
+
+            const apiBadge = this.options.apiType === 'chat' ? 'CHAT' : 'RESP';
+
             widget.innerHTML = `
-                <div class="chatbot-toggle" title="Open Chat">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <div class="chatbot-toggle" title="Open Chat" role="button" aria-expanded="false">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                         <path d="M12 2C6.48 2 2 6.48 2 12C2 13.54 2.36 14.99 3.01 16.28L2.1 21.9L7.72 20.99C9.01 21.64 10.46 22 12 22C17.52 22 22 17.52 22 12S17.52 2 12 2Z" fill="currentColor"/>
                     </svg>
-                    ${this.options.apiType === 'chat' ?
-                        '<div class="api-indicator">CHAT</div>' :
-                        '<div class="api-indicator">RESP</div>'
-                    }
+                    <div class="api-indicator" aria-hidden="true">${apiBadge}</div>
                 </div>
-                <div class="chatbot-container" style="display: none;">
+                <div class="chatbot-container" style="display: none;" aria-hidden="true">
                     ${this.getWidgetContent()}
                 </div>
+                ${this.proactiveOptions.enabled ? this.getProactivePromptHTML() : ''}
             `;
+
             return widget;
+        }
+
+        /**
+         * Resolve floating widget position class
+         */
+        resolveFloatingPosition() {
+            const available = ['bottom-right', 'bottom-left', 'top-right', 'top-left'];
+            const layoutPosition = this.layoutOptions.floatingTogglePosition;
+            const preferred = (layoutPosition && layoutPosition !== 'auto') ? layoutPosition : this.options.position;
+            return available.includes(preferred) ? preferred : 'bottom-right';
         }
 
         /**
@@ -225,42 +306,82 @@
                 <div class="chatbot-container">
                     ${this.getWidgetContent()}
                 </div>
+                ${this.proactiveOptions.enabled ? this.getProactivePromptHTML() : ''}
             `;
             return widget;
+        }
+
+        /**
+         * Build proactive prompt markup when enabled
+         */
+        getProactivePromptHTML() {
+            const ctas = Array.isArray(this.proactiveOptions.ctas) ? this.proactiveOptions.ctas : [];
+            const actions = ctas.map((cta, index) => {
+                const label = this.escapeHtml(cta.label || 'Start chat');
+                return `<button type="button" class="proactive-cta" data-cta-index="${index}">${label}</button>`;
+            }).join('');
+
+            return `
+                <div class="chatbot-proactive" role="dialog" aria-live="polite" aria-hidden="true" hidden>
+                    <div class="proactive-inner">
+                        <button type="button" class="proactive-dismiss" aria-label="Dismiss prompt">✕</button>
+                        <div class="proactive-message">${this.escapeHtml(this.proactiveOptions.message || '')}</div>
+                        ${actions ? `<div class="proactive-actions">${actions}</div>` : ''}
+                    </div>
+                </div>
+            `;
         }
 
         /**
          * Get widget content HTML
          */
         getWidgetContent() {
+            const headerOptions = this.layoutOptions.header || {};
+            const badgeOptions = this.layoutOptions.badges || {};
+            const showAvatar = headerOptions.showAvatar !== false && this.timelineOptions.showRoleAvatars !== false;
+            const showTitle = headerOptions.showTitle !== false;
+            const showStatus = headerOptions.showStatusBadge !== false;
+            const showApiType = headerOptions.showApiTypePill !== false;
+            const showMaximize = headerOptions.showMaximize !== false;
+            const showClose = headerOptions.showClose !== false && this.options.mode === 'floating';
+            const showPoweredBy = headerOptions.showPoweredBy !== false;
+            const showConnectionBadge = badgeOptions.showConnection !== false;
+            const showModeChip = badgeOptions.showActiveMode !== false;
+
+            const apiLabel = this.options.apiType.toUpperCase();
+
             return `
-                <div class="chatbot-header">
+                <div class="chatbot-header" role="banner">
                     <div class="chatbot-header-info">
-                        ${this.options.assistant.avatar ? 
-                            `<img src="${this.options.assistant.avatar}" alt="Avatar" class="chatbot-avatar">` : 
-                            '<div class="chatbot-avatar-placeholder"></div>'
+                        ${showAvatar ?
+                            (this.options.assistant.avatar ?
+                                `<img src="${this.options.assistant.avatar}" alt="${this.escapeHtml(this.options.assistant.name || 'Assistant')} avatar" class="chatbot-avatar">` :
+                                '<div class="chatbot-avatar-placeholder" aria-hidden="true"></div>'
+                            ) : ''
                         }
                         <div class="chatbot-header-text">
-                            <h3 class="chatbot-title">${this.options.title}</h3>
-                            <p class="chatbot-status">
-                                <span class="chatbot-status-indicator"></span>
-                                <span class="chatbot-status-text">Online</span>
-                                <span class="chatbot-api-type">${this.options.apiType.toUpperCase()}</span>
-                            </p>
+                            ${showTitle ? `<h3 class="chatbot-title">${this.options.title}</h3>` : ''}
+                            ${showStatus ? `
+                                <p class="chatbot-status" role="status" aria-live="polite">
+                                    <span class="chatbot-status-indicator disconnected" aria-hidden="true"></span>
+                                    <span class="chatbot-status-text">Offline</span>
+                                    ${showConnectionBadge ? '<span class="chatbot-connection-badge" data-status="offline">Offline</span>' : ''}
+                                    ${showModeChip ? '<span class="chatbot-mode-chip" data-mode="auto">Auto</span>' : ''}
+                                    ${showApiType ? `<span class="chatbot-api-type" aria-label="${apiLabel} API mode">${apiLabel}</span>` : ''}
+                                </p>
+                            ` : ''}
                         </div>
                     </div>
                     <div class="chatbot-header-controls">
-                        <button class="chatbot-maximize" title="Maximize" aria-pressed="false">▢</button>
-                        ${this.options.mode === 'floating' ? 
-                            '<button class="chatbot-close" title="Close Chat">✕</button>' : ''
-                        }
+                        ${showMaximize ? '<button class="chatbot-maximize" title="Maximize" aria-pressed="false">▢</button>' : ''}
+                        ${showClose ? '<button class="chatbot-close" title="Close Chat">✕</button>' : ''}
                     </div>
                 </div>
-                <div class="chatbot-messages" id="chatbot-messages-${this.conversationId}">
+                <div class="chatbot-messages" id="chatbot-messages-${this.conversationId}" role="log" aria-live="${this.accessibilityOptions.liveRegion}" aria-relevant="additions text">
                     <!-- Messages will be added here -->
                 </div>
-                <div class="chatbot-typing" id="chatbot-typing-${this.conversationId}" style="display: none;">
-                    <div class="chatbot-typing-indicator">
+                <div class="chatbot-typing" id="chatbot-typing-${this.conversationId}" style="display: none;" role="status" aria-live="polite">
+                    <div class="chatbot-typing-indicator" aria-hidden="true">
                         <span></span>
                         <span></span>
                         <span></span>
@@ -268,25 +389,28 @@
                     <span class="chatbot-typing-text">${this.options.assistant.thinking}</span>
                 </div>
                 ${this.options.enableFileUpload ? this.getFilePreviewHTML() : ''}
-                <div class="chatbot-input-container">
+                <div class="chatbot-input-container" role="form" aria-label="Message composer">
                     <div class="chatbot-input-wrapper">
                         ${this.options.enableFileUpload ? this.getFileInputHTML() : ''}
-                        <textarea 
-                            class="chatbot-input" 
+                        <textarea
+                            class="chatbot-input"
                             placeholder="${this.options.assistant.placeholder}"
                             rows="1"
+                            aria-label="${this.accessibilityOptions.ariaLabel} message input"
                             id="chatbot-input-${this.conversationId}"></textarea>
-                        <button class="chatbot-send" title="Send Message" id="chatbot-send-${this.conversationId}">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <button class="chatbot-send" title="Send Message" id="chatbot-send-${this.conversationId}" aria-label="Send message">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
                                 <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="currentColor"/>
                             </svg>
                         </button>
                     </div>
-                    <div class="chatbot-footer">
-                        <small class="chatbot-powered-by">
-                            Powered by <a href="#" target="_blank">OpenAI ${this.options.apiType === 'chat' ? 'Chat Completions' : 'Responses'}</a>
-                        </small>
-                    </div>
+                    ${showPoweredBy ? `
+                        <div class="chatbot-footer">
+                            <small class="chatbot-powered-by">
+                                Powered by <a href="#" target="_blank" rel="noopener">OpenAI ${this.options.apiType === 'chat' ? 'Chat Completions' : 'Responses'}</a>
+                            </small>
+                        </div>
+                    ` : ''}
                 </div>
             `;
         }
@@ -340,12 +464,245 @@
             this.header = this.widget.querySelector('.chatbot-header');
             this.statusIndicator = this.widget.querySelector('.chatbot-status-indicator');
             this.statusText = this.widget.querySelector('.chatbot-status-text');
+            this.connectionBadge = this.widget.querySelector('.chatbot-connection-badge');
+            this.modeChip = this.widget.querySelector('.chatbot-mode-chip');
+            this.inputWrapper = this.widget.querySelector('.chatbot-input-wrapper');
+            this.proactiveBanner = this.widget.querySelector('.chatbot-proactive');
 
             if (this.options.enableFileUpload) {
                 this.fileInput = this.widget.querySelector('.chatbot-file-input');
                 this.fileButton = this.widget.querySelector('.chatbot-file-button');
                 this.filePreview = this.widget.querySelector('.chatbot-file-preview');
             }
+        }
+
+        /**
+         * Apply layout classes and sizing tokens
+         */
+        applyLayoutPreferences() {
+            if (!this.widget) return;
+
+            const density = this.layoutOptions.density || 'comfortable';
+            ['layout-compact', 'layout-comfortable', 'layout-spacious'].forEach(cls => this.widget.classList.remove(cls));
+            this.widget.classList.add(`layout-${density}`);
+
+            const containerConfig = this.layoutOptions.container || {};
+            const width = containerConfig.width || this.options.width;
+            const height = containerConfig.height || this.options.height;
+            const minHeight = containerConfig.minHeight || '320px';
+            const maxHeight = containerConfig.maxHeight || '85vh';
+
+            if (this.widget) {
+                this.widget.style.setProperty('--chatbot-width', width || '350px');
+                this.widget.style.setProperty('--chatbot-height', height || '500px');
+                this.widget.style.setProperty('--chatbot-min-height', minHeight);
+                this.widget.style.setProperty('--chatbot-max-height', maxHeight);
+            }
+
+            if (this.chatContainer) {
+                this.chatContainer.setAttribute('role', 'region');
+                this.chatContainer.setAttribute('aria-label', this.accessibilityOptions.ariaLabel);
+                this.chatContainer.setAttribute('aria-hidden', this.options.mode === 'floating' ? 'true' : 'false');
+            }
+
+            if (this.messageContainer) {
+                this.messageContainer.setAttribute('tabindex', '0');
+            }
+
+            if (this.toggleButton) {
+                this.toggleButton.setAttribute('aria-controls', `chatbot-messages-${this.conversationId}`);
+                this.toggleButton.setAttribute('aria-label', `Open ${this.options.title}`);
+            }
+
+            if (this.options.mode === 'floating') {
+                const placement = this.resolveFloatingPosition();
+                ['position-bottom-right', 'position-bottom-left', 'position-top-right', 'position-top-left'].forEach(cls => this.widget.classList.remove(cls));
+                this.widget.classList.add(`position-${placement}`);
+            }
+
+            if (this.proactiveBanner) {
+                this.setupProactivePrompt();
+            }
+
+            this.setActiveMode(this.connectionType || 'auto');
+        }
+
+        /**
+         * Initialise proactive prompt timers and bindings
+         */
+        setupProactivePrompt() {
+            if (!this.proactiveOptions.enabled || !this.proactiveBanner) {
+                return;
+            }
+
+            if (this.isProactiveSuppressed()) {
+                this.proactiveBanner.hidden = true;
+                this.proactiveBanner.setAttribute('aria-hidden', 'true');
+                return;
+            }
+
+            const dismissButton = this.proactiveBanner.querySelector('.proactive-dismiss');
+            if (dismissButton && !dismissButton.dataset.bound) {
+                dismissButton.dataset.bound = 'true';
+                dismissButton.addEventListener('click', () => {
+                    this.hideProactivePrompt();
+                    this.persistProactiveSuppression();
+                });
+            }
+
+            const ctaButtons = Array.from(this.proactiveBanner.querySelectorAll('.proactive-cta'));
+            ctaButtons.forEach((button) => {
+                if (!button.dataset.bound) {
+                    button.dataset.bound = 'true';
+                    button.addEventListener('click', (event) => {
+                        const index = Number(event.currentTarget.dataset.ctaIndex || 0);
+                        const ctaConfig = Array.isArray(this.proactiveOptions.ctas) ? this.proactiveOptions.ctas[index] : null;
+                        this.handleProactiveCTA(ctaConfig);
+                    });
+                }
+            });
+
+            clearTimeout(this.proactiveTimer);
+            clearTimeout(this.proactiveAutoOpenTimer);
+            const delay = Math.max(0, Number(this.proactiveOptions.delay || 0));
+            this.proactiveTimer = setTimeout(() => {
+                if (this.isProactiveSuppressed()) {
+                    return;
+                }
+
+                this.showProactivePrompt();
+
+                if (this.proactiveOptions.autoOpen) {
+                    const autoDelay = Math.max(0, Number(this.proactiveOptions.autoOpenDelay || delay));
+                    clearTimeout(this.proactiveAutoOpenTimer);
+                    this.proactiveAutoOpenTimer = setTimeout(() => {
+                        if (!this.isProactiveSuppressed()) {
+                            this.show();
+                        }
+                    }, autoDelay);
+                }
+            }, delay);
+        }
+
+        /**
+         * Determine if proactive prompt should be suppressed
+         */
+        isProactiveSuppressed() {
+            const key = this.proactiveOptions.storageKey || 'chatbot-proactive-dismissed';
+            const now = Date.now();
+
+            try {
+                const stored = window.localStorage.getItem(key);
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    if (parsed && parsed.expiresAt && Number(parsed.expiresAt) > now) {
+                        return true;
+                    }
+                }
+            } catch (error) {
+                // localStorage may be unavailable; fall back to cookies
+            }
+
+            const cookieValue = this.readCookie(key);
+            if (cookieValue) {
+                const expires = Number(cookieValue);
+                if (!Number.isNaN(expires) && expires > now) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Persist proactive suppression marker
+         */
+        persistProactiveSuppression() {
+            const key = this.proactiveOptions.storageKey || 'chatbot-proactive-dismissed';
+            const hours = Math.max(0.25, Number(this.proactiveOptions.dismissForHours || 12));
+            const expiresAt = Date.now() + hours * 60 * 60 * 1000;
+
+            const payload = JSON.stringify({ expiresAt });
+            try {
+                window.localStorage.setItem(key, payload);
+            } catch (error) {
+                // Ignore write failure (storage disabled)
+            }
+
+            const maxAge = Math.round(hours * 60 * 60);
+            document.cookie = `${key}=${expiresAt}; path=/; max-age=${maxAge}; SameSite=Lax`;
+        }
+
+        /**
+         * Show proactive prompt banner
+         */
+        showProactivePrompt() {
+            if (!this.proactiveBanner) return;
+
+            this.proactiveBanner.hidden = false;
+            this.proactiveBanner.setAttribute('aria-hidden', 'false');
+            this.proactiveBanner.classList.add('is-visible');
+        }
+
+        /**
+         * Hide proactive prompt banner
+         */
+        hideProactivePrompt() {
+            if (!this.proactiveBanner) return;
+
+            this.proactiveBanner.classList.remove('is-visible');
+            this.proactiveBanner.setAttribute('aria-hidden', 'true');
+            this.proactiveBanner.hidden = true;
+        }
+
+        /**
+         * Handle CTA interaction from proactive prompt
+         */
+        handleProactiveCTA(cta) {
+            if (!cta) {
+                this.show();
+                this.persistProactiveSuppression();
+                this.hideProactivePrompt();
+                return;
+            }
+
+            const dismissOnClick = cta.dismissOnClick !== false;
+
+            if (cta.type === 'message' && cta.message) {
+                this.show();
+                if (this.inputField) {
+                    this.inputField.value = cta.message;
+                    this.autoResizeTextarea();
+                    this.inputField.focus();
+                }
+                if (cta.autoSend) {
+                    this.handleSend();
+                }
+            } else {
+                this.show();
+            }
+
+            if (dismissOnClick) {
+                this.persistProactiveSuppression();
+                this.hideProactivePrompt();
+            }
+        }
+
+        /**
+         * Read cookie helper
+         */
+        readCookie(name) {
+            if (typeof document === 'undefined') return null;
+            const value = document.cookie || '';
+            const parts = value.split(';').map(part => part.trim());
+            for (const part of parts) {
+                if (!part) continue;
+                const [cookieName, ...rest] = part.split('=');
+                if (cookieName === name) {
+                    return rest.join('=');
+                }
+            }
+            return null;
         }
 
         /**
@@ -368,6 +725,10 @@
                     --chatbot-font-size: ${theme.fontSize};
                     --chatbot-border-radius: ${theme.borderRadius};
                     --chatbot-shadow: ${theme.shadow};
+                    --chatbot-width: ${widget && widget.style.getPropertyValue('--chatbot-width') ? widget.style.getPropertyValue('--chatbot-width') : (this.layoutOptions.container && this.layoutOptions.container.width) || this.options.width};
+                    --chatbot-height: ${widget && widget.style.getPropertyValue('--chatbot-height') ? widget.style.getPropertyValue('--chatbot-height') : (this.layoutOptions.container && this.layoutOptions.container.height) || this.options.height};
+                    --chatbot-min-height: ${widget && widget.style.getPropertyValue('--chatbot-min-height') ? widget.style.getPropertyValue('--chatbot-min-height') : (this.layoutOptions.container && this.layoutOptions.container.minHeight) || '320px'};
+                    --chatbot-max-height: ${widget && widget.style.getPropertyValue('--chatbot-max-height') ? widget.style.getPropertyValue('--chatbot-max-height') : (this.layoutOptions.container && this.layoutOptions.container.maxHeight) || '85vh'};
                 }
 
                 .api-indicator {
@@ -392,15 +753,6 @@
                 }
             `;
             document.head.appendChild(style);
-
-            // Apply dimensions
-            if (this.options.mode === 'inline') {
-                widget.style.height = this.options.height;
-                widget.style.width = this.options.width;
-            } else {
-                this.chatContainer.style.height = this.options.height;
-                this.chatContainer.style.width = this.options.width;
-            }
         }
 
         /**
@@ -428,18 +780,27 @@
             }
 
             // Send button
-            this.sendButton.addEventListener('click', () => this.handleSend());
+            if (this.sendButton) {
+                this.sendButton.addEventListener('click', () => this.handleSend());
+            }
 
             // Input field
-            this.inputField.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    this.handleSend();
-                }
-            });
+            if (this.inputField) {
+                this.inputField.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.handleSend();
+                    }
+                });
 
-            // Auto-resize textarea
-            this.inputField.addEventListener('input', () => this.autoResizeTextarea());
+                // Auto-resize textarea
+                this.inputField.addEventListener('input', () => {
+                    this.autoResizeTextarea();
+                    this.clearComposerError();
+                });
+
+                this.inputField.addEventListener('focus', () => this.clearComposerError());
+            }
 
             // File upload events
             if (this.options.enableFileUpload) {
@@ -452,6 +813,18 @@
                         clearButton.addEventListener('click', () => this.clearFiles());
                     }
                 }
+            }
+
+            if (this.widget && this.options.mode === 'floating') {
+                this.widget.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape' && this.isOpen()) {
+                        event.preventDefault();
+                        this.hide();
+                        if (this.toggleButton) {
+                            this.toggleButton.focus();
+                        }
+                    }
+                });
             }
         }
 
@@ -587,6 +960,8 @@
             const message = this.inputField.value.trim();
             if (!message && this.uploadedFiles.length === 0) return;
 
+            this.clearComposerError();
+
             // Add user message
             this.addMessage({
                 role: 'user',
@@ -610,6 +985,7 @@
          */
         async sendMessage(message, files = []) {
             this.setTyping(true);
+            this.setComposerBusy(true);
 
             try {
                 // Prepare request data
@@ -662,6 +1038,7 @@
                 this.handleError(error);
             } finally {
                 this.setTyping(false);
+                this.setComposerBusy(false);
             }
         }
 
@@ -711,6 +1088,7 @@
                     ws.onopen = () => {
                         this.websocket = ws;
                         this.connectionType = 'websocket';
+                        this.setActiveMode('websocket');
                         this.setConnectionStatus(true);
 
                         ws.send(JSON.stringify(requestData));
@@ -723,11 +1101,14 @@
                     };
 
                     ws.onerror = () => {
+                        this.setConnectionStatus(false);
+                        this.setActiveMode('auto');
                         resolve(false);
                     };
 
                     ws.onclose = () => {
                         this.setConnectionStatus(false);
+                        this.setActiveMode('auto');
                         this.websocket = null;
                     };
 
@@ -775,6 +1156,7 @@
 
                     this.eventSource = eventSource;
                     this.connectionType = 'sse';
+                    this.setActiveMode('sse');
 
                     eventSource.onopen = () => {
                         this.setConnectionStatus(true);
@@ -793,6 +1175,7 @@
                     eventSource.onerror = () => {
                         try { eventSource.close(); } catch (_) {}
                         this.setConnectionStatus(false);
+                        this.setActiveMode('auto');
                         resolve(false);
                     };
 
@@ -807,6 +1190,7 @@
          */
         async tryAjax(requestData) {
             this.connectionType = 'ajax';
+            this.setActiveMode('ajax');
 
             requestData.stream = false; // Disable streaming for AJAX
 
@@ -823,6 +1207,7 @@
             }
 
             const data = await response.json();
+            this.setConnectionStatus(true);
             this.addMessage({
                 role: 'assistant',
                 content: data.response || data.content,
@@ -923,6 +1308,10 @@
             const toolName = data.tool_name;
             let toolArgs = data.arguments;
             const callId = data.call_id || null;
+
+            if (this.timelineOptions.showToolEvents === false) {
+                return;
+            }
 
             if (typeof toolArgs === 'string') {
                 try {
@@ -1031,11 +1420,19 @@
         createMessageElement(message) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `chatbot-message chatbot-message-${message.role} ${message.apiType || 'chat'}`;
+            messageDiv.dataset.role = message.role;
+            messageDiv.setAttribute('role', 'article');
+            messageDiv.setAttribute('tabindex', '-1');
+
+            if (message.error) {
+                messageDiv.classList.add('chatbot-message-error');
+                messageDiv.setAttribute('aria-live', 'assertive');
+            }
 
             const content = document.createElement('div');
             content.className = 'chatbot-message-content';
 
-            if (message.role === 'assistant' && this.options.assistant.avatar) {
+            if (message.role === 'assistant' && this.options.assistant.avatar && this.timelineOptions.showRoleAvatars !== false) {
                 const avatar = document.createElement('img');
                 avatar.src = this.options.assistant.avatar;
                 avatar.className = 'chatbot-message-avatar';
@@ -1046,7 +1443,7 @@
             bubble.className = 'chatbot-message-bubble';
 
             // Add API type indicator
-            if (message.apiType) {
+            if (message.apiType && this.timelineOptions.showApiBadges !== false) {
                 const apiIndicator = document.createElement('div');
                 apiIndicator.className = 'message-api-indicator';
                 apiIndicator.textContent = message.apiType.toUpperCase();
@@ -1085,6 +1482,7 @@
                 });
 
                 bubble.appendChild(filesContainer);
+                messageDiv.classList.add('has-files');
             }
 
             if (this.options.timestamps && message.timestamp) {
@@ -1094,10 +1492,16 @@
                 bubble.appendChild(timestamp);
             }
 
+            if (message.role === 'assistant' && this.timelineOptions.showToolEvents === false) {
+                bubble.classList.add('hide-tool-events');
+            }
+
             content.appendChild(bubble);
             messageDiv.appendChild(content);
 
             messageDiv.dataset.rawContent = initialContent;
+            const speakerLabel = message.role === 'user' ? 'User' : (message.role === 'assistant' ? (this.options.assistant.name || 'Assistant') : 'System');
+            messageDiv.setAttribute('aria-label', `${speakerLabel} message`);
 
             if (message.streaming) {
                 messageDiv.classList.add('chatbot-streaming');
@@ -1121,15 +1525,82 @@
          */
         formatMessage(content) {
             if (!this.options.enableMarkdown) {
-                return this.escapeHtml(content);
+                return this.escapeHtml(content || '');
             }
 
-            return content
-                .replace(/\n/g, '<br>')
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/`(.*?)`/g, '<code>$1</code>')
-                .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+            let text = (content || '').replace(/\r\n/g, '\n');
+            const codeBlocks = [];
+
+            text = text.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
+                const index = codeBlocks.length;
+                const languageAttr = lang ? ` data-language="${this.escapeHtml(lang)}"` : '';
+                codeBlocks.push(`<pre><code${languageAttr}>${this.escapeHtml(code.trimEnd())}</code></pre>`);
+                return `{{CODE_BLOCK_${index}}}`;
+            });
+
+            text = this.escapeHtml(text);
+
+            // Headings
+            text = text.replace(/^###### (.+)$/gm, '<h6>$1</h6>')
+                .replace(/^##### (.+)$/gm, '<h5>$1</h5>')
+                .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                .replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+            // Blockquotes
+            text = text.replace(/^>\s?(.+)$/gm, '<blockquote>$1</blockquote>');
+
+            // Links
+            text = text.replace(/\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+            // Bold / italic / strikethrough
+            text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/~~(.+?)~~/g, '<del>$1</del>');
+
+            // Inline code
+            text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+            // Lists
+            text = text.replace(/(^|\n)(\s*[-*+] .+(?:\n\s*[-*+] .+)*)/g, (match, prefix, list) => {
+                const items = list.trim().split(/\n/).map(item => `<li>${item.replace(/^\s*[-*+]\s*/, '')}</li>`).join('');
+                return `${prefix}<ul>${items}</ul>`;
+            });
+
+            text = text.replace(/(^|\n)(\s*\d+[.)] .+(?:\n\s*\d+[.)] .+)*)/g, (match, prefix, list) => {
+                const items = list.trim().split(/\n/).map(item => `<li>${item.replace(/^\s*\d+[.)]\s*/, '')}</li>`).join('');
+                return `${prefix}<ol>${items}</ol>`;
+            });
+
+            // Tables (very lightweight): convert pipes into table structure
+            text = text.replace(/(^|\n)(\|.+\|\n)(\|[\-\s:]+\|\n)((?:\|.*\|\n?)*)/g, (match) => {
+                const rows = match.trim().split(/\n/).filter(Boolean);
+                if (rows.length < 2) return match;
+                const headerCells = rows[0].split('|').filter(cell => cell.trim().length > 0).map(cell => `<th>${cell.trim()}</th>`).join('');
+                const bodyRows = rows.slice(2).map(row => {
+                    const cells = row.split('|').filter(cell => cell.trim().length > 0).map(cell => `<td>${cell.trim()}</td>`).join('');
+                    return `<tr>${cells}</tr>`;
+                }).join('');
+                return `<table><thead><tr>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+            });
+
+            // Paragraph and line breaks
+            text = text.replace(/\n{2,}/g, '</p><p>');
+            text = text.replace(/\n/g, '<br>');
+            text = `<p>${text}</p>`;
+            text = text.replace(/<p><\/p>/g, '');
+            text = text.replace(/<p>(<(?:ul|ol|table|blockquote|h[1-6])>)/g, '$1');
+            text = text.replace(/(<\/(?:ul|ol|table|blockquote|h[1-6])>)<\/p>/g, '$1');
+            text = text.replace(/<br>(<(?:ul|ol|table|blockquote|h[1-6])>)/g, '$1');
+            text = text.replace(/(<\/(?:ul|ol|table|blockquote|h[1-6])>)<br>/g, '$1');
+
+            codeBlocks.forEach((block, index) => {
+                text = text.replace(`{{CODE_BLOCK_${index}}}`, block);
+            });
+
+            return text;
         }
 
         /**
@@ -1213,7 +1684,16 @@
             }
 
             if (this.statusText) {
-                this.statusText.textContent = connected ? 'Online' : 'Connecting...';
+                this.statusText.textContent = connected ? 'Online' : 'Offline';
+            }
+
+            if (this.connectionBadge) {
+                this.connectionBadge.dataset.status = connected ? 'online' : 'offline';
+                this.connectionBadge.textContent = connected ? 'Online' : 'Offline';
+            }
+
+            if (this.widget) {
+                this.widget.setAttribute('data-connection', connected ? 'online' : 'offline');
             }
 
             if (connected && this.options.onConnect) {
@@ -1224,6 +1704,44 @@
         }
 
         /**
+         * Update mode badge based on active transport
+         */
+        setActiveMode(mode) {
+            if (!this.modeChip) return;
+
+            let label = 'Auto';
+            let modeKey = 'auto';
+
+            switch (mode) {
+                case 'websocket':
+                    label = 'WebSocket';
+                    modeKey = 'websocket';
+                    break;
+                case 'sse':
+                    label = 'SSE';
+                    modeKey = 'sse';
+                    break;
+                case 'ajax':
+                    label = 'HTTP';
+                    modeKey = 'http';
+                    break;
+                case 'chat':
+                case 'responses':
+                    label = mode.charAt(0).toUpperCase() + mode.slice(1);
+                    modeKey = mode.toLowerCase();
+                    break;
+                default:
+                    if (typeof mode === 'string' && mode.trim().length > 0 && mode !== 'auto') {
+                        label = mode;
+                        modeKey = mode.toLowerCase();
+                    }
+            }
+
+            this.modeChip.dataset.mode = modeKey;
+            this.modeChip.textContent = label;
+        }
+
+        /**
          * Handle errors and notify UI
          */
         handleError(error) {
@@ -1231,6 +1749,9 @@
 
             this.showError('Sorry, I encountered an error. Please try again.');
             this.setTyping(false);
+            this.setComposerBusy(false);
+            this.setComposerError();
+            this.setConnectionStatus(false);
 
             if (this.options.onError) {
                 this.options.onError(error);
@@ -1245,6 +1766,55 @@
 
             this.inputField.style.height = 'auto';
             this.inputField.style.height = Math.min(this.inputField.scrollHeight, 160) + 'px';
+        }
+
+        /**
+         * Toggle composer busy state visuals
+         */
+        setComposerBusy(isBusy) {
+            if (this.sendButton) {
+                this.sendButton.disabled = !!isBusy;
+                this.sendButton.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+            }
+
+            if (this.inputWrapper) {
+                this.inputWrapper.classList.toggle('is-busy', !!isBusy);
+                this.inputWrapper.classList.toggle('is-disabled', !!isBusy);
+            }
+
+            if (this.inputField) {
+                if (isBusy) {
+                    this.inputField.setAttribute('data-busy', 'true');
+                } else {
+                    this.inputField.removeAttribute('data-busy');
+                }
+            }
+        }
+
+        /**
+         * Highlight composer error state
+         */
+        setComposerError() {
+            if (this.inputWrapper) {
+                this.inputWrapper.classList.add('has-error');
+            }
+
+            if (this.inputField) {
+                this.inputField.setAttribute('aria-invalid', 'true');
+            }
+        }
+
+        /**
+         * Clear composer error state
+         */
+        clearComposerError() {
+            if (this.inputWrapper) {
+                this.inputWrapper.classList.remove('has-error');
+            }
+
+            if (this.inputField) {
+                this.inputField.removeAttribute('aria-invalid');
+            }
         }
 
         /**
@@ -1265,9 +1835,12 @@
             if (this.options.mode !== 'floating') return;
 
             this.chatContainer.style.display = 'block';
+            this.chatContainer.setAttribute('aria-hidden', 'false');
+            this.widget.classList.add('is-open');
 
             if (this.toggleButton) {
                 this.toggleButton.style.display = 'none';
+                this.toggleButton.setAttribute('aria-expanded', 'true');
             }
 
             if (this.options.animations) {
@@ -1290,9 +1863,12 @@
             if (this.options.mode !== 'floating') return;
 
             this.chatContainer.style.display = 'none';
+            this.chatContainer.setAttribute('aria-hidden', 'true');
+            this.widget.classList.remove('is-open');
 
             if (this.toggleButton) {
                 this.toggleButton.style.display = 'flex';
+                this.toggleButton.setAttribute('aria-expanded', 'false');
             }
         }
 
@@ -1302,11 +1878,21 @@
         toggle() {
             if (this.options.mode !== 'floating') return;
 
-            if (this.chatContainer.style.display === 'none' || this.chatContainer.style.display === '') {
+            if (!this.isOpen()) {
                 this.show();
             } else {
                 this.hide();
             }
+        }
+
+        /**
+         * Determine if widget is currently visible
+         */
+        isOpen() {
+            if (this.options.mode !== 'floating') {
+                return true;
+            }
+            return this.chatContainer && this.chatContainer.style.display !== 'none';
         }
 
         /**
@@ -1356,6 +1942,7 @@
          * Show error message
          */
         showError(message) {
+            this.setComposerError();
             this.addMessage({
                 role: 'system',
                 content: message,
@@ -1375,13 +1962,24 @@
          * Merge configuration objects
          */
         mergeConfig(defaults, options) {
-            const result = { ...defaults };
+            const baseDefaults = (defaults && typeof defaults === 'object') ? defaults : (Array.isArray(defaults) ? defaults : {});
+            const result = Array.isArray(baseDefaults) ? [...baseDefaults] : { ...baseDefaults };
 
             for (const key in options) {
-                if (typeof options[key] === 'object' && !Array.isArray(options[key]) && options[key] !== null) {
-                    result[key] = { ...result[key], ...options[key] };
+                const defaultValue = baseDefaults ? baseDefaults[key] : undefined;
+                const optionValue = options[key];
+
+                if (
+                    optionValue &&
+                    typeof optionValue === 'object' &&
+                    !Array.isArray(optionValue)
+                ) {
+                    const base = (defaultValue && typeof defaultValue === 'object' && !Array.isArray(defaultValue))
+                        ? defaultValue
+                        : {};
+                    result[key] = this.mergeConfig(base, optionValue);
                 } else {
-                    result[key] = options[key];
+                    result[key] = optionValue;
                 }
             }
 
@@ -1398,6 +1996,16 @@
 
             if (this.websocket) {
                 this.websocket.close();
+            }
+
+            if (this.proactiveTimer) {
+                clearTimeout(this.proactiveTimer);
+                this.proactiveTimer = null;
+            }
+
+            if (this.proactiveAutoOpenTimer) {
+                clearTimeout(this.proactiveAutoOpenTimer);
+                this.proactiveAutoOpenTimer = null;
             }
 
             if (this.widget && this.widget.parentNode) {
