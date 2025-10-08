@@ -1,7 +1,7 @@
 # GPT Codex OpenAI Responses API Migration Tasks
 
 ## Tasks:
-1. **Add Responses API configuration and prompt support**  
+1. **Add Responses API configuration and prompt support**
    Expand configuration handling to support `API_TYPE=responses`, expose new environment variables (including the saved prompt ID), and ensure the frontend defaults to the Responses workflow when configured.
 
 2. **Implement Responses API streaming in `OpenAIClient`**  
@@ -13,8 +13,27 @@
 4. **Update frontend streaming for Responses events**  
    Adapt the chat widget to interpret the backend's Responses-style SSE payloads while remaining compatible with chat completions.
 
-5. **Refresh docs and remove obsolete assistant scaffolding**  
+5. **Refresh docs and remove obsolete assistant scaffolding**
    Update documentation for Responses mode, remove unused assistant helpers, and provide guidance for managing prompt IDs and fallbacks.
+
+## CI/CD pipeline tasks
+1. **Create workflow skeleton**
+   Add `.github/workflows/cicd.yml` triggered on pushes to `main` and all pull requests, with empty `quality`, `package`, and `deploy` jobs prepared for later steps.
+
+2. **Implement quality checks**
+   Configure the `quality` job to set up PHP 8.2 with required extensions, install Composer dependencies for development, lint all PHP files, and run PHPUnit when the `tests/` directory exists.
+
+3. **Build production artifact**
+   In the `package` job (only on `main`), install production dependencies with optimized autoloading, inject the `.env` content from the `PRODUCTION_ENV` secret, and stage deployable files into a temporary directory.
+
+4. **Publish release archive**
+   Compress the staged files into `chatbot-release.tar.gz` and upload it using `actions/upload-artifact@v4` so other jobs can reuse the bundle.
+
+5. **Deploy via SFTP**
+   Configure the `deploy` job to download the artifact, extract it, and publish the files with `SamKirkland/FTP-Deploy-Action@v4` using SFTP credentials stored in repository secrets.
+
+6. **Secure production environment**
+   Document required GitHub secrets—`PRODUCTION_ENV`, `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PASSWORD` or `DEPLOY_KEY`, and `DEPLOY_PATH`—and gate deployment behind the `production` environment for manual approvals.
 
    Perfeito 👍 — essa é uma atualização importante do novo modelo de uso da **Responses API**, pois ela introduz o conceito de **Prompt Templates** (salvos previamente via `/v1/prompts`) e referenciados por **ID** em chamadas subsequentes.
 Abaixo está uma **versão revisada e expandida** da especificação anterior, **atualizada** para incluir o suporte a **pre-saved prompts (prompt IDs)**.
