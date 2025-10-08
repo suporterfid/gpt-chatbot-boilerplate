@@ -2,7 +2,7 @@
 <html>
 <head>
     <title>My Website with AI Assistant</title>
-    <link rel="stylesheet" href="chatbot-enhanced.css">
+    <link rel="stylesheet" href="chatbot.css">
 </head>
 <body>
     <h1>Welcome to the GPT Assistant Boilerplate</h1>
@@ -20,7 +20,7 @@
             
             // Your assistant configuration
             assistantConfig: {
-                assistantId: 'asst_'
+                assistantId: 'sst_6HwOy1cHxdhBm2aFFa7h6Eci'
             },
             
             // Branding and customization
@@ -43,7 +43,7 @@
             
             // Event handlers
             onConnect: function() {
-                console.log('Connected to assistant:', 'asst_');
+                console.log('Connected to assistant:', 'sst_6HwOy1cHxdhBm2aFFa7h6Eci');
             },
             
             onMessage: function(message) {
@@ -51,7 +51,7 @@
                 if (message.role === 'assistant') {
                     // Your analytics code here
                     gtag('event', 'assistant_message', {
-                        'assistant_id': 'asst_',
+                        'assistant_id': 'sst_6HwOy1cHxdhBm2aFFa7h6Eci',
                         'message_length': message.content.length
                     });
                 }
