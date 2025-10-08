@@ -73,6 +73,7 @@
     flex-direction: column;
     overflow: hidden;
     position: relative;
+    min-height: 0;
 }
 
 .chatbot-inline .chatbot-container {
@@ -216,6 +217,8 @@
     background: var(--chatbot-background-color);
     scroll-behavior: smooth;
     overscroll-behavior: contain;
+    min-height: 0;
+    max-height: 100%;
 }
 
 .chatbot-messages::-webkit-scrollbar {
@@ -261,6 +264,13 @@
     border-radius: var(--chatbot-border-radius);
     word-wrap: break-word;
     position: relative;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* Improve default floating height behavior on smaller viewports */
+.chatbot-widget.chatbot-floating .chatbot-container {
+    max-height: min(85vh, 85dvh);
 }
 
 .chatbot-message-assistant .chatbot-message-bubble {
