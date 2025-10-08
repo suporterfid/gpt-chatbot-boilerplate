@@ -134,6 +134,19 @@ This guide covers various deployment scenarios for the GPT Chatbot Boilerplate, 
 - **Memory**: Minimum 512MB RAM
 - **Storage**: Minimum 1GB available space
 
+### GitHub Actions Secrets for CI/CD
+
+The GitHub Actions pipeline expects the following secrets before a production deployment can be approved through the `production` environment gate:
+
+- `PRODUCTION_ENV` – multi-line contents for the `.env` file that will be injected into the release artifact.
+- `DEPLOY_HOST` – hostname or IP address of the target SFTP server.
+- `DEPLOY_USER` – SFTP username with write permissions to the deployment directory.
+- `DEPLOY_PASSWORD` or `DEPLOY_KEY` – authentication credentials for the SFTP account (only one is required).
+- `DEPLOY_PORT` – optional override for the SFTP port (defaults to `22` when omitted).
+- `DEPLOY_PATH` – remote directory where the packaged chatbot should be published.
+
+Add these secrets under **Settings → Secrets and variables → Actions** in GitHub, and require manual approval for the `production` environment so deployments are reviewed before they execute.
+
 ### Step-by-Step Production Setup
 
 1. **Server Preparation**:
