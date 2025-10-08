@@ -187,7 +187,8 @@ class OpenAIClient {
             CURLOPT_POSTFIELDS => $postFields,
             CURLOPT_HTTPHEADER => [
                 'Authorization: Bearer ' . $this->apiKey,
-                'OpenAI-Organization: ' . $this->organization
+                'OpenAI-Organization: ' . $this->organization,
+                'OpenAI-Beta: assistants=v2'
             ],
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
@@ -252,6 +253,7 @@ class OpenAIClient {
         $headers = [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $this->apiKey,
+            'OpenAI-Beta: assistants=v2',
         ];
 
         if (!empty($this->organization)) {

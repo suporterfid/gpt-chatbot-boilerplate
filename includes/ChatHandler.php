@@ -74,9 +74,15 @@ class ChatHandler {
     public function handleAssistantChat($message, $conversationId, $fileData = null) {
         // Get or create assistant
         $assistantId = $this->assistantManager->getOrCreateAssistant();
+        if (function_exists('log_debug')) {
+            log_debug("Assistant chat start conv=$conversationId assistant=$assistantId msgLen=" . strlen($message));
+        }
 
         // Get or create thread
         $threadId = $this->threadManager->getOrCreateThread($conversationId);
+        if (function_exists('log_debug')) {
+            log_debug("Using thread $threadId for conv=$conversationId");
+        }
 
         // Upload file if provided
         $fileIds = [];
@@ -92,6 +98,9 @@ class ChatHandler {
         ]);
 
         // Create and stream run
+        if (function_exists('log_debug')) {
+            log_debug("Starting run for thread=$threadId conv=$conversationId");
+        }
         $this->streamAssistantRun($threadId, $assistantId, $conversationId);
     }
 
@@ -188,6 +197,9 @@ class ChatHandler {
                         'type' => 'done',
                         'run_status' => 'completed'
                     ]);
+                    if (function_exists('log_debug')) {
+                        log_debug("Run completed for thread=$threadId conv=$conversationId responseLen=" . strlen($currentMessage));
+                    }
                     break;
 
                 case 'thread.run.failed':
@@ -195,6 +207,9 @@ class ChatHandler {
                         'message' => 'Assistant run failed',
                         'details' => $event['data']['last_error'] ?? 'Unknown error'
                     ]);
+                    if (function_exists('log_debug')) {
+                        log_debug("Run failed for thread=$threadId conv=$conversationId error=" . json_encode($event['data']['last_error'] ?? 'Unknown'), 'error');
+                    }
                     break;
 
                 case 'thread.run.requires_action':

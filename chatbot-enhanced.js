@@ -717,45 +717,43 @@
                         this.eventSource.close();
                     }
 
-                    // For SSE, we need to send data via POST
-                    const eventSource = new EventSource(this.options.apiEndpoint);
+                    // If files are present, skip SSE (EventSource only supports GET)
+                    if (requestData.file_data && requestData.file_data.length) {
+                        resolve(false);
+                        return;
+                    }
 
-                    // Send the request data via POST first
-                    fetch(this.options.apiEndpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Accept': 'text/event-stream'
-                        },
-                        body: JSON.stringify(requestData)
-                    }).then(() => {
-                        this.eventSource = eventSource;
-                        this.connectionType = 'sse';
+                    const params = new URLSearchParams({
+                        message: requestData.message || '',
+                        conversation_id: requestData.conversation_id || '',
+                        api_type: requestData.api_type || this.options.apiType || 'chat'
+                    });
 
-                        eventSource.onopen = () => {
-                            this.setConnectionStatus(true);
-                            resolve(true);
-                        };
+                    const url = `${this.options.apiEndpoint}?${params.toString()}`;
+                    const eventSource = new EventSource(url);
 
-                        eventSource.onmessage = (event) => {
+                    this.eventSource = eventSource;
+                    this.connectionType = 'sse';
+
+                    eventSource.onopen = () => {
+                        this.setConnectionStatus(true);
+                        resolve(true);
+                    };
+
+                    eventSource.onmessage = (event) => {
+                        try {
                             const data = JSON.parse(event.data);
                             this.handleStreamChunk(data);
-                        };
-
-                        eventSource.onerror = () => {
-                            eventSource.close();
-                            this.setConnectionStatus(false);
-                            resolve(false);
-                        };
-                    }).catch(() => resolve(false));
-
-                    // Timeout fallback
-                    setTimeout(() => {
-                        if (eventSource.readyState === EventSource.CONNECTING) {
-                            eventSource.close();
-                            resolve(false);
+                        } catch (e) {
+                            // Ignore non-JSON keep-alive lines
                         }
-                    }, 3000);
+                    };
+
+                    eventSource.onerror = () => {
+                        try { eventSource.close(); } catch (_) {}
+                        this.setConnectionStatus(false);
+                        resolve(false);
+                    };
 
                 } catch (error) {
                     resolve(false);

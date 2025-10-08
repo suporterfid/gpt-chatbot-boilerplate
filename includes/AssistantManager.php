@@ -30,6 +30,9 @@ class AssistantManager {
                 return $this->assistantId;
             } catch (Exception $e) {
                 error_log("Assistant {$this->assistantId} not found: " . $e->getMessage());
+                if (function_exists('log_debug')) {
+                    log_debug("Assistant {$this->assistantId} not found: " . $e->getMessage(), 'error');
+                }
 
                 if (!$this->config['assistants']['create_assistant']) {
                     throw new Exception("Assistant not found and auto-creation disabled");
@@ -43,6 +46,9 @@ class AssistantManager {
         // Create new assistant if enabled
         if ($this->config['assistants']['create_assistant']) {
             $this->assistantId = $this->createAssistant();
+            if (function_exists('log_debug')) {
+                log_debug("Auto-created assistant: {$this->assistantId}");
+            }
             return $this->assistantId;
         }
 
@@ -71,6 +77,9 @@ class AssistantManager {
 
         // Log the created assistant ID for future reference
         error_log("Created new assistant: {$assistantId}");
+        if (function_exists('log_debug')) {
+            log_debug("Created new assistant: {$assistantId}");
+        }
 
         return $assistantId;
     }

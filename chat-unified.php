@@ -9,6 +9,20 @@ require_once 'includes/AssistantManager.php';
 require_once 'includes/ThreadManager.php';
 require_once 'includes/ChatHandler.php';
 
+// Logging helper
+$__CFG = $config; // capture for closures
+function log_debug($message, $level = 'info') {
+    global $__CFG;
+    $logFile = $__CFG['logging']['file'] ?? __DIR__ . '/logs/chatbot.log';
+    $dir = dirname($logFile);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    $ts = date('Y-m-d H:i:s');
+    $line = "[$ts][$level] $message\n";
+    @file_put_contents($logFile, $line, FILE_APPEND);
+}
+
 // Set headers for SSE
 header('Content-Type: text/event-stream');
 header('Cache-Control: no-cache');
@@ -33,6 +47,7 @@ ini_set('output_buffering', 'off');
 ini_set('zlib.output_compression', false);
 header('X-Accel-Buffering: no');
 
+ignore_user_abort(true);
 /**
  * Send SSE event to client
  */
@@ -54,7 +69,7 @@ function sendSSEEvent($type, $data = null, $id = null) {
 
 // Main execution
 try {
-    $config = require_once 'config.php';
+    // Use configuration loaded above
     $chatHandler = new ChatHandler($config);
 
     // Get request data
@@ -76,7 +91,10 @@ try {
         $fileData = $input['file_data'] ?? null;
     }
 
+    log_debug("Incoming request method=$method apiType=$apiType conv=$conversationId msgLen=" . strlen($message));
+
     if (empty($message)) {
+        log_debug('Validation failed: Message is required', 'warn');
         throw new Exception('Message is required');
     }
 
@@ -102,6 +120,7 @@ try {
 
 } catch (Exception $e) {
     error_log('Chat Error: ' . $e->getMessage());
+    log_debug('Chat Error: ' . $e->getMessage(), 'error');
 
     sendSSEEvent('error', [
         'message' => 'An error occurred while processing your request.',
