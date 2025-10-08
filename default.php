@@ -458,9 +458,10 @@
         // Initialize with your existing assistant
         const myAssistant = ChatBot.init({
             apiType: 'assistants',
-            // Force SSE in production to avoid localhost WebSocket attempts
-            streamingMode: 'sse',
-            // Explicit API endpoint for SSE/AJAX
+            // Dynamic streaming mode: auto for localhost, SSE elsewhere
+            streamingMode: (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'auto' : 'sse',
+            // Use relative endpoint for portability (leave unset to auto-detect based on script path)
+            // apiEndpoint can be omitted; keeping explicit here for clarity
             apiEndpoint: '/chat-unified.php',
             mode: 'floating',
             position: 'bottom-right',

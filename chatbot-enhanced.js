@@ -22,8 +22,10 @@
 
         // API settings
         apiType: 'chat', // 'chat' or 'assistants'
-        apiEndpoint: '/chat-unified.php',
-        websocketEndpoint: 'ws://localhost:8080',
+        // Resolved at runtime relative to script location if not provided
+        apiEndpoint: null,
+        // Only used if explicitly provided; not attempted by default
+        websocketEndpoint: null,
         streamingMode: 'auto', // 'sse', 'websocket', 'ajax', 'auto'
         maxMessages: 50,
         enableMarkdown: true,
@@ -113,6 +115,20 @@
 
             // Bind methods used as callbacks/scheduled work to ensure correct context
             this.scrollToBottom = this.scrollToBottom.bind(this);
+
+            // Environment-derived defaults
+            this.basePath = this.detectBasePath();
+
+            // Fill defaults that depend on runtime if not explicitly provided
+            if (!options.apiEndpoint && !DEFAULT_CONFIG.apiEndpoint) {
+                // Absolute path relative to script folder
+                this.options.apiEndpoint = this.basePath + 'chat-unified.php';
+            }
+
+            if (!options.websocketEndpoint && !DEFAULT_CONFIG.websocketEndpoint) {
+                // Do not set a websocket endpoint by default to avoid localhost leakage
+                this.options.websocketEndpoint = null;
+            }
 
             this.init();
         }
@@ -617,6 +633,11 @@
          */
         async tryWebSocket(requestData) {
             return new Promise((resolve) => {
+                // Skip if no endpoint configured
+                if (!this.options.websocketEndpoint) {
+                    resolve(false);
+                    return;
+                }
                 try {
                     if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
                         this.websocket.send(JSON.stringify(requestData));
@@ -624,7 +645,13 @@
                         return;
                     }
 
-                    const ws = new WebSocket(this.options.websocketEndpoint);
+                    let endpoint = this.options.websocketEndpoint;
+                    // If page is https and endpoint is ws://, attempt to upgrade to wss://
+                    if (window.location.protocol === 'https:' && /^ws:\/\//i.test(endpoint)) {
+                        endpoint = endpoint.replace(/^ws:\/\//i, 'wss://');
+                    }
+
+                    const ws = new WebSocket(endpoint);
 
                     ws.onopen = () => {
                         this.websocket = ws;
@@ -1246,3 +1273,24 @@
     window.EnhancedChatBot = EnhancedChatBot;
 
 })(window, document);
+        /**
+         * Detect base path of the script file (folder containing chatbot-enhanced.js)
+         */
+        detectBasePath() {
+            try {
+                let scriptSrc = '';
+                if (document.currentScript && document.currentScript.src) {
+                    scriptSrc = document.currentScript.src;
+                } else {
+                    const scripts = document.getElementsByTagName('script');
+                    const found = Array.from(scripts).find(s => (s.src || '').indexOf('chatbot-enhanced.js') !== -1) || scripts[scripts.length - 1];
+                    scriptSrc = found ? found.src : '';
+                }
+                const url = new URL(scriptSrc, window.location.href);
+                // Return absolute path from root, ending with '/'
+                return url.pathname.replace(/[^\/]+$/, '');
+            } catch (e) {
+                // Fallback to current page path folder
+                return (window.location.pathname || '/').replace(/[^\/]+$/, '');
+            }
+        }
