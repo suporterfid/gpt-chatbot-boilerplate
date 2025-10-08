@@ -1,0 +1,117 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: curl, mbstring, json, sockets
+          coverage: none
+          tools: composer
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Lint PHP files
+        run: |
+          find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -r -n1 php -l
+
+      - name: Run PHPUnit
+        if: hashFiles('tests/**') != ''
+        run: vendor/bin/phpunit --colors=always
+
+  package:
+    name: Build release artifact
+    needs: quality
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: curl, mbstring, json
+          coverage: none
+          tools: composer
+
+      - name: Install production dependencies
+        run: composer install --no-dev --prefer-dist --no-progress --no-interaction --optimize-autoloader
+
+      - name: Inject production environment file
+        run: |
+          printf '%s' "${{ secrets.PRODUCTION_ENV }}" > .env
+
+      - name: Stage deployment files
+        run: |
+          mkdir -p build/staging
+          rsync -a \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'docs/' \
+            --exclude 'tests/' \
+            --exclude 'Dockerfile' \
+            --exclude 'docker-compose.yml' \
+            --exclude 'build/' \
+            . build/staging/
+
+      - name: Create release archive
+        run: |
+          tar -czf chatbot-release.tar.gz -C build/staging .
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatbot-release
+          path: chatbot-release.tar.gz
+          if-no-files-found: error
+
+  deploy:
+    name: Deploy to production
+    needs: package
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+    steps:
+      - name: Download release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: chatbot-release
+          path: deploy
+
+      - name: Extract release archive
+        run: |
+          tar -xzf deploy/chatbot-release.tar.gz -C deploy
+          rm deploy/chatbot-release.tar.gz
+
+      - name: Publish via SFTP
+        uses: SamKirkland/FTP-Deploy-Action@v4
+        with:
+          server: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          protocol: sftp
+          port: ${{ secrets.DEPLOY_PORT != '' && secrets.DEPLOY_PORT || '22' }}
+          local-dir: deploy
+          server-dir: ${{ secrets.DEPLOY_PATH }}
+          private-key: ${{ secrets.DEPLOY_KEY }}
