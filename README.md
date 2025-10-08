@@ -134,6 +134,8 @@ ChatBot.init({
 </script>
 ```
 
+> **Tip:** Any values supplied in `responsesConfig` are forwarded with each `/chat-unified.php` request. For example, `promptId` automatically becomes `prompt_id` in the payload so the PHP endpoint can target the correct saved prompt version.
+
 ### File Upload Configuration
 
 ```javascript
@@ -252,7 +254,7 @@ return [
 |--------|------|---------|-------------|
 | `apiType` | string | `'responses'` | API to use: `'chat'` or `'responses'` |
 | `enableFileUpload` | boolean | `false` | Enable file upload functionality |
-| `responsesConfig` | object | `{}` | Responses API prompt reference settings |
+| `responsesConfig` | object | `{}` | Responses API prompt reference settings forwarded as `prompt_id` / `prompt_version` |
 
 #### Callbacks
 
@@ -279,6 +281,8 @@ Unified endpoint supporting both APIs.
     "message": "Hello",
     "conversation_id": "conv_123",
     "api_type": "responses",
+    "prompt_id": "pmpt_your_prompt_id",
+    "prompt_version": "1",
     "file_data": [
         {
             "name": "document.pdf",

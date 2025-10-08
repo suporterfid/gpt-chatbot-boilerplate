@@ -76,17 +76,23 @@ try {
     $conversationId = '';
     $apiType = $config['api_type'];
     $fileData = null;
+    $promptId = '';
+    $promptVersion = '';
 
     if ($method === 'GET') {
         $message = $_GET['message'] ?? '';
         $conversationId = $_GET['conversation_id'] ?? '';
         $apiType = $_GET['api_type'] ?? $apiType;
+        $promptId = $_GET['prompt_id'] ?? $promptId;
+        $promptVersion = $_GET['prompt_version'] ?? $promptVersion;
     } elseif ($method === 'POST') {
         $input = json_decode(file_get_contents('php://input'), true);
         $message = $input['message'] ?? '';
         $conversationId = $input['conversation_id'] ?? '';
         $apiType = $input['api_type'] ?? $apiType;
         $fileData = $input['file_data'] ?? null;
+        $promptId = $input['prompt_id'] ?? $promptId;
+        $promptVersion = $input['prompt_version'] ?? $promptVersion;
     }
 
     log_debug("Incoming request method=$method apiType=$apiType conv=$conversationId msgLen=" . strlen($message));
@@ -116,7 +122,7 @@ try {
 
     // Route to appropriate handler
     if ($apiType === 'responses') {
-        $chatHandler->handleResponsesChat($message, $conversationId, $fileData);
+        $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion);
     } else {
         $chatHandler->handleChatCompletion($message, $conversationId);
     }
