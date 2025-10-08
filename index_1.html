@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPT Chatbot Boilerplate - Demo</title>
+    <link rel="stylesheet" href="chatbot.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: #f5f7fa;
+            color: #333;
+        }
+
+        .demo-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .demo-header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 40px 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .demo-header h1 {
+            margin: 0 0 16px;
+            font-size: 2.5rem;
+            color: #1FB8CD;
+        }
+
+        .demo-subtitle {
+            font-size: 1.2rem;
+            color: #666;
+            margin: 0 0 24px;
+        }
+
+        .demo-badges {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            background: #e7f6f8;
+            color: #1FB8CD;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .demo-section {
+            background: white;
+            border-radius: 12px;
+            padding: 32px;
+            margin-bottom: 32px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .demo-section h2 {
+            margin: 0 0 20px;
+            color: #333;
+        }
+
+        .demo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+            margin-top: 32px;
+        }
+
+        .demo-box {
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 24px;
+            text-align: center;
+            background: #fafafa;
+        }
+
+        .demo-box h3 {
+            margin: 0 0 16px;
+            color: #1FB8CD;
+        }
+
+        .demo-controls {
+            margin: 20px 0;
+        }
+
+        .demo-controls label {
+            display: block;
+            margin: 8px 0;
+        }
+
+        .demo-controls input,
+        .demo-controls select {
+            margin-left: 8px;
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .btn {
+            background: #1FB8CD;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #178a9b;
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+
+        code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 0.9em;
+        }
+
+        pre {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 16px;
+            overflow-x: auto;
+            font-size: 0.9em;
+        }
+
+        .status {
+            padding: 12px;
+            border-radius: 6px;
+            margin: 16px 0;
+        }
+
+        .status.success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+
+        .status.error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .status.warning {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+
+        @media (max-width: 768px) {
+            .demo-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+
+            .demo-header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-container">
+        <!-- Header -->
+        <div class="demo-header">
+            <h1>🤖 GPT Chatbot Boilerplate</h1>
+            <p class="demo-subtitle">Open-source, white-label GPT-powered chatbot for any website</p>
+            <div class="demo-badges">
+                <span class="badge">🚀 Real-time Streaming</span>
+                <span class="badge">🎨 White-label Ready</span>
+                <span class="badge">📱 Mobile Responsive</span>
+                <span class="badge">🔒 Secure</span>
+                <span class="badge">🐳 Docker Support</span>
+            </div>
+        </div>
+
+        <!-- Configuration Status -->
+        <div class="demo-section">
+            <h2>Configuration Status</h2>
+            <div id="config-status">
+                <div class="status warning">
+                    <strong>⚠️ Checking configuration...</strong>
+                    <p>Please wait while we verify your setup.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Demos -->
+        <div class="demo-section">
+            <h2>Live Demos</h2>
+            <div class="demo-grid">
+                <!-- Inline Demo -->
+                <div class="demo-box">
+                    <h3>Inline Chatbot</h3>
+                    <p>Embedded directly in the page content</p>
+
+                    <div class="demo-controls">
+                        <label>
+                            <strong>Height:</strong>
+                            <select id="inline-height">
+                                <option value="400px">400px</option>
+                                <option value="500px" selected>500px</option>
+                                <option value="600px">600px</option>
+                            </select>
+                        </label>
+                        <label>
+                            <strong>Theme:</strong>
+                            <select id="inline-theme">
+                                <option value="default" selected>Default</option>
+                                <option value="blue">Blue</option>
+                                <option value="green">Green</option>
+                                <option value="purple">Purple</option>
+                            </select>
+                        </label>
+                        <button class="btn" onclick="updateInlineDemo()">Update Demo</button>
+                        <button class="btn btn-secondary" onclick="clearInlineChat()">Clear Chat</button>
+                    </div>
+
+                    <!-- Inline chatbot will be inserted here -->
+                    <div id="inline-chatbot" style="margin-top: 20px;"></div>
+                </div>
+
+                <!-- Floating Demo -->
+                <div class="demo-box">
+                    <h3>Floating Chatbot</h3>
+                    <p>Floating widget that appears on top of content</p>
+
+                    <div class="demo-controls">
+                        <label>
+                            <strong>Position:</strong>
+                            <select id="floating-position">
+                                <option value="bottom-right" selected>Bottom Right</option>
+                                <option value="bottom-left">Bottom Left</option>
+                            </select>
+                        </label>
+                        <label>
+                            <strong>Theme:</strong>
+                            <select id="floating-theme">
+                                <option value="default" selected>Default</option>
+                                <option value="dark">Dark</option>
+                                <option value="minimal">Minimal</option>
+                            </select>
+                        </label>
+                        <button class="btn" onclick="showFloatingDemo()">Show Floating</button>
+                        <button class="btn btn-secondary" onclick="hideFloatingDemo()">Hide Floating</button>
+                    </div>
+
+                    <p><em>Click "Show Floating" to see the floating chatbot in action!</em></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Integration Examples -->
+        <div class="demo-section">
+            <h2>Integration Examples</h2>
+
+            <h3>Basic Integration</h3>
+            <pre><code>&lt;!-- Include the chatbot files --&gt;
+&lt;link rel="stylesheet" href="chatbot.css"&gt;
+&lt;script src="chatbot.js"&gt;&lt;/script&gt;
+
+&lt;!-- Initialize floating chatbot --&gt;
+&lt;script&gt;
+ChatBot.init({
+    mode: 'floating',
+    apiEndpoint: '/chat.php',
+    title: 'Support Chat',
+    assistant: {
+        name: 'Assistant',
+        welcomeMessage: 'Hi! How can I help you today?'
+    }
+});
+&lt;/script&gt;</code></pre>
+
+            <h3>Inline Integration</h3>
+            <pre><code>&lt;!-- Container for inline chatbot --&gt;
+&lt;div id="chatbot-container"&gt;&lt;/div&gt;
+
+&lt;script&gt;
+ChatBot.init('#chatbot-container', {
+    mode: 'inline',
+    height: '500px',
+    theme: {
+        primaryColor: '#007bff',
+        backgroundColor: '#f8f9fa'
+    }
+});
+&lt;/script&gt;</code></pre>
+
+            <h3>Advanced Customization</h3>
+            <pre><code>ChatBot.init({
+    mode: 'floating',
+    position: 'bottom-left',
+    theme: {
+        primaryColor: '#1FB8CD',
+        backgroundColor: '#F5F5F5',
+        fontFamily: 'Inter, sans-serif',
+        borderRadius: '12px'
+    },
+    assistant: {
+        name: 'Sarah',
+        avatar: '/assets/avatar.png',
+        welcomeMessage: 'Hello! I'm Sarah, your AI assistant.',
+        placeholder: 'Ask me anything...'
+    },
+    onMessage: function(message) {
+        console.log('New message:', message);
+    },
+    onError: function(error) {
+        console.error('Chat error:', error);
+    }
+});
+&lt;/script&gt;</code></pre>
+        </div>
+
+        <!-- Features -->
+        <div class="demo-section">
+            <h2>Key Features</h2>
+            <div class="demo-grid">
+                <div>
+                    <h3>🚀 Real-time Streaming</h3>
+                    <ul>
+                        <li>Server-Sent Events (SSE) support</li>
+                        <li>WebSocket support with fallback</li>
+                        <li>Automatic connection recovery</li>
+                        <li>Typing indicators</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>🎨 Customization</h3>
+                    <ul>
+                        <li>White-label ready</li>
+                        <li>Custom themes and colors</li>
+                        <li>Flexible layouts</li>
+                        <li>Mobile responsive</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>🔒 Security</h3>
+                    <ul>
+                        <li>Server-side API key protection</li>
+                        <li>Input validation and sanitization</li>
+                        <li>Rate limiting</li>
+                        <li>CORS configuration</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>⚡ Performance</h3>
+                    <ul>
+                        <li>Lightweight vanilla JavaScript</li>
+                        <li>Efficient PHP backend</li>
+                        <li>Connection pooling</li>
+                        <li>Caching support</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Setup Guide -->
+        <div class="demo-section">
+            <h2>Quick Setup</h2>
+
+            <h3>1. Environment Setup</h3>
+            <pre><code># Copy environment template
+cp .env.example .env
+
+# Edit .env and add your OpenAI API key
+OPENAI_API_KEY=your_api_key_here</code></pre>
+
+            <h3>2. Docker Setup (Recommended)</h3>
+            <pre><code># Start with Docker
+docker-compose up -d
+
+# View logs
+docker-compose logs -f</code></pre>
+
+            <h3>3. Manual Setup</h3>
+            <pre><code># Install PHP dependencies (optional)
+composer install
+
+# Set permissions
+chmod -R 755 .
+chmod -R 777 logs/
+
+# Start PHP development server
+php -S localhost:8080</code></pre>
+        </div>
+    </div>
+
+    <!-- Load the chatbot -->
+    <script src="chatbot.js"></script>
+
+    <script>
+        // Demo variables
+        let inlineChatBot = null;
+        let floatingChatBot = null;
+
+        // Theme configurations
+        const themes = {
+            default: {
+                primaryColor: '#1FB8CD',
+                backgroundColor: '#F5F5F5',
+                surfaceColor: '#FFFFFF'
+            },
+            blue: {
+                primaryColor: '#3B82F6',
+                backgroundColor: '#EFF6FF',
+                surfaceColor: '#FFFFFF'
+            },
+            green: {
+                primaryColor: '#10B981',
+                backgroundColor: '#ECFDF5',
+                surfaceColor: '#FFFFFF'
+            },
+            purple: {
+                primaryColor: '#8B5CF6',
+                backgroundColor: '#F5F3FF',
+                surfaceColor: '#FFFFFF'
+            },
+            dark: {
+                primaryColor: '#1FB8CD',
+                backgroundColor: '#1F2937',
+                surfaceColor: '#374151'
+            },
+            minimal: {
+                primaryColor: '#6B7280',
+                backgroundColor: '#F9FAFB',
+                surfaceColor: '#FFFFFF'
+            }
+        };
+
+        // Check configuration status
+        function checkConfiguration() {
+            fetch('/chat.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: 'test', test: true })
+            })
+            .then(response => {
+                const statusEl = document.getElementById('config-status');
+                if (response.ok) {
+                    statusEl.innerHTML = `
+                        <div class="status success">
+                            <strong>✅ Configuration OK</strong>
+                            <p>Your chatbot is properly configured and ready to use!</p>
+                        </div>
+                    `;
+                } else {
+                    throw new Error('Configuration error');
+                }
+            })
+            .catch(error => {
+                const statusEl = document.getElementById('config-status');
+                statusEl.innerHTML = `
+                    <div class="status error">
+                        <strong>❌ Configuration Error</strong>
+                        <p>Please check your OpenAI API key configuration in config.php or .env file.</p>
+                    </div>
+                `;
+            });
+        }
+
+        // Initialize inline demo
+        function initInlineDemo() {
+            const height = document.getElementById('inline-height').value;
+            const themeKey = document.getElementById('inline-theme').value;
+
+            if (inlineChatBot) {
+                inlineChatBot.destroy();
+            }
+
+            inlineChatBot = ChatBot.init('#inline-chatbot', {
+                mode: 'inline',
+                height: height,
+                theme: themes[themeKey],
+                assistant: {
+                    name: 'Demo Bot',
+                    welcomeMessage: `Hello! I'm your ${themeKey} themed assistant. Try asking me something!`,
+                    placeholder: 'Type your message here...'
+                },
+                onError: function(error) {
+                    console.error('Inline chat error:', error);
+                }
+            });
+        }
+
+        // Update inline demo
+        function updateInlineDemo() {
+            initInlineDemo();
+        }
+
+        // Clear inline chat
+        function clearInlineChat() {
+            if (inlineChatBot) {
+                inlineChatBot.clearHistory();
+            }
+        }
+
+        // Show floating demo
+        function showFloatingDemo() {
+            const position = document.getElementById('floating-position').value;
+            const themeKey = document.getElementById('floating-theme').value;
+
+            if (floatingChatBot) {
+                floatingChatBot.destroy();
+            }
+
+            floatingChatBot = ChatBot.init({
+                mode: 'floating',
+                position: position,
+                theme: themes[themeKey],
+                show: true,
+                assistant: {
+                    name: 'Floating Bot',
+                    welcomeMessage: `Hi! I'm your ${themeKey} floating assistant. Click the close button to hide me.`,
+                    placeholder: 'Ask me anything...'
+                },
+                onError: function(error) {
+                    console.error('Floating chat error:', error);
+                }
+            });
+        }
+
+        // Hide floating demo
+        function hideFloatingDemo() {
+            if (floatingChatBot) {
+                floatingChatBot.hide();
+            }
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check configuration
+            checkConfiguration();
+
+            // Initialize inline demo
+            initInlineDemo();
+
+            // Add event listeners for demo controls
+            document.getElementById('inline-height').addEventListener('change', updateInlineDemo);
+            document.getElementById('inline-theme').addEventListener('change', updateInlineDemo);
+            document.getElementById('floating-position').addEventListener('change', function() {
+                if (floatingChatBot) {
+                    showFloatingDemo();
+                }
+            });
+            document.getElementById('floating-theme').addEventListener('change', function() {
+                if (floatingChatBot) {
+                    showFloatingDemo();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPT Chatbot Boilerplate - Demo</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Header Section -->
+    <header class="demo-header">
+        <div class="container">
+            <h1>GPT Chatbot Boilerplate</h1>
+            <p class="demo-subtitle">Open-source, white-label GPT-powered chatbot for any website</p>
+            <div class="demo-badges">
+                <span class="badge">Real-time Streaming</span>
+                <span class="badge">White-label Ready</span>
+                <span class="badge">Easy Integration</span>
+                <span class="badge">Mobile Responsive</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="demo-main">
+        <div class="container">
+            <!-- Features Section -->
+            <section class="features-section">
+                <h2>Key Features</h2>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <h3>🚀 Real-time Streaming</h3>
+                        <p>Support for both Server-Sent Events (SSE) and WebSockets with automatic fallback</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🎨 White-label Ready</h3>
+                        <p>Completely customizable UI with no hardcoded branding</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📱 Mobile Responsive</h3>
+                        <p>Works perfectly on desktop, tablet, and mobile devices</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔒 Secure</h3>
+                        <p>API keys protected on server-side, input validation, and security best practices</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>💬 Multi-turn Conversations</h3>
+                        <p>Maintains context across multiple exchanges in a conversation</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🐳 Docker Ready</h3>
+                        <p>Complete Docker setup for easy development and deployment</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Integration Examples -->
+            <section class="integration-section">
+                <h2>Integration Examples</h2>
+                
+                <div class="example-container">
+                    <h3>1. Floating Chat Widget (Bottom Right)</h3>
+                    <p>Perfect for customer support and general assistance</p>
+                    <div class="code-example">
+                        <code>&lt;script src="app.js"&gt;&lt;/script&gt;<br>
+&lt;script&gt;<br>
+  ChatBot.init({<br>
+    mode: 'floating',<br>
+    position: 'bottom-right',<br>
+    title: 'Chat with us',<br>
+    primaryColor: '#1FB8CD'<br>
+  });<br>
+&lt;/script&gt;</code>
+                    </div>
+                </div>
+
+                <div class="example-container">
+                    <h3>2. Inline Chat Widget</h3>
+                    <p>Embed directly into your page content</p>
+                    <div class="code-example">
+                        <code>&lt;div id="inline-chatbot"&gt;&lt;/div&gt;<br>
+&lt;script&gt;<br>
+  ChatBot.init('#inline-chatbot', {<br>
+    mode: 'inline',<br>
+    height: '500px',<br>
+    welcomeMessage: 'How can I help you today?'<br>
+  });<br>
+&lt;/script&gt;</code>
+                    </div>
+                    <!-- Inline chatbot will be embedded here -->
+                    <div id="inline-chatbot" class="mt-8"></div>
+                </div>
+
+                <div class="example-container">
+                    <h3>3. Custom Themed Widget</h3>
+                    <p>Fully customized to match your brand</p>
+                    <div class="code-example">
+                        <code>ChatBot.init('#custom-chatbot', {<br>
+  theme: {<br>
+    primaryColor: '#8B5CF6',<br>
+    backgroundColor: '#F3F4F6',<br>
+    fontFamily: 'Inter, sans-serif',<br>
+    borderRadius: '12px'<br>
+  },<br>
+  assistant: {<br>
+    name: 'AI Assistant',<br>
+    avatar: '/assets/bot-avatar.png'<br>
+  }<br>
+});</code>
+                    </div>
+                    <div id="custom-chatbot" class="mt-8"></div>
+                </div>
+            </section>
+
+            <!-- Configuration Reference -->
+            <section class="config-section">
+                <h2>Configuration Options</h2>
+                <div class="config-grid">
+                    <div class="config-group">
+                        <h4>Basic Options</h4>
+                        <ul class="config-list">
+                            <li><code>mode</code> - 'floating' or 'inline'</li>
+                            <li><code>position</code> - 'bottom-right', 'bottom-left'</li>
+                            <li><code>title</code> - Chat widget title</li>
+                            <li><code>height</code> - Widget height (inline mode)</li>
+                            <li><code>width</code> - Widget width</li>
+                        </ul>
+                    </div>
+                    <div class="config-group">
+                        <h4>Styling</h4>
+                        <ul class="config-list">
+                            <li><code>primaryColor</code> - Main theme color</li>
+                            <li><code>backgroundColor</code> - Background color</li>
+                            <li><code>fontFamily</code> - Custom font family</li>
+                            <li><code>borderRadius</code> - Corner rounding</li>
+                            <li><code>shadow</code> - Drop shadow</li>
+                        </ul>
+                    </div>
+                    <div class="config-group">
+                        <h4>Assistant Settings</h4>
+                        <ul class="config-list">
+                            <li><code>name</code> - Assistant display name</li>
+                            <li><code>avatar</code> - Assistant avatar image</li>
+                            <li><code>welcomeMessage</code> - Initial greeting</li>
+                            <li><code>placeholder</code> - Input placeholder text</li>
+                        </ul>
+                    </div>
+                    <div class="config-group">
+                        <h4>Technical</h4>
+                        <ul class="config-list">
+                            <li><code>apiEndpoint</code> - Backend API URL</li>
+                            <li><code>streamingMode</code> - 'sse', 'websocket', 'auto'</li>
+                            <li><code>maxMessages</code> - Conversation history limit</li>
+                            <li><code>enableMarkdown</code> - Markdown support</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Backend Integration Guide -->
+            <section class="backend-section">
+                <h2>Backend Integration</h2>
+                <p>The boilerplate includes PHP backend files that handle OpenAI API communication:</p>
+                
+                <div class="backend-files">
+                    <div class="file-info">
+                        <h4>📄 chat.php</h4>
+                        <p>Server-Sent Events endpoint for streaming responses</p>
+                    </div>
+                    <div class="file-info">
+                        <h4>📄 chat_websocket.php</h4>
+                        <p>WebSocket handler for real-time bidirectional communication</p>
+                    </div>
+                    <div class="file-info">
+                        <h4>📄 websocket-server.php</h4>
+                        <p>Standalone WebSocket server using Ratchet library</p>
+                    </div>
+                    <div class="file-info">
+                        <h4>📄 config.php</h4>
+                        <p>Configuration management for API keys and settings</p>
+                    </div>
+                </div>
+
+                <h3>Quick Setup</h3>
+                <div class="setup-steps">
+                    <div class="step">
+                        <span class="step-number">1</span>
+                        <div class="step-content">
+                            <h4>Clone Repository</h4>
+                            <code>git clone https://github.com/your-username/gpt-chatbot-boilerplate.git</code>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <span class="step-number">2</span>
+                        <div class="step-content">
+                            <h4>Configure Environment</h4>
+                            <code>cp .env.example .env<br>echo "OPENAI_API_KEY=your-api-key-here" >> .env</code>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <span class="step-number">3</span>
+                        <div class="step-content">
+                            <h4>Start with Docker</h4>
+                            <code>docker-compose up -d</code>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <span class="step-number">4</span>
+                        <div class="step-content">
+                            <h4>Test Integration</h4>
+                            <code>Open http://localhost:8080 in your browser</code>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Demo Controls -->
+            <section class="demo-controls">
+                <h2>Live Demo Controls</h2>
+                <p>Try different configurations in real-time:</p>
+                
+                <div class="controls-grid">
+                    <div class="control-group">
+                        <label for="demo-color">Primary Color:</label>
+                        <input type="color" id="demo-color" value="#1FB8CD">
+                    </div>
+                    <div class="control-group">
+                        <label for="demo-position">Position:</label>
+                        <select id="demo-position">
+                            <option value="bottom-right">Bottom Right</option>
+                            <option value="bottom-left">Bottom Left</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="demo-name">Assistant Name:</label>
+                        <input type="text" id="demo-name" value="AI Assistant" class="form-control">
+                    </div>
+                    <div class="control-group">
+                        <label for="demo-message">Welcome Message:</label>
+                        <input type="text" id="demo-message" value="Hello! How can I help you today?" class="form-control">
+                    </div>
+                </div>
+                
+                <div class="demo-actions">
+                    <button id="apply-changes" class="btn btn--primary">Apply Changes</button>
+                    <button id="toggle-floating" class="btn btn--secondary">Toggle Floating Widget</button>
+                    <button id="reset-demo" class="btn btn--outline">Reset to Defaults</button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="demo-footer">
+        <div class="container">
+            <p>&copy; 2025 GPT Chatbot Boilerplate - Open Source MIT License</p>
+            <p>Built with ❤️ for developers who want to add AI chat to their websites</p>
+        </div>
+    </footer>
+
+    <!-- Load the chatbot script -->
+    <script src="app.js"></script>
+    
+    <!-- Initialize the demo chatbots -->
+    <script>
+        // Initialize inline chatbot
+        ChatBot.init('#inline-chatbot', {
+            mode: 'inline',
+            height: '400px',
+            title: 'Inline Chat Demo',
+            welcomeMessage: 'This is an inline chatbot demo. In production, this would connect to your PHP backend.',
+            assistant: {
+                name: 'Demo Bot',
+                avatar: null
+            }
+        });
+
+        // Initialize custom themed chatbot
+        ChatBot.init('#custom-chatbot', {
+            mode: 'inline',
+            height: '350px',
+            title: 'Custom Theme Demo',
+            theme: {
+                primaryColor: '#8B5CF6',
+                backgroundColor: '#F8FAFC',
+                borderRadius: '12px'
+            },
+            assistant: {
+                name: 'Purple Bot',
+                avatar: null
+            },
+            welcomeMessage: 'I\'m a custom-themed chatbot! My colors and styling can be completely customized.'
+        });
+
+        // Initialize floating chatbot (initially hidden)
+        let floatingBot = null;
+
+        // Demo control handlers
+        document.getElementById('apply-changes').addEventListener('click', function() {
+            const color = document.getElementById('demo-color').value;
+            const position = document.getElementById('demo-position').value;
+            const name = document.getElementById('demo-name').value;
+            const message = document.getElementById('demo-message').value;
+
+            // Update existing floating bot if it exists
+            if (floatingBot) {
+                floatingBot.destroy();
+            }
+
+            floatingBot = ChatBot.init({
+                mode: 'floating',
+                position: position,
+                title: 'Live Demo Chat',
+                theme: {
+                    primaryColor: color
+                },
+                assistant: {
+                    name: name
+                },
+                welcomeMessage: message,
+                show: true
+            });
+        });
+
+        document.getElementById('toggle-floating').addEventListener('click', function() {
+            if (floatingBot) {
+                if (floatingBot.isVisible()) {
+                    floatingBot.hide();
+                    this.textContent = 'Show Floating Widget';
+                } else {
+                    floatingBot.show();
+                    this.textContent = 'Hide Floating Widget';
+                }
+            } else {
+                // Create floating bot with default settings
+                floatingBot = ChatBot.init({
+                    mode: 'floating',
+                    position: 'bottom-right',
+                    title: 'Demo Chat',
+                    welcomeMessage: 'Hello! This is the floating chat demo.',
+                    show: true
+                });
+                this.textContent = 'Hide Floating Widget';
+            }
+        });
+
+        document.getElementById('reset-demo').addEventListener('click', function() {
+            document.getElementById('demo-color').value = '#1FB8CD';
+            document.getElementById('demo-position').value = 'bottom-right';
+            document.getElementById('demo-name').value = 'AI Assistant';
+            document.getElementById('demo-message').value = 'Hello! How can I help you today?';
+            
+            if (floatingBot) {
+                floatingBot.destroy();
+                floatingBot = null;
+                document.getElementById('toggle-floating').textContent = 'Toggle Floating Widget';
+            }
+        });
+    </script>
+</body>
+</html>
