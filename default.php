@@ -451,8 +451,9 @@
         </footer>
     </div>
 
-    <!-- Enhanced chatbot scripts -->
-    <script src="chatbot-enhanced.js"></script>
+    <!-- Enhanced chatbot scripts (cache-busted to avoid stale browser cache) -->
+    <?php $cb_ver = @filemtime(__DIR__ . DIRECTORY_SEPARATOR . 'chatbot-enhanced.js') ?: time(); ?>
+    <script src="chatbot-enhanced.js?v=<?php echo $cb_ver; ?>"></script>
     <script>
         // Initialize with your existing assistant
         const myAssistant = ChatBot.init({
