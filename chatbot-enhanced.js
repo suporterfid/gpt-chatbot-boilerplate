@@ -164,6 +164,7 @@
             this.isTyping = false;
             this.connectionType = null;
             this.eventSource = null;
+            this.sseClosedCleanly = false;
             this.websocket = null;
             this.currentMessageElement = null;
             this.uploadedFiles = [];
@@ -1128,8 +1129,12 @@
             return new Promise((resolve) => {
                 try {
                     if (this.eventSource) {
-                        this.eventSource.close();
+                        this.sseClosedCleanly = true;
+                        try { this.eventSource.close(); } catch (_) {}
+                        this.eventSource = null;
                     }
+
+                    this.sseClosedCleanly = false;
 
                     // If files are present, skip SSE (EventSource only supports GET)
                     if (requestData.file_data && requestData.file_data.length) {
@@ -1173,7 +1178,21 @@
                     };
 
                     eventSource.onerror = () => {
+                        const isCurrent = this.eventSource === eventSource;
+                        const closedCleanly = this.sseClosedCleanly && isCurrent;
+
                         try { eventSource.close(); } catch (_) {}
+
+                        if (!isCurrent) {
+                            return;
+                        }
+
+                        this.eventSource = null;
+
+                        if (closedCleanly) {
+                            return;
+                        }
+
                         this.setConnectionStatus(false);
                         this.setActiveMode('auto');
                         resolve(false);
@@ -1271,7 +1290,9 @@
                 this.currentRunId = null;
 
                 if (this.eventSource) {
-                    this.eventSource.close();
+                    this.sseClosedCleanly = true;
+                    try { this.eventSource.close(); } catch (_) {}
+                    this.eventSource = null;
                 }
 
             } else if (data.type === 'error') {
