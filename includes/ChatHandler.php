@@ -67,6 +67,48 @@ class ChatHandler {
         $this->streamChatCompletion($messages, $conversationId);
     }
 
+    public function handleChatCompletionSync($message, $conversationId) {
+        $messages = $this->getConversationHistory($conversationId);
+
+        if (!empty($this->config['chat']['system_message']) && empty($messages)) {
+            array_unshift($messages, [
+                'role' => 'system',
+                'content' => $this->config['chat']['system_message']
+            ]);
+        }
+
+        $messages[] = [
+            'role' => 'user',
+            'content' => $message
+        ];
+
+        $payload = [
+            'model' => $this->config['chat']['model'],
+            'messages' => $messages,
+            'temperature' => $this->config['chat']['temperature'],
+            'max_tokens' => $this->config['chat']['max_tokens'],
+            'top_p' => $this->config['chat']['top_p'],
+            'frequency_penalty' => $this->config['chat']['frequency_penalty'],
+            'presence_penalty' => $this->config['chat']['presence_penalty'],
+            'stream' => false
+        ];
+
+        $response = $this->openAIClient->createChatCompletion($payload);
+
+        $assistantMessage = $response['choices'][0]['message']['content'] ?? '';
+
+        $messages[] = [
+            'role' => 'assistant',
+            'content' => $assistantMessage
+        ];
+
+        $this->saveConversationHistory($conversationId, $messages);
+
+        return [
+            'response' => $assistantMessage
+        ];
+    }
+
     public function handleResponsesChat($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null) {
         $messages = $this->getConversationHistory($conversationId);
         $responsesConfig = $this->config['responses'];
@@ -307,6 +349,104 @@ class ChatHandler {
         }
     }
 
+    public function handleResponsesChatSync($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null) {
+        $messages = $this->getConversationHistory($conversationId);
+        $responsesConfig = $this->config['responses'];
+
+        $promptIdOverride = $this->normalizePromptValue($promptId);
+        $promptVersionOverride = $this->normalizePromptValue($promptVersion);
+        $configuredPromptId = $this->normalizePromptValue($responsesConfig['prompt_id'] ?? null);
+        $configuredPromptVersion = $this->normalizePromptValue($responsesConfig['prompt_version'] ?? null);
+
+        $effectivePromptId = $promptIdOverride ?? $configuredPromptId;
+        $effectivePromptVersion = $promptVersionOverride ?? $configuredPromptVersion;
+
+        if (!empty($responsesConfig['system_message']) && empty($messages)) {
+            array_unshift($messages, [
+                'role' => 'system',
+                'content' => $responsesConfig['system_message']
+            ]);
+        }
+
+        $fileIds = [];
+        if ($fileData) {
+            $fileIds = $this->uploadFiles($fileData, 'user_data');
+        }
+
+        $userMessage = [
+            'role' => 'user',
+            'content' => $message,
+        ];
+
+        if (!empty($fileIds)) {
+            $userMessage['file_ids'] = $fileIds;
+        }
+
+        $messages[] = $userMessage;
+
+        $payload = [
+            'model' => $responsesConfig['model'],
+            'input' => $this->formatMessagesForResponses($messages),
+            'temperature' => $responsesConfig['temperature'],
+            'top_p' => $responsesConfig['top_p'],
+            'max_output_tokens' => $responsesConfig['max_output_tokens'],
+            'stream' => false,
+        ];
+
+        if ($effectivePromptId !== null) {
+            $prompt = ['id' => $effectivePromptId];
+            if ($effectivePromptVersion !== null) {
+                $prompt['version'] = $effectivePromptVersion;
+            }
+            $payload['prompt'] = $prompt;
+        }
+
+        $execute = function(array $payload) use (&$messages, $conversationId) {
+            $response = $this->openAIClient->createResponse($payload);
+
+            $assistantMessage = $this->extractResponseOutputText($response);
+
+            if ($assistantMessage !== '') {
+                $messages[] = [
+                    'role' => 'assistant',
+                    'content' => $assistantMessage
+                ];
+            }
+
+            $this->saveConversationHistory($conversationId, $messages);
+
+            return [
+                'response' => $assistantMessage,
+                'response_id' => $response['id'] ?? null,
+            ];
+        };
+
+        try {
+            return $execute($payload);
+        } catch (Exception $e) {
+            $err = $e->getMessage();
+            $hasPrompt = isset($payload['prompt']);
+            $clientErr = (strpos($err, 'HTTP 400') !== false) || (strpos($err, 'HTTP 404') !== false) || (strpos($err, 'HTTP 422') !== false);
+
+            if ($hasPrompt && $clientErr) {
+                unset($payload['prompt']);
+                try {
+                    return $execute($payload);
+                } catch (Exception $inner) {
+                    $err = $inner->getMessage();
+                    $clientErr = (strpos($err, 'HTTP 400') !== false) || (strpos($err, 'HTTP 404') !== false) || (strpos($err, 'HTTP 422') !== false);
+                }
+            }
+
+            if ($clientErr && isset($payload['model']) && $payload['model'] !== 'gpt-4o-mini') {
+                $payload['model'] = 'gpt-4o-mini';
+                return $execute($payload);
+            }
+
+            throw $e;
+        }
+    }
+
     private function streamChatCompletion($messages, $conversationId) {
         $payload = [
             'model' => $this->config['chat']['model'],
@@ -394,6 +534,46 @@ class ChatHandler {
         }
 
         return $value;
+    }
+
+    private function extractResponseOutputText(array $response) {
+        $text = '';
+
+        $outputs = $response['output'] ?? ($response['response']['output'] ?? []);
+
+        if (is_array($outputs)) {
+            foreach ($outputs as $output) {
+                if (!is_array($output)) {
+                    continue;
+                }
+
+                $contentSegments = $output['content'] ?? [];
+
+                if (is_array($contentSegments)) {
+                    foreach ($contentSegments as $segment) {
+                        if (!is_array($segment)) {
+                            continue;
+                        }
+
+                        if (isset($segment['text']) && is_string($segment['text'])) {
+                            $text .= $segment['text'];
+                        } elseif (isset($segment['output_text']) && is_string($segment['output_text'])) {
+                            $text .= $segment['output_text'];
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($text === '' && isset($response['content']) && is_array($response['content'])) {
+            foreach ($response['content'] as $segment) {
+                if (isset($segment['text']) && is_string($segment['text'])) {
+                    $text .= $segment['text'];
+                }
+            }
+        }
+
+        return $text;
     }
 
     private function extractTextDelta(array $event) {

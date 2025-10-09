@@ -21,10 +21,7 @@ function log_debug($message, $level = 'info') {
     @file_put_contents($logFile, $line, FILE_APPEND);
 }
 
-// Set headers for SSE
-header('Content-Type: text/event-stream');
-header('Cache-Control: no-cache');
-header('Connection: keep-alive');
+// Shared CORS headers
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
@@ -35,17 +32,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-// Disable output buffering
-if (ob_get_level()) {
-    ob_end_clean();
+// Determine request type before sending response headers
+$method = $_SERVER['REQUEST_METHOD'];
+$rawInput = '';
+$input = [];
+
+if ($method === 'POST') {
+    $rawInput = file_get_contents('php://input');
+    if (!empty($rawInput)) {
+        $decoded = json_decode($rawInput, true);
+        if (is_array($decoded)) {
+            $input = $decoded;
+        }
+    }
 }
 
-// Configure for streaming
-ini_set('output_buffering', 'off');
-ini_set('zlib.output_compression', false);
-header('X-Accel-Buffering: no');
+$shouldStream = true;
 
-ignore_user_abort(true);
+if ($method === 'POST' && array_key_exists('stream', $input)) {
+    $streamFlag = $input['stream'];
+    if ($streamFlag === false || $streamFlag === 'false' || $streamFlag === 0 || $streamFlag === '0') {
+        $shouldStream = false;
+    }
+}
+
+if ($shouldStream) {
+    header('Content-Type: text/event-stream');
+    header('Cache-Control: no-cache');
+    header('Connection: keep-alive');
+    header('X-Accel-Buffering: no');
+
+    // Disable output buffering for streaming
+    if (ob_get_level()) {
+        ob_end_clean();
+    }
+
+    ini_set('output_buffering', 'off');
+    ini_set('zlib.output_compression', false);
+
+    ignore_user_abort(true);
+} else {
+    header('Content-Type: application/json');
+    header('Cache-Control: no-cache');
+}
 /**
  * Send SSE event to client
  */
@@ -71,7 +100,6 @@ try {
     $chatHandler = new ChatHandler($config);
 
     // Get request data
-    $method = $_SERVER['REQUEST_METHOD'];
     $message = '';
     $conversationId = '';
     $apiType = $config['api_type'];
@@ -86,7 +114,6 @@ try {
         $promptId = $_GET['prompt_id'] ?? $promptId;
         $promptVersion = $_GET['prompt_version'] ?? $promptVersion;
     } elseif ($method === 'POST') {
-        $input = json_decode(file_get_contents('php://input'), true);
         $message = $input['message'] ?? '';
         $conversationId = $input['conversation_id'] ?? '';
         $apiType = $input['api_type'] ?? $apiType;
@@ -114,29 +141,58 @@ try {
     // Validate and sanitize input
     $chatHandler->validateRequest($message, $conversationId, $fileData);
 
-    // Send start event
-    sendSSEEvent('start', [
-        'conversation_id' => $conversationId,
-        'api_type' => $apiType
-    ]);
+    if ($shouldStream) {
+        // Send start event
+        sendSSEEvent('start', [
+            'conversation_id' => $conversationId,
+            'api_type' => $apiType
+        ]);
 
-    // Route to appropriate handler
-    if ($apiType === 'responses') {
-        $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion);
+        // Route to appropriate handler
+        if ($apiType === 'responses') {
+            $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion);
+        } else {
+            $chatHandler->handleChatCompletion($message, $conversationId);
+        }
     } else {
-        $chatHandler->handleChatCompletion($message, $conversationId);
+        if ($apiType === 'responses') {
+            $result = $chatHandler->handleResponsesChatSync($message, $conversationId, $fileData, $promptId, $promptVersion);
+        } else {
+            $result = $chatHandler->handleChatCompletionSync($message, $conversationId);
+        }
+
+        $result['conversation_id'] = $conversationId;
+        $result['api_type'] = $apiType;
+
+        echo json_encode($result);
     }
 
 } catch (Exception $e) {
     error_log('Chat Error: ' . $e->getMessage());
     log_debug('Chat Error: ' . $e->getMessage(), 'error');
 
-    sendSSEEvent('error', [
-        'message' => 'An error occurred while processing your request.',
-        'code' => $e->getCode() ?: 'UNKNOWN_ERROR'
-    ]);
+    if ($shouldStream) {
+        sendSSEEvent('error', [
+            'message' => 'An error occurred while processing your request.',
+            'code' => $e->getCode() ?: 'UNKNOWN_ERROR'
+        ]);
+    } else {
+        $statusCode = $e->getCode();
+        if (!is_int($statusCode) || $statusCode < 400 || $statusCode > 599) {
+            $statusCode = 500;
+        }
+        http_response_code($statusCode);
+        echo json_encode([
+            'error' => [
+                'message' => 'An error occurred while processing your request.',
+                'code' => $e->getCode() ?: 'UNKNOWN_ERROR'
+            ]
+        ]);
+    }
 } finally {
-    sendSSEEvent('close', null);
+    if ($shouldStream) {
+        sendSSEEvent('close', null);
+    }
     exit();
 }
 ?>

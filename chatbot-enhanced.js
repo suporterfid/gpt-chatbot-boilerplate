@@ -1207,10 +1207,28 @@
             }
 
             const data = await response.json();
+
+            if (!data || typeof data !== 'object') {
+                throw new Error('Invalid response payload');
+            }
+
+            if (data.error) {
+                const errorMessage = typeof data.error === 'string' ? data.error : (data.error.message || 'Unknown error');
+                throw new Error(errorMessage);
+            }
+
+            const content = typeof data.response === 'string' && data.response !== ''
+                ? data.response
+                : (typeof data.content === 'string' ? data.content : '');
+
+            if (content === '') {
+                throw new Error('Empty response payload');
+            }
+
             this.setConnectionStatus(true);
             this.addMessage({
                 role: 'assistant',
-                content: data.response || data.content,
+                content,
                 timestamp: new Date(),
                 apiType: this.options.apiType
             });

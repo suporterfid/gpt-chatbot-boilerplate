@@ -143,6 +143,10 @@ class OpenAIClient {
         return $this->makeRequest('POST', '/responses', $payload);
     }
 
+    public function createChatCompletion(array $payload) {
+        return $this->makeRequest('POST', '/chat/completions', $payload);
+    }
+
     public function submitResponseToolOutputs($responseId, array $toolOutputs) {
         return $this->makeRequest('POST', '/responses/' . $responseId . '/submit_tool_outputs', [
             'tool_outputs' => $toolOutputs,
