@@ -37,6 +37,7 @@
         responsesConfig: {
             promptId: '',
             promptVersion: '',
+            tools: null,
         },
 
         // Theme customization
@@ -999,16 +1000,24 @@
                 if (this.options.apiType === 'responses') {
                     const responsesConfig = this.options.responsesConfig || {};
                     Object.entries(responsesConfig).forEach(([key, value]) => {
-                        if (value === undefined || value === null || value === '') {
+                        if (typeof value === 'undefined' || value === null) {
                             return;
                         }
 
-                        const normalizedKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
-                        if (normalizedKey.length === 0) {
+                        if (typeof value === 'string' && value.trim() === '') {
                             return;
                         }
 
-                        requestData[normalizedKey] = value;
+                        if (this.isEmptyObject(value)) {
+                            return;
+                        }
+
+                        const normalizedKey = this.normalizeConfigKey(key);
+                        if (!normalizedKey) {
+                            return;
+                        }
+
+                        requestData[normalizedKey] = this.cloneConfigValue(value);
                     });
                 }
 
@@ -1059,6 +1068,59 @@
                 };
                 reader.readAsDataURL(file);
             });
+        }
+
+        normalizeConfigKey(key) {
+            if (typeof key !== 'string') {
+                return '';
+            }
+
+            const trimmed = key.trim();
+            if (trimmed.length === 0) {
+                return '';
+            }
+
+            return trimmed
+                .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+                .replace(/[\s-]+/g, '_')
+                .replace(/__+/g, '_')
+                .toLowerCase();
+        }
+
+        cloneConfigValue(value) {
+            if (value === null || typeof value !== 'object') {
+                return value;
+            }
+
+            if (typeof structuredClone === 'function') {
+                try {
+                    return structuredClone(value);
+                } catch (_) {
+                    // Fallback to JSON clone below
+                }
+            }
+
+            try {
+                return JSON.parse(JSON.stringify(value));
+            } catch (_) {
+                if (Array.isArray(value)) {
+                    return value.slice();
+                }
+
+                return Object.assign({}, value);
+            }
+        }
+
+        isPlainObject(value) {
+            return Object.prototype.toString.call(value) === '[object Object]';
+        }
+
+        isEmptyObject(value) {
+            if (!this.isPlainObject(value)) {
+                return false;
+            }
+
+            return Object.keys(value).length === 0;
         }
 
         /**
@@ -1148,13 +1210,29 @@
                         api_type: requestData.api_type || this.options.apiType || 'chat'
                     });
 
-                    if (requestData.prompt_id) {
-                        params.set('prompt_id', `${requestData.prompt_id}`);
-                    }
+                    const skipKeys = new Set(['message', 'conversation_id', 'api_type', 'file_data', 'stream']);
+                    Object.entries(requestData).forEach(([key, value]) => {
+                        if (skipKeys.has(key)) {
+                            return;
+                        }
 
-                    if (requestData.prompt_version) {
-                        params.set('prompt_version', `${requestData.prompt_version}`);
-                    }
+                        if (typeof value === 'undefined' || value === null) {
+                            return;
+                        }
+
+                        let paramValue;
+                        if (typeof value === 'object') {
+                            try {
+                                paramValue = JSON.stringify(value);
+                            } catch (_) {
+                                return;
+                            }
+                        } else {
+                            paramValue = `${value}`;
+                        }
+
+                        params.set(key, paramValue);
+                    });
 
                     const url = `${this.options.apiEndpoint}?${params.toString()}`;
                     const eventSource = new EventSource(url);
