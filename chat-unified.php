@@ -104,6 +104,7 @@ try {
     $conversationId = '';
     $apiType = $config['api_type'];
     $fileData = null;
+    $tools = null;
     $promptId = '';
     $promptVersion = '';
 
@@ -113,6 +114,12 @@ try {
         $apiType = $_GET['api_type'] ?? $apiType;
         $promptId = $_GET['prompt_id'] ?? $promptId;
         $promptVersion = $_GET['prompt_version'] ?? $promptVersion;
+        if (isset($_GET['tools'])) {
+            $decodedTools = json_decode($_GET['tools'], true);
+            if (is_array($decodedTools)) {
+                $tools = $decodedTools;
+            }
+        }
     } elseif ($method === 'POST') {
         $message = $input['message'] ?? '';
         $conversationId = $input['conversation_id'] ?? '';
@@ -120,6 +127,17 @@ try {
         $fileData = $input['file_data'] ?? null;
         $promptId = $input['prompt_id'] ?? $promptId;
         $promptVersion = $input['prompt_version'] ?? $promptVersion;
+        if (array_key_exists('tools', $input)) {
+            $postedTools = $input['tools'];
+            if (is_string($postedTools)) {
+                $decodedTools = json_decode($postedTools, true);
+                if (is_array($decodedTools)) {
+                    $tools = $decodedTools;
+                }
+            } elseif (is_array($postedTools)) {
+                $tools = $postedTools;
+            }
+        }
     }
 
     log_debug("Incoming request method=$method apiType=$apiType conv=$conversationId msgLen=" . strlen($message));
@@ -150,13 +168,13 @@ try {
 
         // Route to appropriate handler
         if ($apiType === 'responses') {
-            $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion);
+            $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion, $tools);
         } else {
             $chatHandler->handleChatCompletion($message, $conversationId);
         }
     } else {
         if ($apiType === 'responses') {
-            $result = $chatHandler->handleResponsesChatSync($message, $conversationId, $fileData, $promptId, $promptVersion);
+            $result = $chatHandler->handleResponsesChatSync($message, $conversationId, $fileData, $promptId, $promptVersion, $tools);
         } else {
             $result = $chatHandler->handleChatCompletionSync($message, $conversationId);
         }

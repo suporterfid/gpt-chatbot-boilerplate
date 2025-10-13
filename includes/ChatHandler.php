@@ -109,7 +109,17 @@ class ChatHandler {
         ];
     }
 
-    public function handleResponsesChat($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null) {
+    /**
+     * Stream a Responses API chat reply over SSE.
+     *
+     * @param string $message
+     * @param string $conversationId
+     * @param array|null $fileData
+     * @param string|null $promptId
+     * @param string|null $promptVersion
+     * @param array|null $tools Optional Responses tools configuration overrides.
+     */
+    public function handleResponsesChat($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null) {
         $messages = $this->getConversationHistory($conversationId);
         $responsesConfig = $this->config['responses'];
 
@@ -152,6 +162,21 @@ class ChatHandler {
             'max_output_tokens' => $responsesConfig['max_output_tokens'],
             'stream' => true,
         ];
+
+        $configTools = [];
+        if (!empty($responsesConfig['tools']) && is_array($responsesConfig['tools'])) {
+            $configTools = $this->normalizeTools($responsesConfig['tools']);
+        }
+
+        $requestTools = [];
+        if (is_array($tools)) {
+            $requestTools = $this->normalizeTools($tools);
+        }
+
+        $mergedTools = $this->mergeTools($configTools, $requestTools);
+        if (!empty($mergedTools)) {
+            $payload['tools'] = $mergedTools;
+        }
 
         if ($effectivePromptId !== null) {
             $prompt = ['id' => $effectivePromptId];
@@ -349,7 +374,19 @@ class ChatHandler {
         }
     }
 
-    public function handleResponsesChatSync($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null) {
+    /**
+     * Execute a synchronous Responses API request and return the JSON payload.
+     *
+     * @param string $message
+     * @param string $conversationId
+     * @param array|null $fileData
+     * @param string|null $promptId
+     * @param string|null $promptVersion
+     * @param array|null $tools Optional Responses tools configuration overrides.
+     *
+     * @return array
+     */
+    public function handleResponsesChatSync($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null) {
         $messages = $this->getConversationHistory($conversationId);
         $responsesConfig = $this->config['responses'];
 
@@ -392,6 +429,21 @@ class ChatHandler {
             'max_output_tokens' => $responsesConfig['max_output_tokens'],
             'stream' => false,
         ];
+
+        $configTools = [];
+        if (!empty($responsesConfig['tools']) && is_array($responsesConfig['tools'])) {
+            $configTools = $this->normalizeTools($responsesConfig['tools']);
+        }
+
+        $requestTools = [];
+        if (is_array($tools)) {
+            $requestTools = $this->normalizeTools($tools);
+        }
+
+        $mergedTools = $this->mergeTools($configTools, $requestTools);
+        if (!empty($mergedTools)) {
+            $payload['tools'] = $mergedTools;
+        }
 
         if ($effectivePromptId !== null) {
             $prompt = ['id' => $effectivePromptId];
@@ -531,6 +583,223 @@ class ChatHandler {
         }
 
         return $formatted;
+    }
+
+    private function normalizeTools(array $toolsConfig): array {
+        $normalized = [];
+
+        foreach ($toolsConfig as $tool) {
+            if (!is_array($tool)) {
+                continue;
+            }
+
+            $type = $tool['type'] ?? null;
+            if (!is_string($type)) {
+                continue;
+            }
+
+            $type = strtolower(trim($type));
+            if ($type === '') {
+                continue;
+            }
+
+            switch ($type) {
+                case 'function':
+                    $function = $tool['function'] ?? null;
+                    if (!is_array($function)) {
+                        continue 2;
+                    }
+
+                    $name = $function['name'] ?? '';
+                    if (!is_string($name) || !preg_match('/^[A-Za-z0-9_]{1,64}$/', $name)) {
+                        continue 2;
+                    }
+
+                    $normalizedFunction = ['name' => $name];
+
+                    if (isset($function['description']) && is_string($function['description'])) {
+                        $desc = trim($function['description']);
+                        if ($desc !== '') {
+                            $normalizedFunction['description'] = substr($desc, 0, 512);
+                        }
+                    }
+
+                    if (array_key_exists('strict', $function)) {
+                        $strict = filter_var($function['strict'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                        if ($strict !== null) {
+                            $normalizedFunction['strict'] = $strict;
+                        }
+                    }
+
+                    if (isset($function['parameters'])) {
+                        $parameters = $this->sanitizeToolValue($function['parameters']);
+                        if ($parameters !== null) {
+                            $normalizedFunction['parameters'] = $parameters;
+                        }
+                    }
+
+                    $normalized[] = [
+                        'type' => 'function',
+                        'function' => $normalizedFunction,
+                    ];
+                    break;
+
+                case 'file_search':
+                    $normalizedTool = ['type' => 'file_search'];
+
+                    if (!empty($tool['vector_store_ids']) && is_array($tool['vector_store_ids'])) {
+                        $vectorStoreIds = [];
+                        foreach ($tool['vector_store_ids'] as $id) {
+                            if (!is_string($id)) {
+                                continue;
+                            }
+
+                            $id = trim($id);
+                            if ($id === '' || !preg_match('/^[A-Za-z0-9._-]{1,128}$/', $id)) {
+                                continue;
+                            }
+
+                            $vectorStoreIds[] = $id;
+                        }
+
+                        if (!empty($vectorStoreIds)) {
+                            $normalizedTool['vector_store_ids'] = array_values(array_unique($vectorStoreIds));
+                        }
+                    }
+
+                    $fileSearchOptions = [];
+                    $optionsSources = [];
+                    if (isset($tool['file_search']) && is_array($tool['file_search'])) {
+                        $optionsSources[] = $tool['file_search'];
+                    }
+                    if (isset($tool['max_num_results'])) {
+                        $optionsSources[] = ['max_num_results' => $tool['max_num_results']];
+                    }
+
+                    foreach ($optionsSources as $options) {
+                        if (!is_array($options)) {
+                            continue;
+                        }
+
+                        if (isset($options['max_num_results'])) {
+                            $maxResults = filter_var($options['max_num_results'], FILTER_VALIDATE_INT, [
+                                'options' => ['min_range' => 1, 'max_range' => 200],
+                            ]);
+                            if ($maxResults !== false) {
+                                $fileSearchOptions['max_num_results'] = $maxResults;
+                            }
+                        }
+
+                        if (isset($options['filters'])) {
+                            $filters = $this->sanitizeToolValue($options['filters']);
+                            if ($filters !== null) {
+                                $fileSearchOptions['filters'] = $filters;
+                            }
+                        }
+                    }
+
+                    if (!empty($fileSearchOptions)) {
+                        $normalizedTool['file_search'] = $fileSearchOptions;
+                    }
+
+                    $normalized[] = $normalizedTool;
+                    break;
+
+                case 'code_interpreter':
+                    $normalized[] = ['type' => 'code_interpreter'];
+                    break;
+
+                default:
+                    continue 2;
+            }
+        }
+
+        return $normalized;
+    }
+
+    private function mergeTools(array $defaultTools, array $overrideTools): array {
+        if (empty($defaultTools)) {
+            return $overrideTools;
+        }
+
+        if (empty($overrideTools)) {
+            return $defaultTools;
+        }
+
+        $merged = [];
+
+        foreach ($defaultTools as $tool) {
+            if (!isset($tool['type'])) {
+                continue;
+            }
+
+            $merged[$this->buildToolKey($tool)] = $tool;
+        }
+
+        foreach ($overrideTools as $tool) {
+            if (!isset($tool['type'])) {
+                continue;
+            }
+
+            $merged[$this->buildToolKey($tool)] = $tool;
+        }
+
+        return array_values($merged);
+    }
+
+    private function buildToolKey(array $tool): string {
+        $type = $tool['type'] ?? '';
+        $key = $type;
+
+        if ($type === 'function' && isset($tool['function']['name'])) {
+            $key .= ':' . $tool['function']['name'];
+        }
+
+        return $key;
+    }
+
+    private function sanitizeToolValue($value, int $depth = 0) {
+        if ($depth > 10) {
+            return null;
+        }
+
+        if (is_array($value)) {
+            $sanitized = [];
+            foreach ($value as $key => $item) {
+                if (!is_int($key) && !is_string($key)) {
+                    continue;
+                }
+
+                $child = $this->sanitizeToolValue($item, $depth + 1);
+                if ($child !== null) {
+                    $sanitized[$key] = $child;
+                }
+            }
+            return $sanitized;
+        }
+
+        if (is_object($value)) {
+            return $this->sanitizeToolValue((array)$value, $depth + 1);
+        }
+
+        if (is_string($value)) {
+            $trimmed = trim($value);
+            if ($trimmed === '') {
+                return '';
+            }
+
+            if (strlen($trimmed) > 2000) {
+                $trimmed = substr($trimmed, 0, 2000);
+            }
+
+            return $trimmed;
+        }
+
+        if (is_int($value) || is_float($value) || is_bool($value) || $value === null) {
+            return $value;
+        }
+
+        return null;
     }
 
     private function normalizePromptValue($value) {
