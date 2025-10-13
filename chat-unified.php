@@ -94,6 +94,63 @@ function sendSSEEvent($type, $data = null, $id = null) {
     flush();
 }
 
+/**
+ * Decode and validate tools payload from request input.
+ *
+ * @param mixed $rawTools
+ * @param string $source
+ * @return array|null
+ * @throws Exception
+ */
+function extractToolsConfig($rawTools, string $source = 'request') {
+    if ($rawTools === null) {
+        return null;
+    }
+
+    if (is_string($rawTools)) {
+        $trimmed = trim($rawTools);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $decoded = json_decode($trimmed, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $error = json_last_error_msg();
+            log_debug("Failed to decode tools payload from {$source}: {$error}", 'warn');
+            throw new Exception('Invalid tools payload: expected JSON array', 400);
+        }
+
+        $rawTools = $decoded;
+    }
+
+    if ($rawTools === null) {
+        return null;
+    }
+
+    if (!is_array($rawTools)) {
+        log_debug("Tools payload from {$source} must decode to an array", 'warn');
+        throw new Exception('Invalid tools payload: expected array', 400);
+    }
+
+    $validTools = [];
+    foreach ($rawTools as $index => $tool) {
+        if (!is_array($tool)) {
+            log_debug("Ignoring non-object tools entry at index {$index} from {$source}", 'warn');
+            continue;
+        }
+
+        $type = $tool['type'] ?? null;
+        if (!is_string($type) || trim($type) === '') {
+            log_debug("Ignoring tools entry missing type at index {$index} from {$source}", 'warn');
+            continue;
+        }
+
+        $validTools[] = $tool;
+    }
+
+    return $validTools;
+}
+
 // Main execution
 try {
     // Use configuration loaded above
@@ -115,10 +172,7 @@ try {
         $promptId = $_GET['prompt_id'] ?? $promptId;
         $promptVersion = $_GET['prompt_version'] ?? $promptVersion;
         if (isset($_GET['tools'])) {
-            $decodedTools = json_decode($_GET['tools'], true);
-            if (is_array($decodedTools)) {
-                $tools = $decodedTools;
-            }
+            $tools = extractToolsConfig($_GET['tools'], 'query');
         }
     } elseif ($method === 'POST') {
         $message = $input['message'] ?? '';
@@ -128,15 +182,7 @@ try {
         $promptId = $input['prompt_id'] ?? $promptId;
         $promptVersion = $input['prompt_version'] ?? $promptVersion;
         if (array_key_exists('tools', $input)) {
-            $postedTools = $input['tools'];
-            if (is_string($postedTools)) {
-                $decodedTools = json_decode($postedTools, true);
-                if (is_array($decodedTools)) {
-                    $tools = $decodedTools;
-                }
-            } elseif (is_array($postedTools)) {
-                $tools = $postedTools;
-            }
+            $tools = extractToolsConfig($input['tools'], 'body');
         }
     }
 
@@ -190,19 +236,26 @@ try {
     log_debug('Chat Error: ' . $e->getMessage(), 'error');
 
     if ($shouldStream) {
+        $errorCode = $e->getCode();
+        $errorMessage = $e->getMessage() ?: 'An error occurred while processing your request.';
+        $isClientError = is_int($errorCode) && $errorCode >= 400 && $errorCode < 500;
+
         sendSSEEvent('error', [
-            'message' => 'An error occurred while processing your request.',
-            'code' => $e->getCode() ?: 'UNKNOWN_ERROR'
+            'message' => $isClientError ? $errorMessage : 'An error occurred while processing your request.',
+            'code' => $errorCode ?: 'UNKNOWN_ERROR'
         ]);
     } else {
         $statusCode = $e->getCode();
         if (!is_int($statusCode) || $statusCode < 400 || $statusCode > 599) {
             $statusCode = 500;
         }
+        $errorMessage = $e->getMessage() ?: 'An error occurred while processing your request.';
+        $isClientError = $statusCode >= 400 && $statusCode < 500;
+
         http_response_code($statusCode);
         echo json_encode([
             'error' => [
-                'message' => 'An error occurred while processing your request.',
+                'message' => $isClientError ? $errorMessage : 'An error occurred while processing your request.',
                 'code' => $e->getCode() ?: 'UNKNOWN_ERROR'
             ]
         ]);
