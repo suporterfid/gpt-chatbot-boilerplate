@@ -500,11 +500,20 @@ class ChatHandler {
 
         foreach ($messages as $message) {
             $content = $message['content'] ?? '';
+            $role = $message['role'];
+
+            $type = 'input_text';
+            if ($role === 'assistant') {
+                $type = 'output_text';
+            } elseif ($role === 'tool') {
+                $type = 'tool_result';
+            }
+
             $formattedMessage = [
-                'role' => $message['role'],
+                'role' => $role,
                 'content' => [
                     [
-                        'type' => 'input_text',
+                        'type' => $type,
                         'text' => $content
                     ]
                 ]
