@@ -685,12 +685,10 @@ class ChatHandler {
         }
 
         if ($maxNumResults !== null) {
-            $tool['file_search'] = [
-                'max_num_results' => $maxNumResults,
-            ];
+            $tool['max_num_results'] = $maxNumResults;
         }
 
-        return $tool;
+        return $this->normalizeFileSearchStructure($tool);
     }
 
     private function applyFileSearchDefaults(array $tools, array $vectorStoreIds, ?int $maxNumResults): array {
@@ -707,28 +705,57 @@ class ChatHandler {
                 continue;
             }
 
+            $tool = $this->normalizeFileSearchStructure($tool);
+
             if (!empty($vectorStoreIds) && !array_key_exists('vector_store_ids', $tool)) {
                 $tool['vector_store_ids'] = $vectorStoreIds;
             }
 
-            if ($maxNumResults !== null) {
-                $options = [];
-                if (isset($tool['file_search']) && is_array($tool['file_search'])) {
-                    $options = $tool['file_search'];
-                }
-
-                if (!isset($options['max_num_results'])) {
-                    $options['max_num_results'] = $maxNumResults;
-                }
-
-                if (!empty($options)) {
-                    $tool['file_search'] = $options;
-                }
+            if ($maxNumResults !== null && !array_key_exists('max_num_results', $tool)) {
+                $tool['max_num_results'] = $maxNumResults;
             }
         }
         unset($tool);
 
         return $tools;
+    }
+
+    private function normalizeFileSearchStructure(array $tool): array {
+        if (($tool['type'] ?? '') !== 'file_search') {
+            return $tool;
+        }
+
+        if (isset($tool['file_search']) && is_array($tool['file_search'])) {
+            $options = $tool['file_search'];
+
+            if (!array_key_exists('max_num_results', $tool) && array_key_exists('max_num_results', $options)) {
+                $max = $this->sanitizeMaxNumResults($options['max_num_results']);
+                if ($max !== null) {
+                    $tool['max_num_results'] = $max;
+                }
+            }
+
+            if (!array_key_exists('filters', $tool) && array_key_exists('filters', $options)) {
+                $filters = $this->sanitizeToolValue($options['filters']);
+                if ($filters !== null) {
+                    $tool['filters'] = $filters;
+                }
+            }
+
+            foreach ($options as $key => $value) {
+                if (in_array($key, ['max_num_results', 'filters'], true)) {
+                    continue;
+                }
+
+                if (!array_key_exists($key, $tool)) {
+                    $tool[$key] = $value;
+                }
+            }
+
+            unset($tool['file_search']);
+        }
+
+        return $tool;
     }
 
     private function normalizeTools(array $toolsConfig): array {
@@ -821,6 +848,9 @@ class ChatHandler {
                     if (isset($tool['max_num_results'])) {
                         $optionsSources[] = ['max_num_results' => $tool['max_num_results']];
                     }
+                    if (isset($tool['filters'])) {
+                        $optionsSources[] = ['filters' => $tool['filters']];
+                    }
 
                     foreach ($optionsSources as $options) {
                         if (!is_array($options)) {
@@ -845,10 +875,12 @@ class ChatHandler {
                     }
 
                     if (!empty($fileSearchOptions)) {
-                        $normalizedTool['file_search'] = $fileSearchOptions;
+                        foreach ($fileSearchOptions as $key => $value) {
+                            $normalizedTool[$key] = $value;
+                        }
                     }
 
-                    $normalized[] = $normalizedTool;
+                    $normalized[] = $this->normalizeFileSearchStructure($normalizedTool);
                     break;
 
                 case 'code_interpreter':
@@ -906,6 +938,9 @@ class ChatHandler {
         $type = $overrideTool['type'] ?? $defaultTool['type'] ?? null;
 
         if ($type === 'file_search') {
+            $defaultTool = $this->normalizeFileSearchStructure($defaultTool);
+            $overrideTool = $this->normalizeFileSearchStructure($overrideTool);
+
             $merged = $defaultTool;
 
             if (array_key_exists('vector_store_ids', $overrideTool)) {
@@ -917,21 +952,17 @@ class ChatHandler {
                 }
             }
 
-            if (isset($overrideTool['file_search']) && is_array($overrideTool['file_search'])) {
-                $options = $merged['file_search'] ?? [];
-                foreach ($overrideTool['file_search'] as $key => $value) {
-                    if ($value === null) {
-                        unset($options[$key]);
-                        continue;
-                    }
-                    $options[$key] = $value;
+            foreach ($overrideTool as $key => $value) {
+                if (in_array($key, ['type', 'vector_store_ids'], true)) {
+                    continue;
                 }
 
-                if (!empty($options)) {
-                    $merged['file_search'] = $options;
-                } else {
-                    unset($merged['file_search']);
+                if ($value === null) {
+                    unset($merged[$key]);
+                    continue;
                 }
+
+                $merged[$key] = $value;
             }
 
             $merged['type'] = 'file_search';

@@ -16,6 +16,8 @@ class OpenAIClient {
 
     // Chat Completions API Methods
     public function streamChatCompletion($payload, $callback) {
+        $this->logRequestPayload('POST', '/chat/completions', $payload);
+
         $ch = curl_init();
 
         curl_setopt_array($ch, [
@@ -71,6 +73,8 @@ class OpenAIClient {
 
     public function streamResponse(array $payload, callable $callback) {
         $payload['stream'] = true;
+
+        $this->logRequestPayload('POST', '/responses', $payload);
 
         $ch = curl_init();
 
@@ -208,6 +212,10 @@ class OpenAIClient {
         $url = $this->baseUrl . $endpoint;
         $headers = $this->getHeaders();
 
+        if ($data !== null) {
+            $this->logRequestPayload($method, $endpoint, $data);
+        }
+
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
@@ -229,6 +237,8 @@ class OpenAIClient {
             throw new Exception('cURL error: ' . $error);
         }
 
+        $this->logResponsePayload($method, $endpoint, $httpCode, $result);
+
         if ($httpCode < 200 || $httpCode >= 300) {
             $response = json_decode($result, true);
             $errorMessage = $response['error']['message'] ?? 'Unknown API error';
@@ -249,6 +259,42 @@ class OpenAIClient {
         }
 
         return array_merge($headers, $additionalHeaders);
+    }
+
+    private function logRequestPayload(string $method, string $endpoint, $payload): void {
+        if (!function_exists('log_debug')) {
+            return;
+        }
+
+        $encoded = $this->encodeJsonForLog($payload);
+        log_debug(sprintf('OpenAI request %s %s payload=%s', $method, $endpoint, $encoded), 'debug');
+    }
+
+    private function logResponsePayload(string $method, string $endpoint, int $status, string $body): void {
+        if (!function_exists('log_debug')) {
+            return;
+        }
+
+        $decoded = json_decode($body, true);
+        $encoded = $this->encodeJsonForLog($decoded ?? $body);
+        log_debug(sprintf('OpenAI response %s %s status=%d body=%s', $method, $endpoint, $status, $encoded), 'debug');
+    }
+
+    private function encodeJsonForLog($data): string {
+        if ($data === null) {
+            return 'null';
+        }
+
+        if (is_string($data)) {
+            return $data;
+        }
+
+        $encoded = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($encoded === false) {
+            return '"<unserializable>"';
+        }
+
+        return $encoded;
     }
 }
 ?>
