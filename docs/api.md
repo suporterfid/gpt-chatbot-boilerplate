@@ -506,6 +506,17 @@ The application can be configured using environment variables:
 - `OPENAI_TEMPERATURE`: Temperature setting (default: 0.7)
 - `OPENAI_MAX_TOKENS`: Maximum tokens per response (default: 1000)
 
+#### Responses Configuration
+
+- `RESPONSES_MODEL`: Responses API model (default: gpt-4.1-mini)
+- `RESPONSES_PROMPT_ID`: Saved prompt identifier (optional)
+- `RESPONSES_PROMPT_VERSION`: Prompt version (optional, defaults to latest)
+- `RESPONSES_MAX_OUTPUT_TOKENS`: Maximum output tokens (default: 1024)
+- `RESPONSES_TEMPERATURE`: Temperature setting (default: 0.7)
+- `RESPONSES_TOOLS`: Tools definition (JSON array or comma-separated list, e.g. `[{"type":"file_search"}]` or `file_search`)
+- `RESPONSES_VECTOR_STORE_IDS`: Default vector store IDs (JSON array or comma-separated list)
+- `RESPONSES_MAX_NUM_RESULTS`: Default `file_search.max_num_results` (1–200)
+
 #### Chat Configuration
 
 - `CHAT_MAX_MESSAGES`: Maximum messages to keep in session (default: 50)

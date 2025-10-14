@@ -68,6 +68,10 @@ RESPONSES_PROMPT_ID=pmpt_your_prompt_id   # optional, reference a saved prompt
 RESPONSES_PROMPT_VERSION=1                # optional, defaults to latest
 RESPONSES_TEMPERATURE=0.7
 RESPONSES_MAX_OUTPUT_TOKENS=1024
+# Tools & file search defaults (JSON or comma-separated values)
+RESPONSES_TOOLS=[{"type":"file_search"}]      # JSON array or comma-separated tool types
+RESPONSES_VECTOR_STORE_IDS=vs_1234567890,vs_0987654321
+RESPONSES_MAX_NUM_RESULTS=20
 ```
 
 2. Enable file uploads (optional):
@@ -120,7 +124,12 @@ ChatBot.init({
 
     responsesConfig: {
         promptId: 'pmpt_your_prompt_id',
-        promptVersion: '1'
+        promptVersion: '1',
+        defaultTools: [
+            { type: 'file_search' }
+        ],
+        defaultVectorStoreIds: ['vs_1234567890'],
+        defaultMaxNumResults: 20
     },
 
     onToolCall: function(toolData) {
@@ -134,7 +143,7 @@ ChatBot.init({
 </script>
 ```
 
-> **Tip:** Any values supplied in `responsesConfig` are forwarded with each `/chat-unified.php` request. For example, `promptId` automatically becomes `prompt_id` in the payload so the PHP endpoint can target the correct saved prompt version.
+> **Tip:** Any values supplied in `responsesConfig` are forwarded with each `/chat-unified.php` request using snake_case keys. For example, `defaultVectorStoreIds` automatically becomes `default_vector_store_ids` so the PHP endpoint can merge them with server defaults from `RESPONSES_VECTOR_STORE_IDS`.
 
 ### File Upload Configuration
 
@@ -175,10 +184,17 @@ return [
         'temperature' => 0.7,
         'max_output_tokens' => 1024,
         'prompt_id' => 'pmpt_your_prompt_id',
-        'prompt_version' => '1'
+        'prompt_version' => '1',
+        'default_tools' => [
+            ['type' => 'file_search']
+        ],
+        'default_vector_store_ids' => ['vs_1234567890'],
+        'default_max_num_results' => 20
     ]
 ];
 ```
+
+The `RESPONSES_TOOLS`, `RESPONSES_VECTOR_STORE_IDS`, and `RESPONSES_MAX_NUM_RESULTS` environment variables hydrate these defaults automatically. Provide JSON arrays (e.g., `[{"type":"file_search"}]`) or comma-separated lists (`vs_123,vs_456`) and the backend merges them with any request-level overrides (config → request → final payload).
 
 ### File Upload Configuration
 
@@ -254,7 +270,7 @@ return [
 |--------|------|---------|-------------|
 | `apiType` | string | `'responses'` | API to use: `'chat'` or `'responses'` |
 | `enableFileUpload` | boolean | `false` | Enable file upload functionality |
-| `responsesConfig` | object | `{}` | Responses API prompt reference settings forwarded as `prompt_id` / `prompt_version` |
+| `responsesConfig` | object | `{}` | Responses API defaults forwarded as snake_case (e.g. `defaultVectorStoreIds` → `default_vector_store_ids`) |
 
 #### Callbacks
 
@@ -318,6 +334,10 @@ RESPONSES_PROMPT_ID=pmpt_your_prompt_id
 RESPONSES_PROMPT_VERSION=1
 RESPONSES_MAX_OUTPUT_TOKENS=1024
 RESPONSES_TEMPERATURE=0.7
+# Tools & file search defaults (JSON or comma-separated values)
+RESPONSES_TOOLS=[{"type":"file_search"}]
+RESPONSES_VECTOR_STORE_IDS=vs_1234567890,vs_0987654321
+RESPONSES_MAX_NUM_RESULTS=20
 
 # File Upload
 ENABLE_FILE_UPLOAD=true
