@@ -163,17 +163,18 @@ class ChatHandler {
             'stream' => true,
         ];
 
-        $configTools = [];
-        if (!empty($responsesConfig['tools']) && is_array($responsesConfig['tools'])) {
-            $configTools = $this->normalizeTools($responsesConfig['tools']);
-        }
+        $tooling = $this->resolveResponsesTooling();
+        $configTools = $tooling['tools'];
+        $overrideProvided = $tools !== null;
 
         $requestTools = [];
-        if (is_array($tools)) {
+        if ($overrideProvided && is_array($tools)) {
             $requestTools = $this->normalizeTools($tools);
         }
 
-        $mergedTools = $this->mergeTools($configTools, $requestTools);
+        $mergedTools = $this->mergeTools($configTools, $requestTools, $overrideProvided);
+        $mergedTools = $this->applyFileSearchDefaults($mergedTools, $tooling['default_vector_store_ids'], $tooling['default_max_num_results']);
+
         if (!empty($mergedTools)) {
             $payload['tools'] = $mergedTools;
         }
@@ -430,17 +431,18 @@ class ChatHandler {
             'stream' => false,
         ];
 
-        $configTools = [];
-        if (!empty($responsesConfig['tools']) && is_array($responsesConfig['tools'])) {
-            $configTools = $this->normalizeTools($responsesConfig['tools']);
-        }
+        $tooling = $this->resolveResponsesTooling();
+        $configTools = $tooling['tools'];
+        $overrideProvided = $tools !== null;
 
         $requestTools = [];
-        if (is_array($tools)) {
+        if ($overrideProvided && is_array($tools)) {
             $requestTools = $this->normalizeTools($tools);
         }
 
-        $mergedTools = $this->mergeTools($configTools, $requestTools);
+        $mergedTools = $this->mergeTools($configTools, $requestTools, $overrideProvided);
+        $mergedTools = $this->applyFileSearchDefaults($mergedTools, $tooling['default_vector_store_ids'], $tooling['default_max_num_results']);
+
         if (!empty($mergedTools)) {
             $payload['tools'] = $mergedTools;
         }
@@ -585,6 +587,150 @@ class ChatHandler {
         return $formatted;
     }
 
+    private function resolveResponsesTooling(): array {
+        $config = $this->config['responses'] ?? [];
+
+        $defaultVectorStoreIds = $this->sanitizeVectorStoreIds($config['default_vector_store_ids'] ?? []);
+        $defaultMaxNumResults = $this->sanitizeMaxNumResults($config['default_max_num_results'] ?? null);
+
+        $rawTools = [];
+
+        if (!empty($config['default_tools']) && is_array($config['default_tools'])) {
+            $rawTools = $config['default_tools'];
+        } elseif (!empty($config['tools']) && is_array($config['tools'])) {
+            // Backwards compatibility for older configs referencing 'tools'
+            $rawTools = $config['tools'];
+        }
+
+        $normalized = [];
+        if (!empty($rawTools)) {
+            $normalized = $this->normalizeTools($rawTools);
+        }
+
+        if (empty($normalized)) {
+            $autoTool = $this->buildDefaultFileSearchTool($defaultVectorStoreIds, $defaultMaxNumResults);
+            if ($autoTool !== null) {
+                $normalized[] = $autoTool;
+            }
+        } else {
+            $normalized = $this->applyFileSearchDefaults($normalized, $defaultVectorStoreIds, $defaultMaxNumResults);
+        }
+
+        return [
+            'tools' => $normalized,
+            'default_vector_store_ids' => $defaultVectorStoreIds,
+            'default_max_num_results' => $defaultMaxNumResults,
+        ];
+    }
+
+    private function sanitizeVectorStoreIds($ids): array {
+        if (!is_array($ids)) {
+            return [];
+        }
+
+        $clean = [];
+
+        foreach ($ids as $id) {
+            if (!is_string($id) && !is_numeric($id)) {
+                continue;
+            }
+
+            $value = trim((string)$id);
+            if ($value === '') {
+                continue;
+            }
+
+            if (!preg_match('/^[A-Za-z0-9._-]{1,128}$/', $value)) {
+                continue;
+            }
+
+            $clean[] = $value;
+        }
+
+        return array_values(array_unique($clean));
+    }
+
+    private function sanitizeMaxNumResults($value): ?int {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_array($value)) {
+            return null;
+        }
+
+        $filtered = filter_var($value, FILTER_VALIDATE_INT, [
+            'options' => [
+                'min_range' => 1,
+                'max_range' => 200,
+            ],
+        ]);
+
+        if ($filtered === false) {
+            return null;
+        }
+
+        return (int)$filtered;
+    }
+
+    private function buildDefaultFileSearchTool(array $vectorStoreIds, ?int $maxNumResults): ?array {
+        if (empty($vectorStoreIds) && $maxNumResults === null) {
+            return null;
+        }
+
+        $tool = ['type' => 'file_search'];
+
+        if (!empty($vectorStoreIds)) {
+            $tool['vector_store_ids'] = $vectorStoreIds;
+        }
+
+        if ($maxNumResults !== null) {
+            $tool['file_search'] = [
+                'max_num_results' => $maxNumResults,
+            ];
+        }
+
+        return $tool;
+    }
+
+    private function applyFileSearchDefaults(array $tools, array $vectorStoreIds, ?int $maxNumResults): array {
+        if (empty($tools)) {
+            return $tools;
+        }
+
+        if (empty($vectorStoreIds) && $maxNumResults === null) {
+            return $tools;
+        }
+
+        foreach ($tools as &$tool) {
+            if (($tool['type'] ?? '') !== 'file_search') {
+                continue;
+            }
+
+            if (!empty($vectorStoreIds) && !array_key_exists('vector_store_ids', $tool)) {
+                $tool['vector_store_ids'] = $vectorStoreIds;
+            }
+
+            if ($maxNumResults !== null) {
+                $options = [];
+                if (isset($tool['file_search']) && is_array($tool['file_search'])) {
+                    $options = $tool['file_search'];
+                }
+
+                if (!isset($options['max_num_results'])) {
+                    $options['max_num_results'] = $maxNumResults;
+                }
+
+                if (!empty($options)) {
+                    $tool['file_search'] = $options;
+                }
+            }
+        }
+        unset($tool);
+
+        return $tools;
+    }
+
     private function normalizeTools(array $toolsConfig): array {
         $normalized = [];
 
@@ -717,13 +863,17 @@ class ChatHandler {
         return $normalized;
     }
 
-    private function mergeTools(array $defaultTools, array $overrideTools): array {
-        if (empty($defaultTools)) {
-            return $overrideTools;
+    private function mergeTools(array $defaultTools, array $overrideTools, bool $overrideProvided = false): array {
+        if ($overrideProvided) {
+            if (empty($overrideTools)) {
+                return [];
+            }
+        } elseif (empty($overrideTools)) {
+            return $defaultTools;
         }
 
-        if (empty($overrideTools)) {
-            return $defaultTools;
+        if (empty($defaultTools)) {
+            return $overrideTools;
         }
 
         $merged = [];
@@ -741,10 +891,78 @@ class ChatHandler {
                 continue;
             }
 
-            $merged[$this->buildToolKey($tool)] = $tool;
+            $key = $this->buildToolKey($tool);
+            if (isset($merged[$key])) {
+                $merged[$key] = $this->mergeSingleTool($merged[$key], $tool);
+            } else {
+                $merged[$key] = $tool;
+            }
         }
 
         return array_values($merged);
+    }
+
+    private function mergeSingleTool(array $defaultTool, array $overrideTool): array {
+        $type = $overrideTool['type'] ?? $defaultTool['type'] ?? null;
+
+        if ($type === 'file_search') {
+            $merged = $defaultTool;
+
+            if (array_key_exists('vector_store_ids', $overrideTool)) {
+                $ids = $overrideTool['vector_store_ids'];
+                if (is_array($ids)) {
+                    $merged['vector_store_ids'] = $ids;
+                } else {
+                    unset($merged['vector_store_ids']);
+                }
+            }
+
+            if (isset($overrideTool['file_search']) && is_array($overrideTool['file_search'])) {
+                $options = $merged['file_search'] ?? [];
+                foreach ($overrideTool['file_search'] as $key => $value) {
+                    if ($value === null) {
+                        unset($options[$key]);
+                        continue;
+                    }
+                    $options[$key] = $value;
+                }
+
+                if (!empty($options)) {
+                    $merged['file_search'] = $options;
+                } else {
+                    unset($merged['file_search']);
+                }
+            }
+
+            $merged['type'] = 'file_search';
+
+            return $merged;
+        }
+
+        if ($type === 'function') {
+            $merged = $defaultTool;
+
+            if (isset($overrideTool['function']) && is_array($overrideTool['function'])) {
+                $functionConfig = $merged['function'] ?? [];
+                foreach ($overrideTool['function'] as $key => $value) {
+                    if ($value === null) {
+                        unset($functionConfig[$key]);
+                        continue;
+                    }
+                    $functionConfig[$key] = $value;
+                }
+
+                if (!empty($functionConfig)) {
+                    $merged['function'] = $functionConfig;
+                }
+            }
+
+            $merged['type'] = 'function';
+
+            return $merged;
+        }
+
+        return array_merge($defaultTool, $overrideTool);
     }
 
     private function buildToolKey(array $tool): string {

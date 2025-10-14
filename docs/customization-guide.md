@@ -159,10 +159,17 @@ ChatBot.init({
     apiType: 'responses',
     responsesConfig: {
         promptId: 'pmpt_shared_instruction_set',
-        promptVersion: 'latest'
+        promptVersion: 'latest',
+        defaultTools: [
+            { type: 'file_search' }
+        ],
+        defaultVectorStoreIds: ['vs_1234567890'],
+        defaultMaxNumResults: 12
     }
 });
 ```
+
+> **Server defaults:** The PHP config automatically hydrates these settings from `RESPONSES_TOOLS`, `RESPONSES_VECTOR_STORE_IDS`, and `RESPONSES_MAX_NUM_RESULTS`. Supply either JSON arrays (`[{"type":"file_search"}]`) or comma-separated lists (`vs_123,vs_456`), and request overrides merge on top of the configured defaults.
 
 ### Mixing Prompt Templates with Inline Context
 

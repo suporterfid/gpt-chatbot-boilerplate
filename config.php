@@ -15,6 +15,173 @@ if (file_exists(__DIR__ . '/.env')) {
     }
 }
 
+if (!function_exists('getEnvValue')) {
+    function getEnvValue(string $key) {
+        if (array_key_exists($key, $_ENV)) {
+            return $_ENV[$key];
+        }
+
+        $value = getenv($key);
+
+        return $value === false ? null : $value;
+    }
+}
+
+if (!function_exists('parseFlexibleEnvArray')) {
+    function parseFlexibleEnvArray($value, array $options = []): array {
+        $allowJson = $options['allow_json'] ?? true;
+        $delimiter = $options['delimiter'] ?? ',';
+        $map = $options['map'] ?? null;
+        $trimStrings = $options['trim_strings'] ?? true;
+        $filterEmpty = $options['filter_empty'] ?? true;
+
+        if ($value === null) {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $value = trim($value);
+            if ($value === '') {
+                return [];
+            }
+        }
+
+        $items = $value;
+
+        if (is_string($items) && $allowJson) {
+            $decoded = json_decode($items, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $items = $decoded;
+            }
+        }
+
+        if (is_string($items)) {
+            $items = array_map('trim', explode($delimiter, $items));
+        }
+
+        if (is_scalar($items) && !is_array($items)) {
+            $items = [(string)$items];
+        }
+
+        if (!is_array($items)) {
+            return [];
+        }
+
+        // Normalize associative arrays to a single entry
+        if (array_values($items) !== $items) {
+            $items = [$items];
+        }
+
+        $result = [];
+
+        foreach ($items as $item) {
+            if ($map && is_callable($map)) {
+                $item = $map($item);
+            }
+
+            if ($item === null) {
+                continue;
+            }
+
+            if ($trimStrings && is_string($item)) {
+                $item = trim($item);
+            }
+
+            if ($filterEmpty) {
+                if (is_string($item) && $item === '') {
+                    continue;
+                }
+
+                if (is_array($item) && empty($item)) {
+                    continue;
+                }
+            }
+
+            $result[] = $item;
+        }
+
+        return $result;
+    }
+}
+
+if (!function_exists('parseResponsesToolsEnv')) {
+    function parseResponsesToolsEnv($value): array {
+        return parseFlexibleEnvArray($value, [
+            'map' => function($item) {
+                if (is_string($item) || is_numeric($item)) {
+                    $type = strtolower(trim((string)$item));
+                    return $type === '' ? null : ['type' => $type];
+                }
+
+                if (is_array($item)) {
+                    if (isset($item['type']) && is_string($item['type'])) {
+                        $item['type'] = strtolower(trim($item['type']));
+                    }
+
+                    return $item;
+                }
+
+                return null;
+            },
+            'trim_strings' => false,
+        ]);
+    }
+}
+
+if (!function_exists('parseResponsesVectorStoreIdsEnv')) {
+    function parseResponsesVectorStoreIdsEnv($value): array {
+        $ids = parseFlexibleEnvArray($value, [
+            'map' => function($item) {
+                if (is_string($item) || is_numeric($item)) {
+                    $id = trim((string)$item);
+                    return $id === '' ? null : $id;
+                }
+
+                return null;
+            }
+        ]);
+
+        if (empty($ids)) {
+            return [];
+        }
+
+        return array_values(array_unique($ids));
+    }
+}
+
+if (!function_exists('parseIntFromEnv')) {
+    function parseIntFromEnv($value, int $min, int $max): ?int {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_array($value)) {
+            return null;
+        }
+
+        $filtered = filter_var($value, FILTER_VALIDATE_INT, [
+            'options' => [
+                'min_range' => $min,
+                'max_range' => $max,
+            ],
+        ]);
+
+        if ($filtered === false) {
+            return null;
+        }
+
+        return (int)$filtered;
+    }
+}
+
+$responsesToolsEnv = getEnvValue('RESPONSES_TOOLS');
+$responsesVectorStoreIdsEnv = getEnvValue('RESPONSES_VECTOR_STORE_IDS');
+$responsesMaxResultsEnv = getEnvValue('RESPONSES_MAX_NUM_RESULTS');
+
+$defaultResponsesTools = parseResponsesToolsEnv($responsesToolsEnv);
+$defaultVectorStoreIds = parseResponsesVectorStoreIdsEnv($responsesVectorStoreIdsEnv);
+$defaultMaxNumResults = parseIntFromEnv($responsesMaxResultsEnv, 1, 200);
+
 $config = [
     // API Configuration - Choose between 'chat' or 'responses'
     'api_type' => $_ENV['API_TYPE'] ?? getenv('API_TYPE') ?: 'responses',
@@ -48,6 +215,9 @@ $config = [
         'system_message' => $_ENV['RESPONSES_SYSTEM_MESSAGE'] ?? getenv('RESPONSES_SYSTEM_MESSAGE') ?: ($_ENV['SYSTEM_MESSAGE'] ?? getenv('SYSTEM_MESSAGE') ?: 'You are a helpful AI assistant.'),
         'prompt_id' => $_ENV['RESPONSES_PROMPT_ID'] ?? getenv('RESPONSES_PROMPT_ID') ?: '',
         'prompt_version' => $_ENV['RESPONSES_PROMPT_VERSION'] ?? getenv('RESPONSES_PROMPT_VERSION') ?: '',
+        'default_tools' => $defaultResponsesTools,
+        'default_vector_store_ids' => $defaultVectorStoreIds,
+        'default_max_num_results' => $defaultMaxNumResults,
     ],
 
     // Session & Storage Configuration

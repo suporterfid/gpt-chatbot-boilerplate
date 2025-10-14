@@ -38,6 +38,9 @@
             promptId: '',
             promptVersion: '',
             tools: null,
+            defaultTools: null,
+            defaultVectorStoreIds: null,
+            defaultMaxNumResults: null,
         },
 
         // Theme customization

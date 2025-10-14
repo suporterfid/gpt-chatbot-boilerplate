@@ -228,6 +228,8 @@ curl https://api.openai.com/v1/responses \
   }'
 ```
 
+> **Server shortcut:** Configure the PHP layer with `RESPONSES_TOOLS=[{"type":"file_search"}]`, `RESPONSES_VECTOR_STORE_IDS=vs_1234567890`, and `RESPONSES_MAX_NUM_RESULTS=20` (JSON or comma-separated values) to make this tool payload the default for `/chat-unified.php` requests.
+
 Response:
 
 ```
