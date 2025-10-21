@@ -1,86 +1,55 @@
 # AI Agents and Integration Guide
 
 ## Overview
-This project ships a dual-mode chatbot that can talk to OpenAI's **Chat Completions** and **Responses** APIs through a unified PHP backend and a customizable JavaScript widget. The backend exposes two agent profiles:
+- This project provides a dual-mode PHP backend and JavaScript widget that can switch between OpenAI's Chat Completions and Responses APIs, including streaming, file uploads, and optional WebSocket transport.【F:README.md†L1-L110】【F:chat-unified.php†L1-L265】
+- `ChatHandler` orchestrates validation, rate limiting, conversation storage, and agent-specific flows while delegating OpenAI calls to `OpenAIClient`. Both classes are reusable across HTTP SSE, AJAX fallbacks, and the optional Ratchet WebSocket server.【F:includes/ChatHandler.php†L15-L1276】【F:includes/OpenAIClient.php†L17-L299】【F:websocket-server.php†L18-L220】
 
-- **Chat Completion Assistant** – streams conversational replies using the traditional `chat.completions` endpoint. Designed for lightweight, stateless question answering with configurable persona instructions.
-- **Responses Agent** – targets the newer Responses API with prompt-template awareness, tool calling, and file attachment support for richer workflows.
+## Architecture Map
+- **HTTP entrypoint** – `chat-unified.php` normalizes GET/POST payloads, negotiates SSE headers, exposes the `sendSSEEvent` helper, and routes to chat or responses handlers with JSON fallbacks when `stream=false`. All API errors are funneled into SSE `error` events or JSON responses.【F:chat-unified.php†L35-L268】
+- **Core orchestration** – `includes/ChatHandler.php` validates input, injects system prompts, merges Responses tools/prompt overrides, handles streaming callbacks, manages storage, and executes rate limiting/file validation utilities.【F:includes/ChatHandler.php†L15-L1276】
+- **OpenAI transport** – `includes/OpenAIClient.php` wraps streaming for `/chat/completions` and `/responses`, retries Responses failures with non-streaming requests for richer errors, and uploads files before attaching IDs to messages.【F:includes/OpenAIClient.php†L17-L207】
+- **Front-end widget** – `chatbot-enhanced.js` renders the UI, assembles requests (including Responses overrides and file payloads), negotiates WebSocket→SSE→AJAX fallbacks, and interprets streamed SSE/WebSocket chunks (`start`/`chunk`/`done`/`tool_call`).【F:chatbot-enhanced.js†L13-L1484】
+- **Optional WebSocket relay** – `websocket-server.php` mirrors the chat-completions streaming loop over Ratchet, emitting JSON `start`/`chunk`/`done`/`error` events to clients while maintaining per-connection history.【F:websocket-server.php†L31-L220】
+- **Configuration** – `config.php` hydrates environment variables (including prompt IDs, tool defaults, vector store IDs, upload limits, and WebSocket toggles) and materializes them for both agents.【F:config.php†L185-L297】
 
-An optional Ratchet-powered WebSocket relay complements the primary Server-Sent Events (SSE) transport so front-ends can choose the best real-time channel.
+## Agent Profiles
+### Chat Completions Agent (`api_type=chat`)
+- Loads prior messages from storage, prepends the configured system message to new conversations, and streams completions over SSE `message` events (`type: start|chunk|done`).【F:includes/ChatHandler.php†L48-L109】【F:includes/ChatHandler.php†L504-L548】
+- Synchronous fallback returns JSON bodies with the assistant reply; conversation history is trimmed before persisting.【F:includes/ChatHandler.php†L70-L109】【F:includes/ChatHandler.php†L529-L547】【F:includes/ChatHandler.php†L1210-L1247】
+- Tunables (model, temperature, penalties, system prompt) are sourced from the `chat` section of `config.php`; respect `max_message_length`, rate limits, and upload toggles defined under `chat_config`/`security`.【F:config.php†L196-L248】【F:includes/ChatHandler.php†L15-L46】【F:includes/ChatHandler.php†L1159-L1207】
 
-## Architecture
-- **HTTP entrypoint**: `chat-unified.php` accepts GET/POST payloads, negotiates SSE headers, and dispatches work to `ChatHandler` after validating the request. It emits lifecycle events such as `start`, `message` chunks, `tool_call`, `notice`, `error`, and `close` over SSE.【F:chat-unified.php†L1-L123】【F:chat-unified.php†L125-L188】
-- **Business logic**: `includes/ChatHandler.php` encapsulates validation, rate limiting, conversation storage, and the branching logic between Chat Completions and Responses flows.【F:includes/ChatHandler.php†L1-L236】
-- **OpenAI transport**: `includes/OpenAIClient.php` wraps cURL streaming for both `/chat/completions` and `/responses`, handles file uploads, and retries non-streaming calls to surface API errors.【F:includes/OpenAIClient.php†L1-L158】
-- **Front-end widget**: `chatbot-enhanced.js` renders the UI, queues messages/files, negotiates between WebSocket, SSE, or AJAX fallbacks, and normalizes streamed deltas for display.【F:chatbot-enhanced.js†L1-L197】【F:chatbot-enhanced.js†L604-L757】
-- **Optional WebSocket server**: `websocket-server.php` reuses the OpenAI streaming pattern inside a Ratchet `MessageComponentInterface` to serve clients that prefer persistent sockets.【F:websocket-server.php†L1-L152】
-- **Configuration**: `config.php` hydrates defaults from environment variables, covering model selection, prompt text, storage backend, rate limits, and upload policy.【F:config.php†L1-L146】
+### Responses Agent (`api_type=responses`)
+- Normalizes prompt overrides (request vs. config), uploads files before appending `file_ids`, and builds Responses-formatted message arrays (including attachments).【F:includes/ChatHandler.php†L122-L188】【F:includes/ChatHandler.php†L141-L156】【F:includes/ChatHandler.php†L552-L585】
+- Merges default and request-scoped tools, auto-applies vector store defaults, and executes streamed tool deltas (`type: tool_call`) while submitting outputs back to OpenAI when `response.required_action` arrives.【F:includes/ChatHandler.php†L166-L305】【F:includes/ChatHandler.php†L590-L760】
+- Streams SSE envelopes via repeated `sendSSEEvent('message', {...})` calls for `start`, text `chunk`, `tool_call`, `notice`, and terminal `done`, then retries with prompt removal or `gpt-4o-mini` on client-side failures.【F:includes/ChatHandler.php†L203-L371】
+- Sync requests reuse the same payload assembly and apply identical prompt/model fallback rules before persisting the assistant message.【F:includes/ChatHandler.php†L390-L501】
+- Defaults for prompts, models, tool lists, vector stores, and max results come from the `responses` block in `config.php`; keep these in sync when adding new overrides.【F:config.php†L207-L221】
 
-## Agent Specifications
-### Chat Completion Assistant
-- **Identifier**: `api_type=chat`
-- **Purpose**: Streamlined conversational assistant without tool calls; ideal for simple Q&A or support prompts.
-- **Prompt strategy**: Injects a configurable system message (`chat.system_message`) into empty histories and applies temperature, top-p, and penalty tunables from config/environment.【F:includes/ChatHandler.php†L28-L70】【F:config.php†L26-L39】
-- **Input/Output**:
-  - Input payload: `{ message, conversation_id, api_type: "chat" }`, augmented with session history pulled from storage.【F:chat-unified.php†L68-L118】【F:includes/ChatHandler.php†L152-L198】
-  - Output stream: SSE events `start`, repeated `chunk` deltas, then `done` with `finish_reason` via `streamChatCompletion`. Non-stream fallback returns JSON with `response` text.【F:includes/ChatHandler.php†L237-L312】【F:chatbot-enhanced.js†L699-L744】
-- **APIs/Services**: OpenAI Chat Completions (`/chat/completions`), invoked through `OpenAIClient::streamChatCompletion` with SSE headers.【F:includes/OpenAIClient.php†L17-L81】
-- **Dependencies & Env Vars**: Requires `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional tuning variables (`OPENAI_TEMPERATURE`, etc.) defined in `.env`/server env.【F:config.php†L18-L47】
-- **Execution flow**:
-  1. Front-end posts user text; SSE connection established by `chat-unified.php`.
-  2. `ChatHandler` validates rate limits, message length, and conversation ID; loads history from session/file storage.【F:includes/ChatHandler.php†L12-L149】【F:includes/ChatHandler.php†L324-L372】
-  3. System and user messages are compiled; streaming call initiated.
-  4. Chunks are relayed downstream; upon completion history is trimmed and persisted.【F:includes/ChatHandler.php†L260-L310】
+### WebSocket Relay (`websocket-server.php`)
+- Accepts JSON `{message, conversation_id}` payloads, reuses chat-completions streaming, and emits the same `start`/`chunk`/`done` lifecycle expected by the widget's WebSocket fallback path.【F:websocket-server.php†L43-L220】
+- Requires Ratchet dependencies declared in `composer.json` and a `.env` flag (`WEBSOCKET_ENABLED=true`) before the server starts.【F:composer.json†L13-L36】【F:websocket-server.php†L223-L268】
 
-### Responses Agent
-- **Identifier**: `api_type=responses`
-- **Purpose**: Rich assistant leveraging Responses API features—prompt referencing, native file attachments, and automatic tool-call execution.
-- **Prompt strategy**: Seeds optional `responses.system_message`; merges configured and request-level `prompt_id`/`prompt_version` overrides, retrying without prompt or on a fallback model when OpenAI returns client errors.【F:includes/ChatHandler.php†L72-L141】【F:includes/ChatHandler.php†L198-L259】
-- **Input/Output**:
-  - Input payload: `{ message, conversation_id, api_type: "responses", [prompt_id], [prompt_version], [file_data] }`. File attachments are validated server-side and uploaded to OpenAI with `purpose='user_data'` to yield `file_ids` appended to the user message.【F:chat-unified.php†L68-L123】【F:includes/ChatHandler.php†L142-L214】【F:includes/ChatHandler.php†L338-L368】
-  - Output stream: SSE events describing text deltas, notices, tool call deltas, completion status, and errors, normalized by the widget for display.【F:includes/ChatHandler.php†L198-L259】【F:chatbot-enhanced.js†L699-L758】
-- **APIs/Services**: OpenAI Responses API (`/responses` streaming, tool output submission, file uploads). Tools `get_weather` and `search_knowledge` are local PHP stubs executed when required actions arrive.【F:includes/OpenAIClient.php†L83-L206】【F:includes/ChatHandler.php†L260-L394】
-- **Dependencies & Env Vars**: `RESPONSES_MODEL`, `RESPONSES_TEMPERATURE`, `RESPONSES_MAX_OUTPUT_TOKENS`, optional prompt identifiers, and upload toggles (`ENABLE_FILE_UPLOAD`, `MAX_FILE_SIZE`, `ALLOWED_FILE_TYPES`).【F:config.php†L41-L106】
-- **Execution flow**:
-  1. Incoming request validated; attachments optionally uploaded.
-  2. Message history formatted to Responses schema (`input_text`, attachments) before streaming request is made.【F:includes/ChatHandler.php†L214-L236】【F:includes/ChatHandler.php†L312-L336】
-  3. Streaming callback interprets event types, relays tool-call progress, automatically executes whitelisted tools, and resubmits outputs to OpenAI when required.【F:includes/ChatHandler.php†L198-L303】
-  4. Completion event persists assistant reply and resets stream state.【F:includes/ChatHandler.php†L208-L252】
+## Front-End Contract
+- `chatbot-enhanced.js` builds request bodies with `conversation_id`, `api_type`, normalized Responses overrides (camelCase → snake_case), and base64-encoded `file_data` arrays before attempting WebSocket, SSE, then AJAX transport.【F:chatbot-enhanced.js†L991-L1055】【F:chatbot-enhanced.js†L1003-L1024】【F:chatbot-enhanced.js†L1027-L1049】
+- SSE is skipped when files are present (EventSource cannot POST); WebSocket/SSE handlers reuse `handleStreamChunk` so backend event shapes (`type` and optional `response_id`/`tool_name`) must stay stable across transports.【F:chatbot-enhanced.js†L1190-L1284】【F:chatbot-enhanced.js†L1340-L1384】
+- Tool call payloads are surfaced inside the active assistant bubble with completion status, so backend `tool_call` events should continue to provide `tool_name`, `arguments`, `call_id`, and optional `status` fields.【F:chatbot-enhanced.js†L1424-L1479】【F:includes/ChatHandler.php†L238-L305】
+- When backend logic sends `notice` events, the widget treats them as assistant system messages; ensure any new stream metadata is either mapped to existing `type` values or mirrored in the UI logic under `handleStreamChunk`/`resolveStreamText`.【F:includes/ChatHandler.php†L345-L371】【F:chatbot-enhanced.js†L1340-L1422】
 
-### WebSocket Relay Service
-- **Identifier**: `websocket-server.php`
-- **Purpose**: Optional Ratchet server for scenarios where SSE is unsuitable; mirrors Chat Completion behavior over persistent sockets.
-- **Prompt strategy**: Uses conversation history and default `openai` settings from `config.php`; system prompts align with Chat Completion defaults.【F:websocket-server.php†L44-L120】【F:config.php†L18-L72】
-- **Input/Output**: Expects JSON messages with `message` and `conversation_id`, returns JSON events (`connected`, `start`, `chunk`, `done`, `error`).【F:websocket-server.php†L28-L118】
-- **APIs/Services**: Calls OpenAI Chat Completions directly via cURL within the server loop.【F:websocket-server.php†L84-L146】
-- **Dependencies**: Requires Composer packages `cboden/ratchet` and `ratchet/pawl` plus PHP sockets extension; enabled via `composer install` and optional Docker service stanza.【F:composer.json†L13-L30】【F:Dockerfile†L4-L34】【F:docker-compose.yml†L1-L34】
-- **Execution flow**: Accept connection → validate payload → append to in-memory history → stream completion → emit events and trim stored history.【F:websocket-server.php†L28-L146】
+## Storage, Rate Limiting, and Uploads
+- Requests are throttled per client IP using a sliding window stored under `/tmp`; update `rate_limit_requests` and `rate_limit_window` via `config.php` if adjusting throughput.【F:includes/ChatHandler.php†L1159-L1187】【F:config.php†L230-L239】
+- Conversation history is stored in PHP sessions or JSON files depending on `storage.type`, capped at `chat_config.max_messages`; remember to maintain trimming when extending history schemas.【F:includes/ChatHandler.php†L1210-L1247】【F:config.php†L223-L239】
+- File uploads are validated against size/type lists before being forwarded to OpenAI, and the client converts selected files to base64 prior to submission; keep these validators synchronized when supporting new formats.【F:includes/ChatHandler.php†L1189-L1207】【F:includes/OpenAIClient.php†L160-L207】【F:chatbot-enhanced.js†L1027-L1073】
 
-## Integration Points
-- **Front-end ↔ Backend**: `chatbot-enhanced.js` negotiates streaming transport (WebSocket → SSE → AJAX fallback) and maps SSE `message` payloads to DOM updates. Each outbound request includes `conversation_id`, API type, prompt overrides, and serialized file data.【F:chatbot-enhanced.js†L604-L757】
-- **Conversation persistence**: `ChatHandler` stores transcripts in PHP sessions or filesystem depending on `storage.type`, trimming to `chat_config.max_messages` to avoid runaway context.【F:includes/ChatHandler.php†L324-L372】
-- **Rate limiting & security**: `ChatHandler::checkRateLimit` throttles requests per IP; file uploads validated against configured size/type limits before hitting OpenAI.【F:includes/ChatHandler.php†L338-L368】【F:includes/ChatHandler.php†L304-L336】
-- **Tool execution**: When Responses API triggers `response.required_action`, server-side handlers execute whitelisted functions and submit outputs back to OpenAI automatically.【F:includes/ChatHandler.php†L198-L303】
-- **Transport protocols**: HTTP SSE is the default; WebSocket is optional; AJAX fallback handles environments that block streaming. Dockerfile/Apache config disables buffering to keep SSE responsive.【F:chat-unified.php†L23-L62】【F:Dockerfile†L15-L36】
-
-## Deployment & Configuration
-- **Environment variables**: Define API type, model, prompt, temperature, storage, logging, upload policy, and WebSocket toggles via `.env` or server env (see `config.php`).【F:config.php†L18-L146】
-- **Docker**: `Dockerfile` prepares Apache/PHP for streaming, installs Composer dependencies, and exposes port 80. `docker-compose.yml` maps `.env`, mounts logs, and includes an optional WebSocket service configuration block.【F:Dockerfile†L1-L54】【F:docker-compose.yml†L1-L34】
-- **Local setup**: Provide `OPENAI_API_KEY` in environment, ensure PHP cURL and sockets extensions, and optionally run `composer install` to enable WebSocket server.
-- **Testing agents**: Use the front-end widget (`default.php` or custom page) pointing `apiEndpoint` to `/chat-unified.php` with appropriate `apiType`. For WebSockets, run `composer run websocket` and configure `websocketEndpoint` in the widget.【F:chatbot-enhanced.js†L1-L197】【F:composer.json†L21-L29】
+## Deployment & Operations
+- Environment variables in `.env` feed directly into `config.php`; document any new keys and ensure defaults exist so Docker and bare-metal deployments behave predictably.【F:config.php†L185-L297】
+- The Dockerfile enables Apache headers for SSE, disables PHP output buffering, installs Composer, and exposes port 80; `docker-compose.yml` maps `.env`, mounts logs, and includes a commented WebSocket service block.【F:Dockerfile†L1-L63】【F:docker-compose.yml†L1-L40】
+- Composer scripts include `composer run websocket` for the relay server; run `composer install` after dependency changes and update the Ratchet configuration if you alter WebSocket ports.【F:composer.json†L33-L36】【F:websocket-server.php†L240-L268】
 
 ## Extensibility Guidelines
-- **Adding a new agent**:
-  1. Create a handler method in `ChatHandler` (e.g., `handleMyAgent`) and route requests from `chat-unified.php` based on a new `api_type` flag.
-  2. Extend `OpenAIClient` or add a sibling client for the target service.
-  3. Update `config.php` to expose tunables and document required environment variables.
-  4. Expose front-end switches in `chatbot-enhanced.js` so clients can opt into the agent.
-- **Prompt customization**: Override system prompts via environment variables (`SYSTEM_MESSAGE`, `RESPONSES_SYSTEM_MESSAGE`) or supply prompt IDs/versions per request; sanitize and validate user overrides before forwarding.【F:config.php†L26-L64】【F:includes/ChatHandler.php†L72-L141】
-- **Tooling & file handling**: Add new tool functions in `ChatHandler::executeTool` and guard them with input validation. Mirror client-side UI affordances (buttons, indicators) when exposing new tool categories.【F:includes/ChatHandler.php†L358-L394】【F:chatbot-enhanced.js†L699-L758】
-- **Storage strategies**: Implement additional persistence layers by extending `getConversationHistory`/`saveConversationHistory` branches (e.g., database) and ensuring concurrency control if used across workers.【F:includes/ChatHandler.php†L324-L372】
+- To add a new agent, create a dedicated handler in `ChatHandler`, route to it from `chat-unified.php`, and extend `OpenAIClient` if a different transport is required. Mirror any new stream event types in the widget (and update `docs/api.md`) to avoid breaking front-end fallbacks.【F:chat-unified.php†L205-L233】【F:includes/ChatHandler.php†L48-L501】【F:includes/OpenAIClient.php†L17-L299】【F:chatbot-enhanced.js†L1320-L1422】【F:docs/api.md†L1-L160】
+- When modifying Responses tooling, keep the merge/normalization helpers aligned with new schema requirements and validate incoming overrides before dispatching to OpenAI.【F:includes/ChatHandler.php†L166-L760】
+- Any changes to persistence or rate limiting must honor the trimming and validation utilities already present; adjust both client- and server-side expectations when altering history depth or upload policies.【F:includes/ChatHandler.php†L1159-L1247】【F:chatbot-enhanced.js†L970-L1055】
 
-## References
-- [README](README.md) – feature overview, integration examples, and environment setup.【F:README.md†L1-L110】
-- [docs/api.md](docs/api.md) – JavaScript API, HTTP endpoints, and transport details.【F:docs/api.md†L1-L120】
-- [docs/deployment.md](docs/deployment.md) & [docs/customization-guide.md](docs/customization-guide.md) – additional deployment and UI guidance.
-- OpenAI API dashboards for managing prompt IDs, tool outputs, and uploaded files referenced in the Responses workflow.
+## Reference Material
+- **README** – feature tour, setup instructions, and dual-API quick starts.【F:README.md†L1-L110】
+- **docs/** – API usage, deployment, and customization details; keep these documents updated alongside behavioral changes.【F:docs/api.md†L1-L160】【F:docs/deployment.md†L1-L160】【F:docs/customization-guide.md†L1-L200】
