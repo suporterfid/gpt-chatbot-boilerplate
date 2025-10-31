@@ -469,4 +469,53 @@ class VectorStoreService {
         
         return $store;
     }
+    
+    /**
+     * Update file's OpenAI file ID
+     * Used by background worker after upload
+     */
+    public function updateFileOpenAIId($fileId, $openaiFileId) {
+        $sql = "UPDATE vector_store_files SET openai_file_id = ?, updated_at = ? WHERE id = ?";
+        $this->db->execute($sql, [$openaiFileId, date('c'), $fileId]);
+    }
+    
+    /**
+     * Update file ingestion status
+     * Used by background worker and webhook handler
+     */
+    public function updateFileIngestionStatus($fileId, $status, $error = null) {
+        $sql = "UPDATE vector_store_files 
+                SET ingestion_status = ?, ingestion_error = ?, updated_at = ? 
+                WHERE id = ?";
+        $this->db->execute($sql, [$status, $error, date('c'), $fileId]);
+    }
+    
+    /**
+     * Find file by OpenAI file ID
+     * Used by webhook handler to map OpenAI events to DB records
+     */
+    public function findFileByOpenAIId($openaiFileId) {
+        $sql = "SELECT * FROM vector_store_files WHERE openai_file_id = ?";
+        $result = $this->db->query($sql, [$openaiFileId]);
+        return $result[0] ?? null;
+    }
+    
+    /**
+     * Find vector store by OpenAI store ID
+     * Used by webhook handler
+     */
+    public function findStoreByOpenAIId($openaiStoreId) {
+        $sql = "SELECT * FROM vector_stores WHERE openai_store_id = ?";
+        $result = $this->db->query($sql, [$openaiStoreId]);
+        return $result[0] ?? null;
+    }
+    
+    /**
+     * Update vector store status
+     * Used by webhook handler
+     */
+    public function updateStoreStatus($storeId, $status) {
+        $sql = "UPDATE vector_stores SET status = ?, updated_at = ? WHERE id = ?";
+        $this->db->execute($sql, [$status, date('c'), $storeId]);
+    }
 }
