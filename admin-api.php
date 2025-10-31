@@ -7,6 +7,11 @@
 require_once 'config.php';
 require_once 'includes/DB.php';
 require_once 'includes/AgentService.php';
+require_once 'includes/OpenAIAdminClient.php';
+require_once 'includes/PromptService.php';
+require_once 'includes/VectorStoreService.php';
+require_once 'includes/OpenAIClient.php';
+require_once 'includes/ChatHandler.php';
 
 // CORS headers
 header('Access-Control-Allow-Origin: *');
@@ -121,7 +126,16 @@ try {
         // Continue anyway - migrations might already be run
     }
     
+    // Initialize OpenAI Admin Client
+    $openaiClient = null;
+    if (!empty($config['openai']['api_key'])) {
+        $openaiClient = new OpenAIAdminClient($config['openai']);
+    }
+    
+    // Initialize services
     $agentService = new AgentService($db);
+    $promptService = new PromptService($db, $openaiClient);
+    $vectorStoreService = new VectorStoreService($db, $openaiClient);
     
     // Get action from query parameter
     $action = $_GET['action'] ?? '';
@@ -209,6 +223,362 @@ try {
             $agentService->setDefaultAgent($id);
             log_admin('Default agent set: ' . $id);
             sendResponse(['success' => true, 'message' => 'Default agent set']);
+            break;
+        
+        // ==================== Prompts Endpoints ====================
+        
+        case 'list_prompts':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            $filters = [];
+            if (isset($_GET['name'])) {
+                $filters['name'] = $_GET['name'];
+            }
+            if (isset($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            $prompts = $promptService->listPrompts($filters);
+            sendResponse($prompts);
+            break;
+            
+        case 'get_prompt':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Prompt ID required', 400);
+            }
+            $prompt = $promptService->getPrompt($id);
+            if (!$prompt) {
+                sendError('Prompt not found', 404);
+            }
+            sendResponse($prompt);
+            break;
+            
+        case 'create_prompt':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            $data = getRequestBody();
+            $prompt = $promptService->createPrompt($data);
+            log_admin('Prompt created: ' . $prompt['id'] . ' (' . $prompt['name'] . ')');
+            sendResponse($prompt, 201);
+            break;
+            
+        case 'update_prompt':
+            if ($method !== 'POST' && $method !== 'PUT') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Prompt ID required', 400);
+            }
+            $data = getRequestBody();
+            $prompt = $promptService->updatePrompt($id, $data);
+            log_admin('Prompt updated: ' . $id);
+            sendResponse($prompt);
+            break;
+            
+        case 'delete_prompt':
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Prompt ID required', 400);
+            }
+            $promptService->deletePrompt($id);
+            log_admin('Prompt deleted: ' . $id);
+            sendResponse(['success' => true, 'message' => 'Prompt deleted']);
+            break;
+            
+        case 'list_prompt_versions':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Prompt ID required', 400);
+            }
+            $filters = [];
+            if (isset($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            $versions = $promptService->listPromptVersions($id, $filters);
+            sendResponse($versions);
+            break;
+            
+        case 'create_prompt_version':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Prompt ID required', 400);
+            }
+            $data = getRequestBody();
+            $version = $promptService->createPromptVersion($id, $data);
+            log_admin('Prompt version created: ' . $version['id']);
+            sendResponse($version, 201);
+            break;
+            
+        case 'sync_prompts':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            $synced = $promptService->syncPromptsFromOpenAI();
+            log_admin('Synced ' . $synced . ' prompts from OpenAI');
+            sendResponse(['synced' => $synced, 'message' => "Synced $synced prompts from OpenAI"]);
+            break;
+        
+        // ==================== Vector Stores Endpoints ====================
+        
+        case 'list_vector_stores':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            $filters = [];
+            if (isset($_GET['name'])) {
+                $filters['name'] = $_GET['name'];
+            }
+            if (isset($_GET['status'])) {
+                $filters['status'] = $_GET['status'];
+            }
+            if (isset($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            $stores = $vectorStoreService->listVectorStores($filters);
+            sendResponse($stores);
+            break;
+            
+        case 'get_vector_store':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Vector store ID required', 400);
+            }
+            $store = $vectorStoreService->getVectorStore($id);
+            if (!$store) {
+                sendError('Vector store not found', 404);
+            }
+            sendResponse($store);
+            break;
+            
+        case 'create_vector_store':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            $data = getRequestBody();
+            $store = $vectorStoreService->createVectorStore($data);
+            log_admin('Vector store created: ' . $store['id'] . ' (' . $store['name'] . ')');
+            sendResponse($store, 201);
+            break;
+            
+        case 'update_vector_store':
+            if ($method !== 'POST' && $method !== 'PUT') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Vector store ID required', 400);
+            }
+            $data = getRequestBody();
+            $store = $vectorStoreService->updateVectorStore($id, $data);
+            log_admin('Vector store updated: ' . $id);
+            sendResponse($store);
+            break;
+            
+        case 'delete_vector_store':
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Vector store ID required', 400);
+            }
+            $vectorStoreService->deleteVectorStore($id);
+            log_admin('Vector store deleted: ' . $id);
+            sendResponse(['success' => true, 'message' => 'Vector store deleted']);
+            break;
+            
+        case 'list_vector_store_files':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Vector store ID required', 400);
+            }
+            $filters = [];
+            if (isset($_GET['status'])) {
+                $filters['status'] = $_GET['status'];
+            }
+            if (isset($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            $files = $vectorStoreService->listFiles($id, $filters);
+            sendResponse($files);
+            break;
+            
+        case 'add_vector_store_file':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Vector store ID required', 400);
+            }
+            $data = getRequestBody();
+            $file = $vectorStoreService->addFile($id, $data);
+            log_admin('File added to vector store: ' . $file['id']);
+            sendResponse($file, 201);
+            break;
+            
+        case 'delete_vector_store_file':
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                sendError('Method not allowed', 405);
+            }
+            $id = $_GET['id'] ?? '';
+            $fileId = $_GET['file_id'] ?? '';
+            if (empty($id) || empty($fileId)) {
+                sendError('Vector store ID and file ID required', 400);
+            }
+            $vectorStoreService->deleteFile($fileId);
+            log_admin('File deleted from vector store: ' . $fileId);
+            sendResponse(['success' => true, 'message' => 'File deleted']);
+            break;
+            
+        case 'poll_file_status':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            $fileId = $_GET['file_id'] ?? '';
+            if (empty($fileId)) {
+                sendError('File ID required', 400);
+            }
+            $file = $vectorStoreService->pollFileStatus($fileId);
+            sendResponse($file);
+            break;
+            
+        case 'sync_vector_stores':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            $synced = $vectorStoreService->syncVectorStoresFromOpenAI();
+            log_admin('Synced ' . $synced . ' vector stores from OpenAI');
+            sendResponse(['synced' => $synced, 'message' => "Synced $synced vector stores from OpenAI"]);
+            break;
+        
+        // ==================== Health & Utility Endpoints ====================
+        
+        case 'health':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $health = [
+                'status' => 'ok',
+                'timestamp' => date('c'),
+                'database' => false,
+                'openai' => false,
+            ];
+            
+            // Test database
+            try {
+                $db->query("SELECT 1");
+                $health['database'] = true;
+            } catch (Exception $e) {
+                $health['status'] = 'degraded';
+            }
+            
+            // Test OpenAI (optional)
+            if ($openaiClient) {
+                try {
+                    $result = $openaiClient->listVectorStores(1);
+                    $health['openai'] = true;
+                } catch (Exception $e) {
+                    $health['status'] = 'degraded';
+                }
+            }
+            
+            sendResponse($health);
+            break;
+            
+        case 'test_agent':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // This endpoint streams a test response
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $data = getRequestBody();
+            $message = $data['message'] ?? 'Hello, this is a test message.';
+            
+            // Get agent
+            $agent = $agentService->getAgent($id);
+            if (!$agent) {
+                sendError('Agent not found', 404);
+            }
+            
+            // Set headers for SSE
+            header('Content-Type: text/event-stream');
+            header('Cache-Control: no-cache');
+            header('Connection: keep-alive');
+            header('X-Accel-Buffering: no');
+            
+            // Create ChatHandler with agent config
+            $chatHandler = new ChatHandler($config, $agentService);
+            
+            // Send start event
+            echo "event: message\n";
+            echo "data: " . json_encode([
+                'type' => 'start',
+                'agent_id' => $id,
+                'agent_name' => $agent['name']
+            ]) . "\n\n";
+            flush();
+            
+            try {
+                // Determine which API to use
+                $apiType = $agent['api_type'] ?? 'responses';
+                
+                if ($apiType === 'responses') {
+                    // Use Responses API
+                    $chatHandler->handleResponsesChat(
+                        $message,
+                        'test-' . time(),
+                        [],
+                        null,
+                        null,
+                        null,
+                        $id
+                    );
+                } else {
+                    // Use Chat Completions API
+                    $chatHandler->handleChatCompletion(
+                        $message,
+                        'test-' . time(),
+                        $id
+                    );
+                }
+            } catch (Exception $e) {
+                echo "event: message\n";
+                echo "data: " . json_encode([
+                    'type' => 'error',
+                    'message' => $e->getMessage()
+                ]) . "\n\n";
+                flush();
+            }
+            
+            exit();
             break;
             
         default:

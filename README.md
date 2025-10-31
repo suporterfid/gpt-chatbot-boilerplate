@@ -27,13 +27,22 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - File attachment display in messages.
 - Improved responsive design.
 
-### 🗄️ **Phase 1: Database Layer & Agent Model (NEW)**
+### 🗄️ **Phase 1: Database Layer & Agent Model**
 - **Agent Management**: Persistent storage for AI agent configurations.
 - **Admin API**: Token-protected REST API for CRUD operations on agents.
 - **Dynamic Configuration**: Override prompts, tools, models, and parameters per agent.
 - **Default Agent**: Set a default agent for requests without explicit `agent_id`.
 - **SQLite Support**: Zero-config database with optional MySQL compatibility.
 - See [docs/PHASE1_DB_AGENT.md](docs/PHASE1_DB_AGENT.md) for details.
+
+### 🎨 **Phase 2: Admin UI, Prompts & Vector Store Management (NEW)**
+- **Visual Admin Interface**: Comprehensive web UI for managing all resources.
+- **Prompt Management**: Create, version, and sync OpenAI prompts.
+- **Vector Store Management**: Upload files, manage stores, monitor ingestion.
+- **Agent Testing**: Test agents with streaming responses directly from Admin UI.
+- **Health Monitoring**: Real-time system health and API connectivity checks.
+- **Audit Logging**: Complete audit trail of all admin operations.
+- See [docs/PHASE2_ADMIN_UI.md](docs/PHASE2_ADMIN_UI.md) for details.
 
 ## 📋 Requirements
 
@@ -139,6 +148,31 @@ curl -X POST "http://localhost/chat-unified.php" \
 ```
 
 For complete Admin API documentation, see [docs/PHASE1_DB_AGENT.md](docs/PHASE1_DB_AGENT.md).
+
+### Option 4: Admin UI for Visual Management (Phase 2)
+
+1. Complete Phase 1 setup (database and admin token).
+
+2. Access the Admin UI:
+```
+http://localhost/public/admin/
+```
+
+3. Enter your admin token when prompted (stored in localStorage).
+
+4. Create and manage resources visually:
+   - **Agents**: Full CRUD with test capability
+   - **Prompts**: Create, version, sync from OpenAI
+   - **Vector Stores**: Upload files, monitor ingestion
+   - **Settings**: Health checks and system status
+
+5. Test an agent:
+   - Navigate to Agents page
+   - Click "Test" button on any agent
+   - Enter a test message
+   - View streaming response in real-time
+
+For complete Admin UI documentation, see [docs/PHASE2_ADMIN_UI.md](docs/PHASE2_ADMIN_UI.md).
 
 
 3. Start the application:
