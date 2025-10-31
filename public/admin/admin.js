@@ -148,6 +148,33 @@ class AdminAPI {
         return this.request('sync_vector_stores', { method: 'POST' });
     }
 
+    // Jobs
+    listJobs(status = null, limit = 50) {
+        const params = status ? `&status=${status}&limit=${limit}` : `&limit=${limit}`;
+        return this.request('list_jobs', { params });
+    }
+
+    getJob(id) {
+        return this.request('get_job', { params: `&id=${id}` });
+    }
+
+    retryJob(id) {
+        return this.request('retry_job', { method: 'POST', params: `&id=${id}` });
+    }
+
+    cancelJob(id) {
+        return this.request('cancel_job', { method: 'POST', params: `&id=${id}` });
+    }
+
+    jobStats() {
+        return this.request('job_stats');
+    }
+
+    // Audit Log
+    listAuditLog(limit = 100) {
+        return this.request('list_audit_log', { params: `&limit=${limit}` });
+    }
+
     // Utility
     health() {
         return this.request('health');
@@ -244,6 +271,12 @@ async function testConnection() {
 
 // Page Management
 function navigateTo(page) {
+    // Clear any existing intervals when navigating away from jobs page
+    if (currentPage === 'jobs' && jobsRefreshInterval) {
+        clearInterval(jobsRefreshInterval);
+        jobsRefreshInterval = null;
+    }
+    
     currentPage = page;
     
     // Update navigation
@@ -259,6 +292,8 @@ function navigateTo(page) {
         'agents': 'Agents',
         'prompts': 'Prompts',
         'vector-stores': 'Vector Stores',
+        'jobs': 'Background Jobs',
+        'audit': 'Audit Log',
         'settings': 'Settings'
     };
     document.getElementById('page-title').textContent = titles[page] || page;
@@ -274,6 +309,8 @@ function loadCurrentPage() {
         'agents': loadAgentsPage,
         'prompts': loadPromptsPage,
         'vector-stores': loadVectorStoresPage,
+        'jobs': loadJobsPage,
+        'audit': loadAuditPage,
         'settings': loadSettingsPage
     };
     
@@ -1062,6 +1099,405 @@ async function syncVectorStores() {
     }
 }
 
+// ==================== Jobs Page ====================
+
+let jobsRefreshInterval = null;
+
+async function loadJobsPage() {
+    const content = document.getElementById('content');
+    content.innerHTML = '<div class="spinner"></div>';
+    
+    // Clear existing interval if any
+    if (jobsRefreshInterval) {
+        clearInterval(jobsRefreshInterval);
+        jobsRefreshInterval = null;
+    }
+    
+    await refreshJobsPage();
+    
+    // Auto-refresh every 5 seconds
+    jobsRefreshInterval = setInterval(refreshJobsPage, 5000);
+}
+
+async function refreshJobsPage() {
+    const content = document.getElementById('content');
+    
+    try {
+        const [stats, pendingJobs, runningJobs, recentJobs] = await Promise.all([
+            api.jobStats(),
+            api.listJobs('pending', 20),
+            api.listJobs('running', 20),
+            api.listJobs(null, 20)
+        ]);
+        
+        let html = `
+            <!-- Stats Cards -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #f59e0b;">${stats.pending || 0}</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Pending</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #3b82f6;">${stats.running || 0}</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Running</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #10b981;">${stats.completed || 0}</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Completed</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #ef4444;">${stats.failed || 0}</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Failed</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Pending Jobs -->
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div class="card-header">
+                    <h3 class="card-title">Pending Jobs</h3>
+                    <span class="badge badge-warning">${pendingJobs.length}</span>
+                </div>
+                <div class="card-body">
+                    ${renderJobsTable(pendingJobs, 'No pending jobs')}
+                </div>
+            </div>
+            
+            <!-- Running Jobs -->
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div class="card-header">
+                    <h3 class="card-title">Running Jobs</h3>
+                    <span class="badge badge-primary">${runningJobs.length}</span>
+                </div>
+                <div class="card-body">
+                    ${renderJobsTable(runningJobs, 'No running jobs')}
+                </div>
+            </div>
+            
+            <!-- Recent Jobs -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Recent Jobs</h3>
+                </div>
+                <div class="card-body">
+                    ${renderJobsTable(recentJobs, 'No jobs yet')}
+                </div>
+            </div>
+        `;
+        
+        content.innerHTML = html;
+    } catch (error) {
+        content.innerHTML = `<div class="card"><div class="card-body">Error loading jobs: ${error.message}</div></div>`;
+        showToast('Failed to load jobs: ' + error.message, 'error');
+    }
+}
+
+function renderJobsTable(jobs, emptyMessage) {
+    if (!jobs || jobs.length === 0) {
+        return `<p style="color: #6b7280; text-align: center; padding: 2rem;">${emptyMessage}</p>`;
+    }
+    
+    return `
+        <div style="overflow-x: auto;">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Attempts</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${jobs.map(job => `
+                        <tr>
+                            <td>
+                                <code style="font-size: 0.875rem;">${job.type}</code>
+                            </td>
+                            <td>
+                                <span class="badge ${getJobStatusBadge(job.status)}">
+                                    ${job.status}
+                                </span>
+                            </td>
+                            <td>${job.attempts}/${job.max_attempts}</td>
+                            <td style="font-size: 0.875rem;">${formatDate(job.created_at)}</td>
+                            <td>
+                                <button class="btn btn-sm" onclick="viewJobDetails('${job.id}')" title="View Details">
+                                    👁️
+                                </button>
+                                ${job.status === 'failed' ? `
+                                    <button class="btn btn-sm btn-warning" onclick="retryJobAction('${job.id}')" title="Retry">
+                                        🔄
+                                    </button>
+                                ` : ''}
+                                ${job.status === 'pending' || job.status === 'running' ? `
+                                    <button class="btn btn-sm btn-danger" onclick="cancelJobAction('${job.id}')" title="Cancel">
+                                        ❌
+                                    </button>
+                                ` : ''}
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function getJobStatusBadge(status) {
+    const badges = {
+        'pending': 'badge-warning',
+        'running': 'badge-primary',
+        'completed': 'badge-success',
+        'failed': 'badge-danger',
+        'cancelled': 'badge-secondary'
+    };
+    return badges[status] || 'badge-secondary';
+}
+
+async function viewJobDetails(jobId) {
+    try {
+        const job = await api.getJob(jobId);
+        
+        const content = `
+            <div class="form-group">
+                <label class="form-label">Job ID</label>
+                <code>${job.id}</code>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Type</label>
+                <code>${job.type}</code>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <span class="badge ${getJobStatusBadge(job.status)}">${job.status}</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Attempts</label>
+                <div>${job.attempts} / ${job.max_attempts}</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Created</label>
+                <div>${formatDate(job.created_at)}</div>
+            </div>
+            ${job.completed_at ? `
+                <div class="form-group">
+                    <label class="form-label">Completed</label>
+                    <div>${formatDate(job.completed_at)}</div>
+                </div>
+            ` : ''}
+            ${job.payload_json ? `
+                <div class="form-group">
+                    <label class="form-label">Payload</label>
+                    <pre style="background: #1f2937; color: #e5e7eb; padding: 1rem; border-radius: 0.375rem; overflow-x: auto;">${JSON.stringify(JSON.parse(job.payload_json), null, 2)}</pre>
+                </div>
+            ` : ''}
+            ${job.result_json ? `
+                <div class="form-group">
+                    <label class="form-label">Result</label>
+                    <pre style="background: #1f2937; color: #e5e7eb; padding: 1rem; border-radius: 0.375rem; overflow-x: auto;">${JSON.stringify(JSON.parse(job.result_json), null, 2)}</pre>
+                </div>
+            ` : ''}
+            ${job.error_message ? `
+                <div class="form-group">
+                    <label class="form-label">Error</label>
+                    <div style="color: #ef4444;">${job.error_message}</div>
+                </div>
+            ` : ''}
+        `;
+        
+        openModal('Job Details', content);
+    } catch (error) {
+        showToast('Failed to load job details: ' + error.message, 'error');
+    }
+}
+
+async function retryJobAction(jobId) {
+    if (!confirm('Retry this job?')) return;
+    
+    try {
+        await api.retryJob(jobId);
+        showToast('Job queued for retry', 'success');
+        refreshJobsPage();
+    } catch (error) {
+        showToast('Failed to retry job: ' + error.message, 'error');
+    }
+}
+
+async function cancelJobAction(jobId) {
+    if (!confirm('Cancel this job?')) return;
+    
+    try {
+        await api.cancelJob(jobId);
+        showToast('Job cancelled', 'success');
+        refreshJobsPage();
+    } catch (error) {
+        showToast('Failed to cancel job: ' + error.message, 'error');
+    }
+}
+
+// ==================== Audit Log Page ====================
+
+async function loadAuditPage() {
+    const content = document.getElementById('content');
+    content.innerHTML = '<div class="spinner"></div>';
+    
+    try {
+        const auditLogs = await api.listAuditLog(100);
+        
+        let html = `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Audit Log</h3>
+                    <button class="btn btn-primary" onclick="exportAuditLog()">Export CSV</button>
+                </div>
+                <div class="card-body">
+        `;
+        
+        if (!auditLogs || auditLogs.length === 0) {
+            html += `<p style="color: #6b7280; text-align: center; padding: 2rem;">No audit logs yet</p>`;
+        } else {
+            html += `
+                <div style="overflow-x: auto;">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Actor</th>
+                                <th>Action</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${auditLogs.map(log => `
+                                <tr>
+                                    <td style="white-space: nowrap; font-size: 0.875rem;">
+                                        ${formatDate(log.created_at)}
+                                    </td>
+                                    <td>
+                                        <code style="font-size: 0.875rem;">${log.actor}</code>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-secondary">${log.action}</span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm" onclick="viewAuditDetails(${log.id})" title="View Details">
+                                            👁️
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        html += `
+                </div>
+            </div>
+        `;
+        
+        content.innerHTML = html;
+    } catch (error) {
+        content.innerHTML = `<div class="card"><div class="card-body">Error loading audit log: ${error.message}</div></div>`;
+        showToast('Failed to load audit log: ' + error.message, 'error');
+    }
+}
+
+// Store audit logs for export
+let cachedAuditLogs = [];
+
+async function viewAuditDetails(logId) {
+    try {
+        const auditLogs = await api.listAuditLog(100);
+        const log = auditLogs.find(l => l.id === logId);
+        
+        if (!log) {
+            showToast('Audit log not found', 'error');
+            return;
+        }
+        
+        let payload = {};
+        try {
+            payload = JSON.parse(log.payload_json || '{}');
+        } catch (e) {
+            payload = { raw: log.payload_json };
+        }
+        
+        const content = `
+            <div class="form-group">
+                <label class="form-label">Timestamp</label>
+                <div>${formatDate(log.created_at)}</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Actor</label>
+                <code>${log.actor}</code>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Action</label>
+                <span class="badge badge-secondary">${log.action}</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Payload</label>
+                <pre style="background: #1f2937; color: #e5e7eb; padding: 1rem; border-radius: 0.375rem; overflow-x: auto;">${JSON.stringify(payload, null, 2)}</pre>
+            </div>
+        `;
+        
+        openModal('Audit Log Details', content);
+    } catch (error) {
+        showToast('Failed to load audit details: ' + error.message, 'error');
+    }
+}
+
+async function exportAuditLog() {
+    try {
+        const auditLogs = await api.listAuditLog(1000); // Get more records for export
+        
+        if (!auditLogs || auditLogs.length === 0) {
+            showToast('No audit logs to export', 'info');
+            return;
+        }
+        
+        // Create CSV content
+        const headers = ['Timestamp', 'Actor', 'Action', 'Payload'];
+        const rows = auditLogs.map(log => [
+            log.created_at,
+            log.actor,
+            log.action,
+            log.payload_json || '{}'
+        ]);
+        
+        const csv = [
+            headers.join(','),
+            ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        ].join('\n');
+        
+        // Download CSV
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `audit-log-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showToast('Audit log exported successfully', 'success');
+    } catch (error) {
+        showToast('Failed to export audit log: ' + error.message, 'error');
+    }
+}
+
 // ==================== Settings Page ====================
 
 async function loadSettingsPage() {
@@ -1110,6 +1546,57 @@ async function loadSettingsPage() {
                     </div>
                 </div>
             </div>
+            
+            ${health.worker ? `
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Background Worker</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label class="form-label">Status</label>
+                            <div>
+                                <span class="badge ${health.worker.enabled ? 'badge-success' : 'badge-warning'}">
+                                    ${health.worker.enabled ? 'Enabled' : 'Disabled'}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        ${health.worker.stats ? `
+                            <div class="form-group">
+                                <label class="form-label">Queue Depth</label>
+                                <div>${health.worker.queue_depth || 0} jobs</div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Job Statistics</label>
+                                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-top: 0.5rem;">
+                                    <div style="padding: 0.5rem; background: #f3f4f6; border-radius: 0.375rem;">
+                                        <div style="font-size: 0.75rem; color: #6b7280;">Pending</div>
+                                        <div style="font-size: 1.25rem; font-weight: bold;">${health.worker.stats.pending || 0}</div>
+                                    </div>
+                                    <div style="padding: 0.5rem; background: #f3f4f6; border-radius: 0.375rem;">
+                                        <div style="font-size: 0.75rem; color: #6b7280;">Running</div>
+                                        <div style="font-size: 1.25rem; font-weight: bold;">${health.worker.stats.running || 0}</div>
+                                    </div>
+                                    <div style="padding: 0.5rem; background: #f3f4f6; border-radius: 0.375rem;">
+                                        <div style="font-size: 0.75rem; color: #6b7280;">Completed</div>
+                                        <div style="font-size: 1.25rem; font-weight: bold; color: #10b981;">${health.worker.stats.completed || 0}</div>
+                                    </div>
+                                    <div style="padding: 0.5rem; background: #f3f4f6; border-radius: 0.375rem;">
+                                        <div style="font-size: 0.75rem; color: #6b7280;">Failed</div>
+                                        <div style="font-size: 1.25rem; font-weight: bold; color: #ef4444;">${health.worker.stats.failed || 0}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
+                        
+                        <div style="margin-top: 1rem;">
+                            <a href="#jobs" class="btn btn-primary" onclick="navigateTo('jobs')">View Jobs</a>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
             
             <div class="card">
                 <div class="card-header">
