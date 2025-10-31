@@ -21,14 +21,31 @@ class ChatHandler {
      * @return array Agent configuration or empty array if not found
      */
     private function resolveAgentOverrides($agentId) {
-        if (!$agentId || !$this->agentService) {
+        if (!$this->agentService) {
             return [];
         }
         
         try {
-            $agent = $this->agentService->getAgent($agentId);
+            $agent = null;
+            
+            // If agent_id provided, try to load it
+            if ($agentId) {
+                $agent = $this->agentService->getAgent($agentId);
+                if (!$agent) {
+                    error_log("Agent not found: $agentId, falling back to default");
+                }
+            }
+            
+            // If no agent_id provided or agent not found, try default agent
             if (!$agent) {
-                error_log("Agent not found: $agentId");
+                $agent = $this->agentService->getDefaultAgent();
+                if ($agent) {
+                    error_log("Using default agent: " . ($agent['name'] ?? 'unknown'));
+                }
+            }
+            
+            // If no agent found, return empty array (fall back to config.php)
+            if (!$agent) {
                 return [];
             }
             
