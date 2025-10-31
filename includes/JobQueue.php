@@ -168,7 +168,7 @@ class JobQueue {
             // Calculate exponential backoff with jitter
             // Base delay: 2^attempts minutes, max 60 minutes
             $baseDelay = min(pow(2, $attempts) * 60, 3600);
-            $jitter = rand(0, $baseDelay / 10);
+            $jitter = random_int(0, (int)($baseDelay / 10));
             $delaySeconds = $baseDelay + $jitter;
             
             $availableAt = (clone $now)->modify("+{$delaySeconds} seconds");

@@ -25,7 +25,7 @@ $verbose = isset($options['verbose']);
 
 // Graceful shutdown handler
 $shutdown = false;
-if ($daemon) {
+if ($daemon && extension_loaded('pcntl')) {
     pcntl_signal(SIGTERM, function() use (&$shutdown) {
         echo "[WORKER] Received SIGTERM, shutting down gracefully...\n";
         $shutdown = true;
@@ -35,6 +35,8 @@ if ($daemon) {
         echo "[WORKER] Received SIGINT, shutting down gracefully...\n";
         $shutdown = true;
     });
+} elseif ($daemon && !extension_loaded('pcntl')) {
+    echo "[WORKER] Warning: pcntl extension not available, graceful shutdown disabled\n";
 }
 
 // Initialize services
@@ -285,7 +287,7 @@ function handleSendWebhookEvent($payload, $verbose) {
 // Main worker loop
 $batchCount = 0;
 do {
-    if ($daemon) {
+    if ($daemon && extension_loaded('pcntl')) {
         pcntl_signal_dispatch();
     }
     

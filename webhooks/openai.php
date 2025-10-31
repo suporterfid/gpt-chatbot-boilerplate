@@ -70,6 +70,12 @@ try {
     // Initialize services
     $db = new DB($config['database'] ?? []);
     $signingSecret = $config['webhooks']['openai_signing_secret'] ?? null;
+    
+    // Security warning if no signing secret
+    if (!$signingSecret) {
+        logWebhook("Security warning: Webhook signature verification disabled - no signing secret configured", 'warn');
+    }
+    
     $webhookHandler = new WebhookHandler($db, $signingSecret);
     
     // Verify signature if configured
