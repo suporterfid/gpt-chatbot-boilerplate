@@ -372,6 +372,46 @@ POST /admin-api.php?action=cancel_job&id=job_123
 GET /admin-api.php?action=job_stats
 ```
 
+### Audit Log
+
+#### List Audit Logs
+```bash
+GET /admin-api.php?action=list_audit_log&limit=100
+```
+
+Returns a list of admin actions with timestamps, actors, and payloads.
+
+## Admin UI Features
+
+### Job Management Page
+
+Access the Jobs page from the Admin UI to:
+
+- **View Statistics**: Real-time dashboard showing pending, running, completed, and failed job counts
+- **Monitor Jobs**: Auto-refreshing tables for pending and running jobs
+- **Job Actions**:
+  - View detailed job information (ID, type, payload, result, error messages)
+  - Retry failed jobs
+  - Cancel pending or running jobs
+- **Auto-Refresh**: Jobs page refreshes every 5 seconds automatically
+
+### Audit Log Viewer
+
+Access the Audit Log page from the Admin UI to:
+
+- **View History**: Chronological list of all admin actions
+- **Inspect Details**: Click any log entry to view full payload and metadata
+- **Export Data**: Export audit logs to CSV format for compliance and reporting
+- **Filter & Search**: Browse through administrative actions by actor and action type
+
+### Settings Page Enhancements
+
+The Settings page now includes:
+
+- **Worker Statistics**: View background job queue depth and processing stats
+- **Quick Access**: Direct link to the Jobs page from Settings
+- **Health Monitoring**: Real-time database, OpenAI, and worker status
+
 ## Configuration
 
 Add to `.env`:
@@ -633,8 +673,13 @@ groups:
 
 ## Next Steps
 
-- Implement Admin UI for job management
-- Add real-time job updates via SSE/WebSocket
-- Integrate audit log export functionality
-- Add more sophisticated rate limiting
+The following features from Phase 3 have been **implemented**:
+- ✅ **Admin UI for job management** - View, retry, and cancel jobs via the Admin UI
+- ✅ **Real-time job updates** - Auto-refresh every 5 seconds on the Jobs page
+- ✅ **Audit log export functionality** - Export audit logs to CSV format
+- ✅ **Audit log viewer** - Browse and search through admin actions
+
+The following features remain as **future enhancements** (optional):
+- Add WebSocket-based real-time job updates (currently using polling)
+- Add more sophisticated rate limiting (token bucket, per-user limits)
 - Implement job priority queuing

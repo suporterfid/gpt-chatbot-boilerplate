@@ -944,6 +944,23 @@ try {
                 sendError($e->getMessage(), 500);
             }
             break;
+        
+        // ==================== Audit Log ====================
+        
+        case 'list_audit_log':
+            $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
+            $limit = min($limit, 1000); // Cap at 1000
+            
+            try {
+                $logs = $db->query(
+                    "SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?",
+                    [$limit]
+                );
+                sendResponse($logs);
+            } catch (Exception $e) {
+                sendError('Failed to list audit logs: ' . $e->getMessage(), 500);
+            }
+            break;
             
         default:
             sendError('Unknown action: ' . $action, 400);
