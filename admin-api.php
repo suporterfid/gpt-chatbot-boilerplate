@@ -12,6 +12,8 @@ require_once 'includes/PromptService.php';
 require_once 'includes/VectorStoreService.php';
 require_once 'includes/OpenAIClient.php';
 require_once 'includes/ChatHandler.php';
+require_once 'includes/JobQueue.php';
+require_once 'includes/AdminAuth.php';
 
 // CORS headers
 header('Access-Control-Allow-Origin: *');
@@ -136,6 +138,8 @@ try {
     $agentService = new AgentService($db);
     $promptService = new PromptService($db, $openaiClient);
     $vectorStoreService = new VectorStoreService($db, $openaiClient);
+    $jobQueue = new JobQueue($db);
+    $adminAuth = new AdminAuth($db, $config);
     
     // Get action from query parameter
     $action = $_GET['action'] ?? '';
@@ -485,12 +489,26 @@ try {
                 'timestamp' => date('c'),
                 'database' => false,
                 'openai' => false,
+                'worker' => [
+                    'enabled' => $config['admin']['jobs_enabled'] ?? true,
+                    'queue_depth' => 0,
+                    'stats' => []
+                ]
             ];
             
             // Test database
             try {
                 $db->query("SELECT 1");
                 $health['database'] = true;
+                
+                // Get worker stats if database is healthy
+                try {
+                    $stats = $jobQueue->getStats();
+                    $health['worker']['stats'] = $stats;
+                    $health['worker']['queue_depth'] = $stats['pending'] + $stats['running'];
+                } catch (Exception $e) {
+                    log_admin('Failed to get worker stats: ' . $e->getMessage(), 'warn');
+                }
             } catch (Exception $e) {
                 $health['status'] = 'degraded';
             }
@@ -579,6 +597,136 @@ try {
             }
             
             exit();
+            break;
+        
+        // ==================== Metrics Endpoint ====================
+        
+        case 'metrics':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Prometheus text format
+            header('Content-Type: text/plain; version=0.0.4');
+            
+            try {
+                $stats = $jobQueue->getStats();
+                
+                echo "# HELP jobs_pending_total Number of pending jobs\n";
+                echo "# TYPE jobs_pending_total gauge\n";
+                echo "jobs_pending_total " . $stats['pending'] . "\n";
+                
+                echo "# HELP jobs_running_total Number of running jobs\n";
+                echo "# TYPE jobs_running_total gauge\n";
+                echo "jobs_running_total " . $stats['running'] . "\n";
+                
+                echo "# HELP jobs_completed_total Number of completed jobs\n";
+                echo "# TYPE jobs_completed_total counter\n";
+                echo "jobs_completed_total " . $stats['completed'] . "\n";
+                
+                echo "# HELP jobs_failed_total Number of failed jobs\n";
+                echo "# TYPE jobs_failed_total counter\n";
+                echo "jobs_failed_total " . $stats['failed'] . "\n";
+                
+                // Database connectivity
+                try {
+                    $db->query("SELECT 1");
+                    $dbUp = 1;
+                } catch (Exception $e) {
+                    $dbUp = 0;
+                }
+                
+                echo "# HELP database_up Database connectivity status\n";
+                echo "# TYPE database_up gauge\n";
+                echo "database_up $dbUp\n";
+                
+            } catch (Exception $e) {
+                echo "# ERROR: " . $e->getMessage() . "\n";
+            }
+            
+            exit();
+            break;
+        
+        // ==================== Job Management Endpoints ====================
+        
+        case 'list_jobs':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $filters = [];
+            if (isset($_GET['status'])) {
+                $filters['status'] = $_GET['status'];
+            }
+            if (isset($_GET['type'])) {
+                $filters['type'] = $_GET['type'];
+            }
+            if (isset($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            if (isset($_GET['offset'])) {
+                $filters['offset'] = (int)$_GET['offset'];
+            }
+            
+            $jobs = $jobQueue->listJobs($filters);
+            sendResponse($jobs);
+            break;
+        
+        case 'get_job':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $jobId = $_GET['id'] ?? '';
+            if (empty($jobId)) {
+                sendError('Job ID required', 400);
+            }
+            
+            $job = $jobQueue->getJob($jobId);
+            if (!$job) {
+                sendError('Job not found', 404);
+            }
+            
+            sendResponse($job);
+            break;
+        
+        case 'retry_job':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $jobId = $_GET['id'] ?? '';
+            if (empty($jobId)) {
+                sendError('Job ID required', 400);
+            }
+            
+            $jobQueue->retryJob($jobId);
+            log_admin("Job retried: $jobId");
+            sendResponse(['success' => true, 'message' => 'Job retried']);
+            break;
+        
+        case 'cancel_job':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $jobId = $_GET['id'] ?? '';
+            if (empty($jobId)) {
+                sendError('Job ID required', 400);
+            }
+            
+            $jobQueue->cancelJob($jobId);
+            log_admin("Job cancelled: $jobId");
+            sendResponse(['success' => true, 'message' => 'Job cancelled']);
+            break;
+        
+        case 'job_stats':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $stats = $jobQueue->getStats();
+            sendResponse($stats);
             break;
             
         default:
