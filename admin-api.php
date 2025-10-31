@@ -952,11 +952,10 @@ try {
             $limit = min($limit, 1000); // Cap at 1000
             
             try {
-                $stmt = $db->query(
+                $logs = $db->query(
                     "SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?",
                     [$limit]
                 );
-                $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 sendResponse($logs);
             } catch (Exception $e) {
                 sendError('Failed to list audit logs: ' . $e->getMessage(), 500);
