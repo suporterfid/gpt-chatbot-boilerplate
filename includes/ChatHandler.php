@@ -6,10 +6,73 @@
 class ChatHandler {
     private $config;
     private $openAIClient;
+    private $agentService;
 
-    public function __construct($config) {
+    public function __construct($config, $agentService = null) {
         $this->config = $config;
         $this->openAIClient = new OpenAIClient($config['openai']);
+        $this->agentService = $agentService;
+    }
+    
+    /**
+     * Resolve agent configuration overrides
+     * 
+     * @param string|null $agentId
+     * @return array Agent configuration or empty array if not found
+     */
+    private function resolveAgentOverrides($agentId) {
+        if (!$agentId || !$this->agentService) {
+            return [];
+        }
+        
+        try {
+            $agent = $this->agentService->getAgent($agentId);
+            if (!$agent) {
+                error_log("Agent not found: $agentId");
+                return [];
+            }
+            
+            $overrides = [];
+            
+            if (isset($agent['api_type'])) {
+                $overrides['api_type'] = $agent['api_type'];
+            }
+            if (isset($agent['prompt_id'])) {
+                $overrides['prompt_id'] = $agent['prompt_id'];
+            }
+            if (isset($agent['prompt_version'])) {
+                $overrides['prompt_version'] = $agent['prompt_version'];
+            }
+            if (isset($agent['model'])) {
+                $overrides['model'] = $agent['model'];
+            }
+            if (isset($agent['temperature'])) {
+                $overrides['temperature'] = $agent['temperature'];
+            }
+            if (isset($agent['top_p'])) {
+                $overrides['top_p'] = $agent['top_p'];
+            }
+            if (isset($agent['max_output_tokens'])) {
+                $overrides['max_output_tokens'] = $agent['max_output_tokens'];
+            }
+            if (isset($agent['tools'])) {
+                $overrides['tools'] = $agent['tools'];
+            }
+            if (isset($agent['vector_store_ids'])) {
+                $overrides['vector_store_ids'] = $agent['vector_store_ids'];
+            }
+            if (isset($agent['max_num_results'])) {
+                $overrides['max_num_results'] = $agent['max_num_results'];
+            }
+            if (isset($agent['system_message'])) {
+                $overrides['system_message'] = $agent['system_message'];
+            }
+            
+            return $overrides;
+        } catch (Exception $e) {
+            error_log("Error resolving agent $agentId: " . $e->getMessage());
+            return [];
+        }
     }
 
     public function validateRequest($message, $conversationId, $fileData = null) {
@@ -45,15 +108,19 @@ class ChatHandler {
         }
     }
 
-    public function handleChatCompletion($message, $conversationId) {
+    public function handleChatCompletion($message, $conversationId, $agentId = null) {
+        // Resolve agent overrides
+        $agentOverrides = $this->resolveAgentOverrides($agentId);
+        
         // Get conversation history
         $messages = $this->getConversationHistory($conversationId);
 
-        // Add system message if configured
-        if (!empty($this->config['chat']['system_message']) && empty($messages)) {
+        // Apply system message with agent override priority
+        $systemMessage = $agentOverrides['system_message'] ?? $this->config['chat']['system_message'];
+        if (!empty($systemMessage) && empty($messages)) {
             array_unshift($messages, [
                 'role' => 'system',
-                'content' => $this->config['chat']['system_message']
+                'content' => $systemMessage
             ]);
         }
 
@@ -63,17 +130,22 @@ class ChatHandler {
             'content' => $message
         ];
 
-        // Stream response from OpenAI
-        $this->streamChatCompletion($messages, $conversationId);
+        // Stream response from OpenAI with agent overrides applied
+        $this->streamChatCompletion($messages, $conversationId, $agentOverrides);
     }
 
-    public function handleChatCompletionSync($message, $conversationId) {
+    public function handleChatCompletionSync($message, $conversationId, $agentId = null) {
+        // Resolve agent overrides
+        $agentOverrides = $this->resolveAgentOverrides($agentId);
+        
         $messages = $this->getConversationHistory($conversationId);
 
-        if (!empty($this->config['chat']['system_message']) && empty($messages)) {
+        // Apply system message with agent override priority
+        $systemMessage = $agentOverrides['system_message'] ?? $this->config['chat']['system_message'];
+        if (!empty($systemMessage) && empty($messages)) {
             array_unshift($messages, [
                 'role' => 'system',
-                'content' => $this->config['chat']['system_message']
+                'content' => $systemMessage
             ]);
         }
 
@@ -83,11 +155,11 @@ class ChatHandler {
         ];
 
         $payload = [
-            'model' => $this->config['chat']['model'],
+            'model' => $agentOverrides['model'] ?? $this->config['chat']['model'],
             'messages' => $messages,
-            'temperature' => $this->config['chat']['temperature'],
+            'temperature' => $agentOverrides['temperature'] ?? $this->config['chat']['temperature'],
             'max_tokens' => $this->config['chat']['max_tokens'],
-            'top_p' => $this->config['chat']['top_p'],
+            'top_p' => $agentOverrides['top_p'] ?? $this->config['chat']['top_p'],
             'frequency_penalty' => $this->config['chat']['frequency_penalty'],
             'presence_penalty' => $this->config['chat']['presence_penalty'],
             'stream' => false
@@ -118,23 +190,32 @@ class ChatHandler {
      * @param string|null $promptId
      * @param string|null $promptVersion
      * @param array|null $tools Optional Responses tools configuration overrides.
+     * @param string|null $agentId Optional agent ID to load configuration from.
      */
-    public function handleResponsesChat($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null) {
+    public function handleResponsesChat($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null, $agentId = null) {
+        // Resolve agent overrides (agent > config.php)
+        $agentOverrides = $this->resolveAgentOverrides($agentId);
+        
         $messages = $this->getConversationHistory($conversationId);
         $responsesConfig = $this->config['responses'];
 
+        // Merge precedence: request > agent > config
         $promptIdOverride = $this->normalizePromptValue($promptId);
         $promptVersionOverride = $this->normalizePromptValue($promptVersion);
+        $agentPromptId = isset($agentOverrides['prompt_id']) ? $this->normalizePromptValue($agentOverrides['prompt_id']) : null;
+        $agentPromptVersion = isset($agentOverrides['prompt_version']) ? $this->normalizePromptValue($agentOverrides['prompt_version']) : null;
         $configuredPromptId = $this->normalizePromptValue($responsesConfig['prompt_id'] ?? null);
         $configuredPromptVersion = $this->normalizePromptValue($responsesConfig['prompt_version'] ?? null);
 
-        $effectivePromptId = $promptIdOverride ?? $configuredPromptId;
-        $effectivePromptVersion = $promptVersionOverride ?? $configuredPromptVersion;
+        $effectivePromptId = $promptIdOverride ?? $agentPromptId ?? $configuredPromptId;
+        $effectivePromptVersion = $promptVersionOverride ?? $agentPromptVersion ?? $configuredPromptVersion;
 
-        if (!empty($responsesConfig['system_message']) && empty($messages)) {
+        // Apply system message with precedence
+        $systemMessage = $agentOverrides['system_message'] ?? $responsesConfig['system_message'];
+        if (!empty($systemMessage) && empty($messages)) {
             array_unshift($messages, [
                 'role' => 'system',
-                'content' => $responsesConfig['system_message']
+                'content' => $systemMessage
             ]);
         }
 
@@ -155,16 +236,23 @@ class ChatHandler {
         $messages[] = $userMessage;
 
         $payload = [
-            'model' => $responsesConfig['model'],
+            'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
             'input' => $this->formatMessagesForResponses($messages),
-            'temperature' => $responsesConfig['temperature'],
-            'top_p' => $responsesConfig['top_p'],
-            'max_output_tokens' => $responsesConfig['max_output_tokens'],
+            'temperature' => $agentOverrides['temperature'] ?? $responsesConfig['temperature'],
+            'top_p' => $agentOverrides['top_p'] ?? $responsesConfig['top_p'],
+            'max_output_tokens' => $agentOverrides['max_output_tokens'] ?? $responsesConfig['max_output_tokens'],
             'stream' => true,
         ];
 
         $tooling = $this->resolveResponsesTooling();
         $configTools = $tooling['tools'];
+        
+        // Merge agent tools if present
+        $agentTools = isset($agentOverrides['tools']) ? $this->normalizeTools($agentOverrides['tools']) : [];
+        if (!empty($agentTools)) {
+            $configTools = $this->mergeTools($configTools, $agentTools, false);
+        }
+        
         $overrideProvided = $tools !== null;
 
         $requestTools = [];
@@ -172,8 +260,14 @@ class ChatHandler {
             $requestTools = $this->normalizeTools($tools);
         }
 
+        // Merge precedence: request > agent+config
         $mergedTools = $this->mergeTools($configTools, $requestTools, $overrideProvided);
-        $mergedTools = $this->applyFileSearchDefaults($mergedTools, $tooling['default_vector_store_ids'], $tooling['default_max_num_results']);
+        
+        // Apply agent vector_store_ids if present
+        $vectorStoreIds = $agentOverrides['vector_store_ids'] ?? $tooling['default_vector_store_ids'];
+        $maxNumResults = $agentOverrides['max_num_results'] ?? $tooling['default_max_num_results'];
+        
+        $mergedTools = $this->applyFileSearchDefaults($mergedTools, $vectorStoreIds, $maxNumResults);
 
         if (!empty($mergedTools)) {
             $payload['tools'] = $mergedTools;
@@ -384,25 +478,34 @@ class ChatHandler {
      * @param string|null $promptId
      * @param string|null $promptVersion
      * @param array|null $tools Optional Responses tools configuration overrides.
+     * @param string|null $agentId Optional agent ID to load configuration from.
      *
      * @return array
      */
-    public function handleResponsesChatSync($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null) {
+    public function handleResponsesChatSync($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null, $agentId = null) {
+        // Resolve agent overrides (agent > config.php)
+        $agentOverrides = $this->resolveAgentOverrides($agentId);
+        
         $messages = $this->getConversationHistory($conversationId);
         $responsesConfig = $this->config['responses'];
 
+        // Merge precedence: request > agent > config
         $promptIdOverride = $this->normalizePromptValue($promptId);
         $promptVersionOverride = $this->normalizePromptValue($promptVersion);
+        $agentPromptId = isset($agentOverrides['prompt_id']) ? $this->normalizePromptValue($agentOverrides['prompt_id']) : null;
+        $agentPromptVersion = isset($agentOverrides['prompt_version']) ? $this->normalizePromptValue($agentOverrides['prompt_version']) : null;
         $configuredPromptId = $this->normalizePromptValue($responsesConfig['prompt_id'] ?? null);
         $configuredPromptVersion = $this->normalizePromptValue($responsesConfig['prompt_version'] ?? null);
 
-        $effectivePromptId = $promptIdOverride ?? $configuredPromptId;
-        $effectivePromptVersion = $promptVersionOverride ?? $configuredPromptVersion;
+        $effectivePromptId = $promptIdOverride ?? $agentPromptId ?? $configuredPromptId;
+        $effectivePromptVersion = $promptVersionOverride ?? $agentPromptVersion ?? $configuredPromptVersion;
 
-        if (!empty($responsesConfig['system_message']) && empty($messages)) {
+        // Apply system message with precedence
+        $systemMessage = $agentOverrides['system_message'] ?? $responsesConfig['system_message'];
+        if (!empty($systemMessage) && empty($messages)) {
             array_unshift($messages, [
                 'role' => 'system',
-                'content' => $responsesConfig['system_message']
+                'content' => $systemMessage
             ]);
         }
 
@@ -423,16 +526,23 @@ class ChatHandler {
         $messages[] = $userMessage;
 
         $payload = [
-            'model' => $responsesConfig['model'],
+            'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
             'input' => $this->formatMessagesForResponses($messages),
-            'temperature' => $responsesConfig['temperature'],
-            'top_p' => $responsesConfig['top_p'],
-            'max_output_tokens' => $responsesConfig['max_output_tokens'],
+            'temperature' => $agentOverrides['temperature'] ?? $responsesConfig['temperature'],
+            'top_p' => $agentOverrides['top_p'] ?? $responsesConfig['top_p'],
+            'max_output_tokens' => $agentOverrides['max_output_tokens'] ?? $responsesConfig['max_output_tokens'],
             'stream' => false,
         ];
 
         $tooling = $this->resolveResponsesTooling();
         $configTools = $tooling['tools'];
+        
+        // Merge agent tools if present
+        $agentTools = isset($agentOverrides['tools']) ? $this->normalizeTools($agentOverrides['tools']) : [];
+        if (!empty($agentTools)) {
+            $configTools = $this->mergeTools($configTools, $agentTools, false);
+        }
+        
         $overrideProvided = $tools !== null;
 
         $requestTools = [];
@@ -440,8 +550,14 @@ class ChatHandler {
             $requestTools = $this->normalizeTools($tools);
         }
 
+        // Merge precedence: request > agent+config
         $mergedTools = $this->mergeTools($configTools, $requestTools, $overrideProvided);
-        $mergedTools = $this->applyFileSearchDefaults($mergedTools, $tooling['default_vector_store_ids'], $tooling['default_max_num_results']);
+        
+        // Apply agent vector_store_ids if present
+        $vectorStoreIds = $agentOverrides['vector_store_ids'] ?? $tooling['default_vector_store_ids'];
+        $maxNumResults = $agentOverrides['max_num_results'] ?? $tooling['default_max_num_results'];
+        
+        $mergedTools = $this->applyFileSearchDefaults($mergedTools, $vectorStoreIds, $maxNumResults);
 
         if (!empty($mergedTools)) {
             $payload['tools'] = $mergedTools;
@@ -501,13 +617,13 @@ class ChatHandler {
         }
     }
 
-    private function streamChatCompletion($messages, $conversationId) {
+    private function streamChatCompletion($messages, $conversationId, $agentOverrides = []) {
         $payload = [
-            'model' => $this->config['chat']['model'],
+            'model' => $agentOverrides['model'] ?? $this->config['chat']['model'],
             'messages' => $messages,
-            'temperature' => $this->config['chat']['temperature'],
+            'temperature' => $agentOverrides['temperature'] ?? $this->config['chat']['temperature'],
             'max_tokens' => $this->config['chat']['max_tokens'],
-            'top_p' => $this->config['chat']['top_p'],
+            'top_p' => $agentOverrides['top_p'] ?? $this->config['chat']['top_p'],
             'frequency_penalty' => $this->config['chat']['frequency_penalty'],
             'presence_penalty' => $this->config['chat']['presence_penalty'],
             'stream' => true

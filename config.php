@@ -272,6 +272,14 @@ $config = [
         'cache_enabled' => filter_var($_ENV['CACHE_ENABLED'] ?? getenv('CACHE_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN),
         'cache_ttl' => (int)($_ENV['CACHE_TTL'] ?? getenv('CACHE_TTL') ?: 3600),
         'compression_enabled' => filter_var($_ENV['COMPRESSION_ENABLED'] ?? getenv('COMPRESSION_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+    ],
+
+    // Admin Configuration
+    'admin' => [
+        'enabled' => filter_var($_ENV['ADMIN_ENABLED'] ?? getenv('ADMIN_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+        'token' => $_ENV['ADMIN_TOKEN'] ?? getenv('ADMIN_TOKEN') ?: '',
+        'database_url' => $_ENV['DATABASE_URL'] ?? getenv('DATABASE_URL') ?: '',
+        'database_path' => $_ENV['DATABASE_PATH'] ?? getenv('DATABASE_PATH') ?: __DIR__ . '/data/chatbot.db',
     ]
 ];
 

@@ -1,2 +1,7 @@
 .env
 logs/chatbot.log
+
+# Database files (Phase 1)
+data/
+*.db
+*.db-journal

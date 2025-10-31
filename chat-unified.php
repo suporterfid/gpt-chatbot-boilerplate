@@ -153,8 +153,32 @@ function extractToolsConfig($rawTools, string $source = 'request') {
 
 // Main execution
 try {
+    // Initialize AgentService if admin is enabled
+    $agentService = null;
+    if ($config['admin']['enabled'] && !empty($config['admin']['token'])) {
+        require_once 'includes/DB.php';
+        require_once 'includes/AgentService.php';
+        
+        try {
+            $dbConfig = [
+                'database_url' => $config['admin']['database_url'] ?? null,
+                'database_path' => $config['admin']['database_path'] ?? __DIR__ . '/data/chatbot.db'
+            ];
+            
+            $db = new DB($dbConfig);
+            
+            // Run migrations if needed
+            $db->runMigrations(__DIR__ . '/db/migrations');
+            
+            $agentService = new AgentService($db);
+        } catch (Exception $e) {
+            // Log but continue - admin features will be disabled
+            log_debug('Failed to initialize AgentService: ' . $e->getMessage(), 'warn');
+        }
+    }
+    
     // Use configuration loaded above
-    $chatHandler = new ChatHandler($config);
+    $chatHandler = new ChatHandler($config, $agentService);
 
     // Get request data
     $message = '';
@@ -164,6 +188,7 @@ try {
     $tools = null;
     $promptId = '';
     $promptVersion = '';
+    $agentId = '';
 
     if ($method === 'GET') {
         $message = $_GET['message'] ?? '';
@@ -171,6 +196,7 @@ try {
         $apiType = $_GET['api_type'] ?? $apiType;
         $promptId = $_GET['prompt_id'] ?? $promptId;
         $promptVersion = $_GET['prompt_version'] ?? $promptVersion;
+        $agentId = $_GET['agent_id'] ?? '';
         if (isset($_GET['tools'])) {
             $tools = extractToolsConfig($_GET['tools'], 'query');
         }
@@ -181,12 +207,13 @@ try {
         $fileData = $input['file_data'] ?? null;
         $promptId = $input['prompt_id'] ?? $promptId;
         $promptVersion = $input['prompt_version'] ?? $promptVersion;
+        $agentId = $input['agent_id'] ?? '';
         if (array_key_exists('tools', $input)) {
             $tools = extractToolsConfig($input['tools'], 'body');
         }
     }
 
-    log_debug("Incoming request method=$method apiType=$apiType conv=$conversationId msgLen=" . strlen($message));
+    log_debug("Incoming request method=$method apiType=$apiType conv=$conversationId agentId=$agentId msgLen=" . strlen($message));
 
     if (empty($message)) {
         log_debug('Validation failed: Message is required', 'warn');
@@ -209,24 +236,28 @@ try {
         // Send start event
         sendSSEEvent('start', [
             'conversation_id' => $conversationId,
-            'api_type' => $apiType
+            'api_type' => $apiType,
+            'agent_id' => $agentId
         ]);
 
         // Route to appropriate handler
         if ($apiType === 'responses') {
-            $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion, $tools);
+            $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion, $tools, $agentId);
         } else {
-            $chatHandler->handleChatCompletion($message, $conversationId);
+            $chatHandler->handleChatCompletion($message, $conversationId, $agentId);
         }
     } else {
         if ($apiType === 'responses') {
-            $result = $chatHandler->handleResponsesChatSync($message, $conversationId, $fileData, $promptId, $promptVersion, $tools);
+            $result = $chatHandler->handleResponsesChatSync($message, $conversationId, $fileData, $promptId, $promptVersion, $tools, $agentId);
         } else {
-            $result = $chatHandler->handleChatCompletionSync($message, $conversationId);
+            $result = $chatHandler->handleChatCompletionSync($message, $conversationId, $agentId);
         }
 
         $result['conversation_id'] = $conversationId;
         $result['api_type'] = $apiType;
+        if ($agentId) {
+            $result['agent_id'] = $agentId;
+        }
 
         echo json_encode($result);
     }
