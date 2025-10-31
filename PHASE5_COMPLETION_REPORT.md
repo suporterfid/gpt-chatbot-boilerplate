@@ -381,9 +381,9 @@ The following features could be added in future phases:
 The following documentation should be updated:
 
 - [x] IMPLEMENTATION_PLAN.md (already marked as completed)
-- [ ] README.md (add agent_id parameter documentation)
-- [ ] docs/api.md (document agent_id in chat endpoint)
-- [ ] docs/customization-guide.md (add agent usage examples)
+- [x] README.md (agent_id parameter documentation added)
+- [x] docs/api.md (agent_id in chat endpoint documented)
+- [x] docs/customization-guide.md (comprehensive agent usage examples added)
 
 ---
 
