@@ -134,8 +134,9 @@ curl -X POST "http://localhost/admin-api.php?action=create_agent" \
 #### Option 1: Explicit Agent Selection
 
 ```javascript
-// JavaScript widget
-const chatbot = ChatBot.init({
+// JavaScript widget - floating mode
+const chatbot = ChatBot.init(null, {
+    mode: 'floating',
     apiEndpoint: '/chat-unified.php',
     // Pass agent_id with every request
     requestModifier: (payload) => {
@@ -208,8 +209,8 @@ class MultiAgentChatBot {
     switchAgent(agentId) {
         this.currentAgentId = agentId;
         console.log(`Switched to agent: ${agentId}`);
-        // Optionally start a new conversation
-        this.chatbot.newConversation();
+        // Note: Agent selection takes effect on next message
+        // The updated agent_id will be sent with the next request
     }
 }
 
@@ -289,7 +290,7 @@ When using agents, configuration values are merged with the following priority:
 ```javascript
 // Agent has: model = "gpt-4", temperature = 0.7
 // Request overrides model
-ChatBot.init({
+const chatbot = ChatBot.init('#chat-container', {
     requestModifier: (payload) => {
         payload.agent_id = 'agent_123';
         payload.model = 'gpt-3.5-turbo'; // Overrides agent's model
