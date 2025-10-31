@@ -59,7 +59,13 @@ function testRateLimit() {
     $testConfig['admin']['rate_limit_requests'] = 3;
     $testConfig['admin']['rate_limit_window'] = 5; // 5 seconds
     
-    // Simulate the rate limit check function
+    /**
+     * Test implementation of rate limiter
+     * Note: This duplicates the logic from checkAdminRateLimit() in admin-api.php
+     * This is intentional - we're testing the algorithm correctness in isolation
+     * without making actual HTTP requests to admin-api.php. This allows us to
+     * verify the sliding window logic works correctly with controlled test data.
+     */
     function checkTestRateLimit($config) {
         $clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         $requestsFile = sys_get_temp_dir() . '/admin_requests_' . md5($clientIP);

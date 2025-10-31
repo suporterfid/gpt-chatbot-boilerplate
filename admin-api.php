@@ -122,7 +122,6 @@ function getRequestBody() {
 // Rate limiting for admin endpoints
 function checkAdminRateLimit($config) {
     $clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-    $rateLimitFile = sys_get_temp_dir() . '/admin_rate_limit_' . md5($clientIP);
     $requestsFile = sys_get_temp_dir() . '/admin_requests_' . md5($clientIP);
     
     $currentTime = time();
@@ -549,7 +548,13 @@ try {
                 sendError('OpenAI client not configured', 500);
             }
             
+            // Validate purpose parameter against OpenAI allowed values
             $purpose = $_GET['purpose'] ?? 'assistants';
+            $allowedPurposes = ['assistants', 'fine-tune', 'batch'];
+            if (!in_array($purpose, $allowedPurposes)) {
+                sendError('Invalid purpose. Allowed values: ' . implode(', ', $allowedPurposes), 400);
+            }
+            
             try {
                 $files = $openaiClient->listFiles($purpose);
                 sendResponse($files);
@@ -574,7 +579,12 @@ try {
                 sendError('File name and file_data (base64) are required', 400);
             }
             
+            // Validate purpose parameter
             $purpose = $data['purpose'] ?? 'assistants';
+            $allowedPurposes = ['assistants', 'fine-tune', 'batch'];
+            if (!in_array($purpose, $allowedPurposes)) {
+                sendError('Invalid purpose. Allowed values: ' . implode(', ', $allowedPurposes), 400);
+            }
             
             try {
                 $file = $openaiClient->uploadFileFromBase64(
