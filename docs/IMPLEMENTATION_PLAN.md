@@ -51,14 +51,14 @@ This document outlines the detailed implementation tasks for adding a web Admin 
 - `migrations/003_create_admin_users_table.sql` - SQLite/MySQL (optional for v1)
 
 **Tasks:**
-- [ ] Create `includes/DB.php` PDO wrapper class
+- ✅ Create `includes/DB.php` PDO wrapper class
   - Constructor accepts DSN from config
   - Prepared statement helpers (query, execute, insert, update, delete)
   - Transaction support
   - Error handling with detailed logging
   - Connection pooling considerations
 
-- [ ] Design agents table schema (snake_case)
+- ✅ Design agents table schema (snake_case)
   - id (UUID primary key)
   - name (unique, indexed)
   - description (text, nullable)
@@ -77,24 +77,24 @@ This document outlines the detailed implementation tasks for adding a web Admin 
   - updated_at (datetime)
   - is_default (boolean, default false)
 
-- [ ] Design audit_log table schema
+- ✅ Design audit_log table schema
   - id (auto-increment primary key)
   - actor (string) - "admin:<email>" or "system"
   - action (string) - e.g., "agent.create", "vector_store.file.add"
   - payload_json (json/text)
   - created_at (datetime)
 
-- [ ] Create migration SQL files for SQLite
+- ✅ Create migration SQL files for SQLite
   - SQLite uses TEXT for JSON storage
   - UUID as TEXT type
   - Proper indexes on name, is_default, created_at
 
-- [ ] Create migration SQL files for MySQL
+- ✅ Create migration SQL files for MySQL
   - JSON native type support
   - CHAR(36) for UUID
   - InnoDB engine with proper indexes
 
-- [ ] Add migration runner utility
+- ✅ Add migration runner utility
   - `scripts/migrate.php` - Reads and executes migration files in order
   - Track executed migrations in a `migrations` table
   - Support both SQLite and MySQL
@@ -122,11 +122,11 @@ This document outlines the detailed implementation tasks for adding a web Admin 
   ```
 
 **Testing:**
-- [ ] Test DB.php with SQLite connection
-- [ ] Test DB.php with MySQL connection (if available)
-- [ ] Run migrations and verify schema
-- [ ] Test CRUD operations on empty tables
-- [ ] Verify indexes are created correctly
+- ✅ Test DB.php with SQLite connection
+- ✅ Test DB.php with MySQL connection (if available)
+- ✅ Run migrations and verify schema
+- ✅ Test CRUD operations on empty tables
+- ✅ Verify indexes are created correctly
 
 ---
 
@@ -136,7 +136,7 @@ This document outlines the detailed implementation tasks for adding a web Admin 
 - `includes/AgentService.php` - Agent CRUD and config resolution
 
 **Tasks:**
-- [ ] Create `AgentService` class
+- ✅ Create `AgentService` class
   - Constructor: accepts DB instance
   - `createAgent(array $data): array` - Insert new agent, return with generated UUID
   - `updateAgent(string $id, array $data): bool` - Update existing agent
@@ -148,14 +148,14 @@ This document outlines the detailed implementation tasks for adding a web Admin 
   - `resolveAgentConfig(string $agentId): array` - Load agent and return normalized config
   - `validateAgentData(array $data): void` - Validate agent fields before save
 
-- [ ] Implement agent data normalization
+- ✅ Implement agent data normalization
   - Parse tools_json from JSON string to array
   - Parse vector_store_ids_json from JSON string to array
   - Validate api_type is 'chat' or 'responses'
   - Validate numeric ranges (temperature 0-2, top_p 0-1, etc.)
   - Generate UUIDs for new agents
 
-- [ ] Implement config resolution logic
+- ✅ Implement config resolution logic
   - Load agent from DB
   - Return structured config object:
     ```php
@@ -172,20 +172,20 @@ This document outlines the detailed implementation tasks for adding a web Admin 
     ]
     ```
 
-- [ ] Add audit logging to all mutating operations
+- ✅ Add audit logging to all mutating operations
   - Log agent.create, agent.update, agent.delete, agent.set_default
   - Include actor (admin token fingerprint or "system")
   - Store full payload in audit_log table
 
 **Testing:**
-- [ ] Test createAgent with valid data
-- [ ] Test createAgent with invalid data (should throw exceptions)
-- [ ] Test updateAgent and verify updated_at changes
-- [ ] Test deleteAgent and verify removal
-- [ ] Test listAgents with various filters
-- [ ] Test setDefaultAgent and verify only one is default
-- [ ] Test resolveAgentConfig returns correct structure
-- [ ] Verify audit logs are created for each operation
+- ✅ Test createAgent with valid data
+- ✅ Test createAgent with invalid data (should throw exceptions)
+- ✅ Test updateAgent and verify updated_at changes
+- ✅ Test deleteAgent and verify removal
+- ✅ Test listAgents with various filters
+- ✅ Test setDefaultAgent and verify only one is default
+- ✅ Test resolveAgentConfig returns correct structure
+- ✅ Verify audit logs are created for each operation
 
 ---
 
@@ -368,16 +368,14 @@ This document outlines the detailed implementation tasks for adding a web Admin 
 
 ## Phase 4: Admin UI Frontend
 
-**Status**: ✅ **COMPLETED** (see [PHASE2_COMPLETION_REPORT.md](../PHASE2_COMPLETION_REPORT.md))
+**Status**: ✅ **COMPLETED** (see [PHASE2_COMPLETION_REPORT.md](../PHASE2_COMPLETION_REPORT.md) and [PHASE4_COMPLETION_REPORT.md](../PHASE4_COMPLETION_REPORT.md))
 
 **Note**: Phase 4 was implemented with all functionality in admin-api.php rather than a separate AdminController.php class. This architectural decision keeps the codebase simpler while maintaining all required functionality.
 
-### 4.1 Admin UI Structure
+### 4.0 Admin API Backend
 
-**Files Created:**
-- ✅ `public/admin/index.html` - Main Admin SPA
-- ✅ `public/admin/admin.js` - Admin UI logic (~1,800 lines)
-- ✅ `public/admin/admin.css` - Admin UI styles
+**Files Modified:**
+- ✅ `admin-api.php` - HTTP entrypoint with inline routing
 
 **Tasks - admin-api.php:**
 - ✅ Create thin HTTP entrypoint
@@ -496,16 +494,14 @@ Rather than creating a separate AdminController.php class, the functionality was
 - ✅ Test CORS headers (implemented in admin-api.php)
 - ✅ Test error responses format (consistent {data}/{error} envelope)
 
-**Test Results:**
+**Backend API Test Results:**
 - Phase 1 Tests: 28/28 passed ✅
 - Phase 2 Tests: 44/44 passed ✅
 - Phase 3 Tests: 36/36 passed ✅
 - Phase 4 Tests: 14/14 passed ✅
-- **Total: 122 tests passing (100%)**
+- **Backend Total: 122 tests passing (100%)**
 
 ---
-
-## Phase 4: Admin UI Frontend
 
 ### 4.1 Admin UI Structure
 
@@ -754,7 +750,6 @@ Rather than creating a separate AdminController.php class, the functionality was
 - ✅ Test merging precedence (request > agent > config)
 - ✅ Test both streaming and sync modes
 - ✅ Test both Responses and Chat APIs
-- [ ] Test both Responses and Chat APIs
 
 ---
 
