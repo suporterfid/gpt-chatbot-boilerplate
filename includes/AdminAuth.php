@@ -250,12 +250,26 @@ class AdminAuth {
      * @return array List of API keys (without hashes)
      */
     public function listApiKeys($userId) {
-        $sql = "SELECT id, key_prefix, name, last_used_at, expires_at, is_active, created_at 
+        $sql = "SELECT id, user_id, key_prefix, name, last_used_at, expires_at, is_active, created_at 
                 FROM admin_api_keys 
                 WHERE user_id = ?
                 ORDER BY created_at DESC";
         
         return $this->db->query($sql, [$userId]);
+    }
+    
+    /**
+     * Get API key by ID
+     * 
+     * @param string $keyId API key ID
+     * @return array|null API key data (without hash)
+     */
+    public function getApiKey($keyId) {
+        $sql = "SELECT id, user_id, key_prefix, name, last_used_at, expires_at, is_active, created_at 
+                FROM admin_api_keys 
+                WHERE id = ?";
+        
+        return $this->db->queryOne($sql, [$keyId]);
     }
     
     /**

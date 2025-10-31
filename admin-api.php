@@ -912,7 +912,16 @@ try {
                 sendError('API key ID required', 400);
             }
             
-            // TODO: Add ownership check - users can only revoke their own keys
+            // Check ownership: users can only revoke their own keys unless super-admin
+            $key = $adminAuth->getApiKey($keyId);
+            if (!$key) {
+                sendError('API key not found', 404);
+            }
+            
+            // Allow if user owns the key OR has manage_users permission
+            if ($key['user_id'] !== $authenticatedUser['id']) {
+                requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            }
             
             $adminAuth->revokeApiKey($keyId);
             log_admin("API key revoked: $keyId");
