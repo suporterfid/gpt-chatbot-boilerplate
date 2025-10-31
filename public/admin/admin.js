@@ -1306,10 +1306,10 @@ async function viewJobDetails(jobId) {
                     <pre style="background: #1f2937; color: #e5e7eb; padding: 1rem; border-radius: 0.375rem; overflow-x: auto;">${JSON.stringify(JSON.parse(job.result_json), null, 2)}</pre>
                 </div>
             ` : ''}
-            ${job.error_message ? `
+            ${job.error_text ? `
                 <div class="form-group">
                     <label class="form-label">Error</label>
-                    <div style="color: #ef4444;">${job.error_message}</div>
+                    <div style="color: #ef4444;">${job.error_text}</div>
                 </div>
             ` : ''}
         `;
