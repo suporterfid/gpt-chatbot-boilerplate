@@ -135,7 +135,7 @@ curl -X POST "http://localhost/admin-api.php?action=create_agent" \
 
 ```javascript
 // JavaScript widget - floating mode
-const chatbot = ChatBot.init(null, {
+const chatbot = ChatBot.init({
     mode: 'floating',
     apiEndpoint: '/chat-unified.php',
     // Pass agent_id with every request
