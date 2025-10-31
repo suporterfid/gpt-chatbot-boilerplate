@@ -119,6 +119,38 @@ function getRequestBody() {
     return $decoded ?? [];
 }
 
+// Rate limiting for admin endpoints
+function checkAdminRateLimit($config) {
+    $clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $requestsFile = sys_get_temp_dir() . '/admin_requests_' . md5($clientIP);
+    
+    $currentTime = time();
+    // Admin endpoints get more generous limits: 300 req/min (vs 60 for chat)
+    $rateLimit = $config['admin']['rate_limit_requests'] ?? 300;
+    $window = $config['admin']['rate_limit_window'] ?? 60;
+    
+    // Read existing requests
+    $requests = [];
+    if (file_exists($requestsFile)) {
+        $requests = json_decode(file_get_contents($requestsFile), true) ?: [];
+    }
+    
+    // Remove old requests outside the window
+    $requests = array_filter($requests, function($timestamp) use ($currentTime, $window) {
+        return $currentTime - $timestamp < $window;
+    });
+    
+    // Check if rate limit exceeded
+    if (count($requests) >= $rateLimit) {
+        log_admin("Rate limit exceeded for IP: $clientIP", 'warn');
+        sendError('Rate limit exceeded. Please wait before making another request.', 429);
+    }
+    
+    // Add current request
+    $requests[] = $currentTime;
+    file_put_contents($requestsFile, json_encode($requests));
+}
+
 try {
     // Initialize database first (needed for authentication)
     $dbConfig = [
@@ -141,6 +173,9 @@ try {
     
     // Check authentication and get user
     $authenticatedUser = checkAuthentication($config, $adminAuth);
+    
+    // Check rate limit (after authentication, before processing request)
+    checkAdminRateLimit($config);
     
     // Initialize OpenAI Admin Client
     $openaiClient = null;
@@ -499,6 +534,95 @@ try {
             $synced = $vectorStoreService->syncVectorStoresFromOpenAI();
             log_admin('Synced ' . $synced . ' vector stores from OpenAI');
             sendResponse(['synced' => $synced, 'message' => "Synced $synced vector stores from OpenAI"]);
+            break;
+        
+        // ==================== Files Endpoints ====================
+        
+        case 'list_files':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            if (!$openaiClient) {
+                sendError('OpenAI client not configured', 500);
+            }
+            
+            // Validate purpose parameter against OpenAI allowed values
+            $purpose = $_GET['purpose'] ?? 'assistants';
+            $allowedPurposes = ['assistants', 'fine-tune', 'batch'];
+            if (!in_array($purpose, $allowedPurposes)) {
+                sendError('Invalid purpose. Allowed values: ' . implode(', ', $allowedPurposes), 400);
+            }
+            
+            try {
+                $files = $openaiClient->listFiles($purpose);
+                sendResponse($files);
+            } catch (Exception $e) {
+                log_admin('Failed to list files: ' . $e->getMessage(), 'error');
+                sendError('Failed to list files: ' . $e->getMessage(), 500);
+            }
+            break;
+            
+        case 'upload_file':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'create', $adminAuth);
+            
+            if (!$openaiClient) {
+                sendError('OpenAI client not configured', 500);
+            }
+            
+            $data = getRequestBody();
+            if (empty($data['name']) || empty($data['file_data'])) {
+                sendError('File name and file_data (base64) are required', 400);
+            }
+            
+            // Validate purpose parameter
+            $purpose = $data['purpose'] ?? 'assistants';
+            $allowedPurposes = ['assistants', 'fine-tune', 'batch'];
+            if (!in_array($purpose, $allowedPurposes)) {
+                sendError('Invalid purpose. Allowed values: ' . implode(', ', $allowedPurposes), 400);
+            }
+            
+            try {
+                $file = $openaiClient->uploadFileFromBase64(
+                    $data['name'],
+                    $data['file_data'],
+                    $purpose
+                );
+                log_admin('File uploaded: ' . $file['id'] . ' (' . $data['name'] . ')');
+                sendResponse($file, 201);
+            } catch (Exception $e) {
+                log_admin('Failed to upload file: ' . $e->getMessage(), 'error');
+                sendError('Failed to upload file: ' . $e->getMessage(), 500);
+            }
+            break;
+            
+        case 'delete_file':
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
+            if (!$openaiClient) {
+                sendError('OpenAI client not configured', 500);
+            }
+            
+            $fileId = $_GET['id'] ?? '';
+            if (empty($fileId)) {
+                sendError('File ID required', 400);
+            }
+            
+            try {
+                $result = $openaiClient->deleteFile($fileId);
+                log_admin('File deleted: ' . $fileId);
+                sendResponse(['success' => true, 'message' => 'File deleted']);
+            } catch (Exception $e) {
+                log_admin('Failed to delete file: ' . $e->getMessage(), 'error');
+                sendError('Failed to delete file: ' . $e->getMessage(), 500);
+            }
             break;
         
         // ==================== Health & Utility Endpoints ====================

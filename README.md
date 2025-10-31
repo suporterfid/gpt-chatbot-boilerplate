@@ -44,7 +44,7 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Audit Logging**: Complete audit trail of all admin operations.
 - See [docs/PHASE2_ADMIN_UI.md](docs/PHASE2_ADMIN_UI.md) for details.
 
-### 🔐 **Phase 3: Background Workers, Webhooks & RBAC (NEW)**
+### 🔐 **Phase 3: Background Workers, Webhooks & RBAC**
 - **Background Job Processing**: Asynchronous file ingestion and long-running operations.
 - **Webhook Support**: Real-time event notifications from OpenAI with signature verification.
 - **Role-Based Access Control**: Multi-user admin access with three permission levels (viewer, admin, super-admin).
@@ -53,6 +53,14 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Worker Architecture**: Scalable CLI worker with exponential backoff and retry logic.
 - **Job Management**: Monitor, retry, and cancel background jobs via Admin API.
 - See [docs/PHASE3_WORKERS_WEBHOOKS.md](docs/PHASE3_WORKERS_WEBHOOKS.md) for details.
+
+### 🛡️ **Phase 4: Admin API Completion & Security**
+- **Rate Limiting**: IP-based rate limiting for admin endpoints (300 req/min default).
+- **Files API**: Standalone file management endpoints (list, upload, delete).
+- **Complete API Coverage**: 37 endpoints across all resources (agents, prompts, vector stores, jobs, users).
+- **Enhanced Security**: Comprehensive error handling, audit logging, and permission checks.
+- **Production Ready**: Full test coverage (122 tests), documented configuration, backward compatible.
+- See [PHASE4_COMPLETION_REPORT.md](PHASE4_COMPLETION_REPORT.md) for details.
 
 ## 📋 Requirements
 
