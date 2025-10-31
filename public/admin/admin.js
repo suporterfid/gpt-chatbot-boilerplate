@@ -1253,12 +1253,15 @@ function renderJobsTable(jobs, emptyMessage) {
 }
 
 function getJobStatusBadge(status) {
+    // Note: 'cancelled' is not a valid status in the database schema (jobs table).
+    // Cancelled jobs are stored as 'failed' with error_text = 'Cancelled by user'.
+    // The 'cancelled' mapping is kept here for future schema enhancement.
     const badges = {
         'pending': 'badge-warning',
         'running': 'badge-primary',
         'completed': 'badge-success',
         'failed': 'badge-danger',
-        'cancelled': 'badge-secondary'
+        'cancelled': 'badge-secondary'  // Reserved for future use
     };
     return badges[status] || 'badge-secondary';
 }

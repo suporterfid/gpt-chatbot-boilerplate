@@ -186,7 +186,10 @@ echo "\n--- Test 8: Job Cancellation ---\n";
 // Create a job to cancel
 $cancelJobId = $jobQueue->enqueue('test_cancel_job', ['test' => 'cancel']);
 
-// Cancel it (mark as failed with cancelled status - note: 'cancelled' is not in the schema, using 'failed')
+// Cancel it by marking as 'failed' with 'Cancelled by user' message
+// Note: The jobs table schema (db/migrations/005_create_jobs_table.sql) only supports:
+//       'pending', 'running', 'completed', 'failed'
+// Future schema enhancement could add 'cancelled' as a distinct status
 $db->execute(
     'UPDATE jobs SET status = ?, error_text = ? WHERE id = ?',
     ['failed', 'Cancelled by user', $cancelJobId]
