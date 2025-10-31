@@ -751,6 +751,11 @@ Rather than creating a separate AdminController.php class, the functionality was
 - ✅ Test both streaming and sync modes
 - ✅ Test both Responses and Chat APIs
 
+**Test Coverage:**
+- ✅ Created `tests/test_phase5_agent_integration.php` - 33 comprehensive tests
+- ✅ All tests passing (100%)
+- ✅ See [PHASE5_COMPLETION_REPORT.md](../PHASE5_COMPLETION_REPORT.md) for detailed test results
+
 ---
 
 ### 5.2 Widget Updates for Agent Selection
@@ -845,13 +850,15 @@ Rather than creating a separate AdminController.php class, the functionality was
 - ✅ `tests/run_phase3_tests.php` - Phase 3 test suite (36 tests)
 - ✅ `tests/test_phase3_pending_features.php` - Phase 3 pending features tests (28 tests)
 - ✅ `tests/test_rbac_integration.php` - RBAC integration tests
+- ✅ `tests/test_phase5_agent_integration.php` - Phase 5 agent integration tests (33 tests)
 
 **Test Results:**
 - ✅ Phase 1 Tests: 28/28 passing
 - ✅ Phase 2 Tests: 44/44 passing
 - ✅ Phase 3 Tests: 36/36 passing
 - ✅ Phase 3 Pending Features: 28/28 passing
-- ✅ **Total: 136 tests passing (100%)**
+- ✅ Phase 5 Tests: 33/33 passing
+- ✅ **Total: 169 tests passing (100%)**
 
 **Coverage:**
 - ✅ Database operations
@@ -862,6 +869,8 @@ Rather than creating a separate AdminController.php class, the functionality was
 - ✅ Webhook handling
 - ✅ RBAC and authentication
 - ✅ Admin API endpoints
+- ✅ Agent selection and default fallback
+- ✅ Chat flow integration with agents
 
 ---
 
@@ -1052,11 +1061,12 @@ Rather than creating a separate AdminController.php class, the functionality was
 | **Phase 1** | 7 | ~1,860 | 28 |
 | **Phase 2** | 12 | ~4,250 | 44 |
 | **Phase 3** | 10 | ~3,500 | 64 |
-| **Total** | **29** | **~9,610** | **136** |
+| **Phase 5** | 2 | ~325 | 33 |
+| **Total** | **31** | **~9,935** | **169** |
 
 ### Test Coverage
 
-- **136 tests total**
+- **169 tests total**
 - **100% passing rate**
 - Coverage includes:
   - Database operations
@@ -1066,6 +1076,8 @@ Rather than creating a separate AdminController.php class, the functionality was
   - Webhook handling
   - RBAC permissions
   - Agent configuration merging
+  - Agent selection and default fallback
+  - Chat flow integration
   - OpenAI API integration
 
 ---
@@ -1075,7 +1087,7 @@ Rather than creating a separate AdminController.php class, the functionality was
 **Status**: ✅ **PRODUCTION READY**
 
 All phases completed with:
-- ✅ Comprehensive testing (136/136 tests passing)
+- ✅ Comprehensive testing (169/169 tests passing)
 - ✅ Full documentation
 - ✅ Security hardening (RBAC, audit logging, HMAC signatures)
 - ✅ Performance optimization (indexing, caching, pagination)
@@ -1137,7 +1149,7 @@ The following features are **optional** and not required for v1:
 This implementation successfully delivers a complete Visual AI Agent Template + Admin UI system for the GPT Chatbot Boilerplate. All 9 implementation phases have been completed with:
 
 - **Full feature implementation** across all phases
-- **136 comprehensive tests** with 100% pass rate
+- **169 comprehensive tests** with 100% pass rate
 - **Production-ready security** with RBAC, audit logging, and webhook signatures
 - **Complete documentation** for setup, usage, and troubleshooting
 - **Backwards compatibility** maintained throughout
@@ -1147,6 +1159,6 @@ This implementation successfully delivers a complete Visual AI Agent Template + 
 The system empowers non-technical users to create and manage AI agents, prompts, and vector stores without code changes or redeployments, while maintaining the flexibility and power of the underlying OpenAI APIs.
 
 **Implementation Date:** October 31, 2025  
-**Total Development:** ~9,610 lines of code  
-**Total Tests:** 136 (100% passing)  
+**Total Development:** ~9,935 lines of code  
+**Total Tests:** 169 (100% passing)  
 **Production Status:** ✅ READY
