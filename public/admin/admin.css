@@ -311,6 +311,11 @@ tr:hover {
     color: var(--danger-color);
 }
 
+.badge-secondary {
+    background-color: rgba(107, 114, 128, 0.1);
+    color: var(--secondary-color);
+}
+
 /* Modal */
 .modal {
     position: fixed;
