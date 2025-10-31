@@ -280,6 +280,9 @@ $config = [
         'token' => $_ENV['ADMIN_TOKEN'] ?? getenv('ADMIN_TOKEN') ?: '',
         'database_url' => $_ENV['DATABASE_URL'] ?? getenv('DATABASE_URL') ?: '',
         'database_path' => $_ENV['DATABASE_PATH'] ?? getenv('DATABASE_PATH') ?: __DIR__ . '/data/chatbot.db',
+        'rate_limit_requests' => (int)($_ENV['ADMIN_RATE_LIMIT_REQUESTS'] ?? getenv('ADMIN_RATE_LIMIT_REQUESTS') ?: 300),
+        'rate_limit_window' => (int)($_ENV['ADMIN_RATE_LIMIT_WINDOW'] ?? getenv('ADMIN_RATE_LIMIT_WINDOW') ?: 60),
+        'jobs_enabled' => filter_var($_ENV['JOBS_ENABLED'] ?? getenv('JOBS_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
     ]
 ];
 
