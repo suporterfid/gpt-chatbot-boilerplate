@@ -27,6 +27,14 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - File attachment display in messages.
 - Improved responsive design.
 
+### 🗄️ **Phase 1: Database Layer & Agent Model (NEW)**
+- **Agent Management**: Persistent storage for AI agent configurations.
+- **Admin API**: Token-protected REST API for CRUD operations on agents.
+- **Dynamic Configuration**: Override prompts, tools, models, and parameters per agent.
+- **Default Agent**: Set a default agent for requests without explicit `agent_id`.
+- **SQLite Support**: Zero-config database with optional MySQL compatibility.
+- See [docs/PHASE1_DB_AGENT.md](docs/PHASE1_DB_AGENT.md) for details.
+
 ## 📋 Requirements
 
 - PHP 8.0+ with cURL extension.
@@ -80,6 +88,58 @@ ENABLE_FILE_UPLOAD=true
 MAX_FILE_SIZE=10485760
 ALLOWED_FILE_TYPES=txt,pdf,doc,docx,jpg,png
 ```
+
+### Option 3: Admin API & Agent Management (Phase 1)
+
+1. Enable admin features in `.env`:
+```bash
+# Enable admin API
+ADMIN_ENABLED=true
+ADMIN_TOKEN=generate_a_secure_random_token_min_32_chars
+
+# Database configuration (SQLite by default)
+DATABASE_PATH=./data/chatbot.db
+# Or use MySQL:
+# DATABASE_URL=mysql://user:password@localhost/chatbot_db
+```
+
+2. Run migrations (automatic on first request, or manually):
+```bash
+# Migrations run automatically when admin-api.php or chat-unified.php is accessed
+# To verify:
+php -r "require 'includes/DB.php'; \$db = new DB(['database_path' => './data/chatbot.db']); echo \$db->runMigrations('./db/migrations') . ' migrations executed';"
+```
+
+3. Create your first agent via Admin API:
+```bash
+curl -X POST "http://localhost/admin-api.php?action=create_agent" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Customer Support",
+    "api_type": "responses",
+    "prompt_id": "pmpt_abc123",
+    "model": "gpt-4o",
+    "tools": [{"type": "file_search"}],
+    "vector_store_ids": ["vs_knowledge_base"],
+    "is_default": true
+  }'
+```
+
+4. Use the agent in chat requests:
+```bash
+curl -X POST "http://localhost/chat-unified.php" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What is your return policy?",
+    "conversation_id": "conv_123",
+    "agent_id": "agent-uuid-from-create-response",
+    "stream": false
+  }'
+```
+
+For complete Admin API documentation, see [docs/PHASE1_DB_AGENT.md](docs/PHASE1_DB_AGENT.md).
+
 
 3. Start the application:
 ```bash
