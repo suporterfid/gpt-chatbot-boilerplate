@@ -112,6 +112,13 @@ class DB {
     }
     
     /**
+     * Alias for getOne - Query for a single row
+     */
+    public function queryOne($sql, $params = []) {
+        return $this->getOne($sql, $params);
+    }
+    
+    /**
      * Begin a transaction
      */
     public function beginTransaction() {

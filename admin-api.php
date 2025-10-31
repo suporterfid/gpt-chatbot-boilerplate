@@ -12,6 +12,8 @@ require_once 'includes/PromptService.php';
 require_once 'includes/VectorStoreService.php';
 require_once 'includes/OpenAIClient.php';
 require_once 'includes/ChatHandler.php';
+require_once 'includes/JobQueue.php';
+require_once 'includes/AdminAuth.php';
 
 // CORS headers
 header('Access-Control-Allow-Origin: *');
@@ -39,15 +41,8 @@ function log_admin($message, $level = 'info') {
     @file_put_contents($logFile, $line, FILE_APPEND);
 }
 
-// Authentication check
-function checkAuthentication($config) {
-    $adminToken = $config['admin']['token'] ?? '';
-    
-    if (empty($adminToken)) {
-        log_admin('ADMIN_TOKEN not configured', 'error');
-        sendError('Admin API not configured', 403);
-    }
-    
+// Authentication check - supports both legacy ADMIN_TOKEN and AdminAuth
+function checkAuthentication($config, $adminAuth) {
     $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
     
     if (empty($authHeader)) {
@@ -63,12 +58,30 @@ function checkAuthentication($config) {
     
     $token = $matches[1];
     
-    if ($token !== $adminToken) {
-        log_admin('Invalid admin token provided', 'warn');
-        sendError('Invalid admin token', 403);
+    // Try to authenticate with AdminAuth (supports both legacy token and API keys)
+    try {
+        $user = $adminAuth->authenticate($token);
+        
+        if (!$user) {
+            log_admin('Invalid authentication token', 'warn');
+            sendError('Invalid authentication token', 403);
+        }
+        
+        return $user; // Return authenticated user data
+    } catch (Exception $e) {
+        log_admin('Authentication error: ' . $e->getMessage(), 'error');
+        sendError('Authentication failed', 403);
     }
-    
-    return true;
+}
+
+// Check if authenticated user has required permission
+function requirePermission($user, $permission, $adminAuth) {
+    try {
+        $adminAuth->requirePermission($user, $permission);
+    } catch (Exception $e) {
+        log_admin("Permission denied for user {$user['email']}: $permission", 'warn');
+        sendError($e->getMessage(), 403);
+    }
 }
 
 // Send JSON response
@@ -107,10 +120,7 @@ function getRequestBody() {
 }
 
 try {
-    // Check authentication
-    checkAuthentication($config);
-    
-    // Initialize database
+    // Initialize database first (needed for authentication)
     $dbConfig = [
         'database_url' => $config['admin']['database_url'] ?? null,
         'database_path' => $config['admin']['database_path'] ?? __DIR__ . '/data/chatbot.db'
@@ -126,6 +136,12 @@ try {
         // Continue anyway - migrations might already be run
     }
     
+    // Initialize AdminAuth before authentication check
+    $adminAuth = new AdminAuth($db, $config);
+    
+    // Check authentication and get user
+    $authenticatedUser = checkAuthentication($config, $adminAuth);
+    
     // Initialize OpenAI Admin Client
     $openaiClient = null;
     if (!empty($config['openai']['api_key'])) {
@@ -136,12 +152,13 @@ try {
     $agentService = new AgentService($db);
     $promptService = new PromptService($db, $openaiClient);
     $vectorStoreService = new VectorStoreService($db, $openaiClient);
+    $jobQueue = new JobQueue($db);
     
     // Get action from query parameter
     $action = $_GET['action'] ?? '';
     $method = $_SERVER['REQUEST_METHOD'];
     
-    log_admin("$method /admin-api.php?action=$action");
+    log_admin("$method /admin-api.php?action=$action [user: {$authenticatedUser['email']}]");
     
     // Route to appropriate handler
     switch ($action) {
@@ -149,6 +166,9 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
+            // Read permission required (all roles have this)
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
             $filters = [];
             if (isset($_GET['name'])) {
                 $filters['name'] = $_GET['name'];
@@ -164,6 +184,8 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Agent ID required', 400);
@@ -179,6 +201,8 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'create', $adminAuth);
+            
             $data = getRequestBody();
             $agent = $agentService->createAgent($data);
             log_admin('Agent created: ' . $agent['id'] . ' (' . $agent['name'] . ')');
@@ -189,6 +213,8 @@ try {
             if ($method !== 'POST' && $method !== 'PUT') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Agent ID required', 400);
@@ -203,6 +229,8 @@ try {
             if ($method !== 'POST' && $method !== 'DELETE') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Agent ID required', 400);
@@ -485,12 +513,26 @@ try {
                 'timestamp' => date('c'),
                 'database' => false,
                 'openai' => false,
+                'worker' => [
+                    'enabled' => $config['admin']['jobs_enabled'] ?? true,
+                    'queue_depth' => 0,
+                    'stats' => []
+                ]
             ];
             
             // Test database
             try {
                 $db->query("SELECT 1");
                 $health['database'] = true;
+                
+                // Get worker stats if database is healthy
+                try {
+                    $stats = $jobQueue->getStats();
+                    $health['worker']['stats'] = $stats;
+                    $health['worker']['queue_depth'] = $stats['pending'] + $stats['running'];
+                } catch (Exception $e) {
+                    log_admin('Failed to get worker stats: ' . $e->getMessage(), 'warn');
+                }
             } catch (Exception $e) {
                 $health['status'] = 'degraded';
             }
@@ -579,6 +621,328 @@ try {
             }
             
             exit();
+            break;
+        
+        // ==================== Metrics Endpoint ====================
+        
+        case 'metrics':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Prometheus text format
+            header('Content-Type: text/plain; version=0.0.4');
+            
+            try {
+                $stats = $jobQueue->getStats();
+                
+                echo "# HELP jobs_pending_total Number of pending jobs\n";
+                echo "# TYPE jobs_pending_total gauge\n";
+                echo "jobs_pending_total " . $stats['pending'] . "\n";
+                
+                echo "# HELP jobs_running_total Number of running jobs\n";
+                echo "# TYPE jobs_running_total gauge\n";
+                echo "jobs_running_total " . $stats['running'] . "\n";
+                
+                echo "# HELP jobs_completed_total Number of completed jobs\n";
+                echo "# TYPE jobs_completed_total counter\n";
+                echo "jobs_completed_total " . $stats['completed'] . "\n";
+                
+                echo "# HELP jobs_failed_total Number of failed jobs\n";
+                echo "# TYPE jobs_failed_total counter\n";
+                echo "jobs_failed_total " . $stats['failed'] . "\n";
+                
+                // Database connectivity
+                try {
+                    $db->query("SELECT 1");
+                    $dbUp = 1;
+                } catch (Exception $e) {
+                    $dbUp = 0;
+                }
+                
+                echo "# HELP database_up Database connectivity status\n";
+                echo "# TYPE database_up gauge\n";
+                echo "database_up $dbUp\n";
+                
+            } catch (Exception $e) {
+                echo "# ERROR: " . $e->getMessage() . "\n";
+            }
+            
+            exit();
+            break;
+        
+        // ==================== Job Management Endpoints ====================
+        
+        case 'list_jobs':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $filters = [];
+            if (isset($_GET['status'])) {
+                $filters['status'] = $_GET['status'];
+            }
+            if (isset($_GET['type'])) {
+                $filters['type'] = $_GET['type'];
+            }
+            if (isset($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            if (isset($_GET['offset'])) {
+                $filters['offset'] = (int)$_GET['offset'];
+            }
+            
+            $jobs = $jobQueue->listJobs($filters);
+            sendResponse($jobs);
+            break;
+        
+        case 'get_job':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $jobId = $_GET['id'] ?? '';
+            if (empty($jobId)) {
+                sendError('Job ID required', 400);
+            }
+            
+            $job = $jobQueue->getJob($jobId);
+            if (!$job) {
+                sendError('Job not found', 404);
+            }
+            
+            sendResponse($job);
+            break;
+        
+        case 'retry_job':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $jobId = $_GET['id'] ?? '';
+            if (empty($jobId)) {
+                sendError('Job ID required', 400);
+            }
+            
+            $jobQueue->retryJob($jobId);
+            log_admin("Job retried: $jobId");
+            sendResponse(['success' => true, 'message' => 'Job retried']);
+            break;
+        
+        case 'cancel_job':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $jobId = $_GET['id'] ?? '';
+            if (empty($jobId)) {
+                sendError('Job ID required', 400);
+            }
+            
+            $jobQueue->cancelJob($jobId);
+            log_admin("Job cancelled: $jobId");
+            sendResponse(['success' => true, 'message' => 'Job cancelled']);
+            break;
+        
+        case 'job_stats':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $stats = $jobQueue->getStats();
+            sendResponse($stats);
+            break;
+        
+        // ==================== User Management Endpoints (RBAC) ====================
+        
+        case 'list_users':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Require manage_users permission (super-admin only)
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            $users = $adminAuth->listUsers();
+            sendResponse($users);
+            break;
+        
+        case 'create_user':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Require manage_users permission
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            $data = getRequestBody();
+            $email = $data['email'] ?? '';
+            $password = $data['password'] ?? '';
+            $role = $data['role'] ?? AdminAuth::ROLE_ADMIN;
+            
+            if (empty($email) || empty($password)) {
+                sendError('Email and password are required', 400);
+            }
+            
+            try {
+                $user = $adminAuth->createUser($email, $password, $role);
+                log_admin("User created: $email (role: $role)");
+                sendResponse($user, 201);
+            } catch (Exception $e) {
+                if ($e->getCode() === 409) {
+                    sendError($e->getMessage(), 409);
+                }
+                throw $e;
+            }
+            break;
+        
+        case 'get_user':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Users can view their own profile, super-admins can view all
+            $userId = $_GET['id'] ?? '';
+            if (empty($userId)) {
+                sendError('User ID required', 400);
+            }
+            
+            // Check if viewing own profile or has manage_users permission
+            if ($userId !== $authenticatedUser['id']) {
+                requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            }
+            
+            $user = $adminAuth->getUser($userId);
+            if (!$user) {
+                sendError('User not found', 404);
+            }
+            
+            sendResponse($user);
+            break;
+        
+        case 'update_user_role':
+            if ($method !== 'POST' && $method !== 'PUT') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Require manage_users permission
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            $userId = $_GET['id'] ?? '';
+            $data = getRequestBody();
+            $role = $data['role'] ?? '';
+            
+            if (empty($userId) || empty($role)) {
+                sendError('User ID and role are required', 400);
+            }
+            
+            $adminAuth->updateUserRole($userId, $role);
+            log_admin("User role updated: $userId -> $role");
+            sendResponse(['success' => true, 'message' => 'User role updated']);
+            break;
+        
+        case 'deactivate_user':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Require manage_users permission
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            $userId = $_GET['id'] ?? '';
+            if (empty($userId)) {
+                sendError('User ID required', 400);
+            }
+            
+            // Prevent deactivating self
+            if ($userId === $authenticatedUser['id']) {
+                sendError('Cannot deactivate your own account', 400);
+            }
+            
+            $adminAuth->deactivateUser($userId);
+            log_admin("User deactivated: $userId");
+            sendResponse(['success' => true, 'message' => 'User deactivated']);
+            break;
+        
+        case 'generate_api_key':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $data = getRequestBody();
+            $userId = $data['user_id'] ?? $authenticatedUser['id'];
+            $name = $data['name'] ?? 'API Key';
+            $expiresInDays = isset($data['expires_in_days']) ? (int)$data['expires_in_days'] : null;
+            
+            // Users can generate keys for themselves, super-admins for anyone
+            if ($userId !== $authenticatedUser['id']) {
+                requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            }
+            
+            $apiKey = $adminAuth->generateApiKey($userId, $name, $expiresInDays);
+            log_admin("API key generated for user: $userId");
+            
+            // Return the key (only time it's visible!)
+            sendResponse($apiKey, 201);
+            break;
+        
+        case 'list_api_keys':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $userId = $_GET['user_id'] ?? $authenticatedUser['id'];
+            
+            // Users can list their own keys, super-admins can list all
+            if ($userId !== $authenticatedUser['id']) {
+                requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            }
+            
+            $keys = $adminAuth->listApiKeys($userId);
+            sendResponse($keys);
+            break;
+        
+        case 'revoke_api_key':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $keyId = $_GET['id'] ?? '';
+            if (empty($keyId)) {
+                sendError('API key ID required', 400);
+            }
+            
+            // Check ownership: users can only revoke their own keys unless super-admin
+            $key = $adminAuth->getApiKey($keyId);
+            if (!$key) {
+                sendError('API key not found', 404);
+            }
+            
+            // Allow if user owns the key OR has manage_users permission
+            if ($key['user_id'] !== $authenticatedUser['id']) {
+                requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            }
+            
+            $adminAuth->revokeApiKey($keyId);
+            log_admin("API key revoked: $keyId");
+            sendResponse(['success' => true, 'message' => 'API key revoked']);
+            break;
+        
+        case 'migrate_legacy_token':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Require super-admin permission
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            try {
+                $result = $adminAuth->migrateLegacyToken();
+                log_admin("Legacy ADMIN_TOKEN migrated to user: " . $result['user']['email']);
+                sendResponse($result, 201);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
             break;
             
         default:

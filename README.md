@@ -35,7 +35,7 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **SQLite Support**: Zero-config database with optional MySQL compatibility.
 - See [docs/PHASE1_DB_AGENT.md](docs/PHASE1_DB_AGENT.md) for details.
 
-### 🎨 **Phase 2: Admin UI, Prompts & Vector Store Management (NEW)**
+### 🎨 **Phase 2: Admin UI, Prompts & Vector Store Management**
 - **Visual Admin Interface**: Comprehensive web UI for managing all resources.
 - **Prompt Management**: Create, version, and sync OpenAI prompts.
 - **Vector Store Management**: Upload files, manage stores, monitor ingestion.
@@ -43,6 +43,16 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Health Monitoring**: Real-time system health and API connectivity checks.
 - **Audit Logging**: Complete audit trail of all admin operations.
 - See [docs/PHASE2_ADMIN_UI.md](docs/PHASE2_ADMIN_UI.md) for details.
+
+### 🔐 **Phase 3: Background Workers, Webhooks & RBAC (NEW)**
+- **Background Job Processing**: Asynchronous file ingestion and long-running operations.
+- **Webhook Support**: Real-time event notifications from OpenAI with signature verification.
+- **Role-Based Access Control**: Multi-user admin access with three permission levels (viewer, admin, super-admin).
+- **API Key Authentication**: Per-user API keys with expiration and revocation support.
+- **Production Observability**: Health checks, Prometheus metrics, enhanced audit logging.
+- **Worker Architecture**: Scalable CLI worker with exponential backoff and retry logic.
+- **Job Management**: Monitor, retry, and cancel background jobs via Admin API.
+- See [docs/PHASE3_WORKERS_WEBHOOKS.md](docs/PHASE3_WORKERS_WEBHOOKS.md) for details.
 
 ## 📋 Requirements
 
@@ -173,6 +183,77 @@ http://localhost/public/admin/
    - View streaming response in real-time
 
 For complete Admin UI documentation, see [docs/PHASE2_ADMIN_UI.md](docs/PHASE2_ADMIN_UI.md).
+
+### Option 5: Background Workers, Webhooks & RBAC (Phase 3)
+
+1. Complete Phase 1 and Phase 2 setup.
+
+2. Configure Phase 3 features in `.env`:
+```bash
+# Background Jobs (optional but recommended for production)
+ADMIN_JOBS_ENABLED=true
+
+# Webhook Configuration (optional)
+WEBHOOK_OPENAI_SIGNING_SECRET=generate_secure_secret_here
+```
+
+3. Create admin users and API keys:
+```bash
+# Create a super-admin user
+curl -X POST "http://localhost/admin-api.php?action=create_user" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@example.com",
+    "password": "secure_password",
+    "role": "super-admin"
+  }'
+
+# Generate an API key for the user
+curl -X POST "http://localhost/admin-api.php?action=generate_api_key" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "user_id_from_above",
+    "name": "Admin Dashboard Key",
+    "expires_in_days": 365
+  }'
+```
+
+4. Start the background worker:
+```bash
+# Run continuously
+php scripts/worker.php --daemon --verbose
+
+# Or use systemd (production)
+sudo systemctl enable chatbot-worker
+sudo systemctl start chatbot-worker
+
+# Or with Docker
+docker-compose up -d worker
+```
+
+5. Configure OpenAI webhooks (optional):
+   - URL: `https://yourdomain.com/webhooks/openai.php`
+   - Events: `vector_store.*`, `file.*`
+   - Signing secret: Use the value from `WEBHOOK_OPENAI_SIGNING_SECRET`
+
+6. Monitor system health:
+```bash
+# Health check
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  "http://localhost/admin-api.php?action=health"
+
+# Prometheus metrics
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  "http://localhost/admin-api.php?action=metrics"
+
+# Job queue status
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  "http://localhost/admin-api.php?action=job_stats"
+```
+
+For complete Phase 3 documentation, see [docs/PHASE3_WORKERS_WEBHOOKS.md](docs/PHASE3_WORKERS_WEBHOOKS.md).
 
 
 3. Start the application:
