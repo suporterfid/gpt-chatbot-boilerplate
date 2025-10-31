@@ -71,11 +71,12 @@ test(
 );
 
 // Test 4: Create with valid token should succeed
+$uniqueName = 'Auth Test Agent ' . time();
 $ch = curl_init("$baseUrl/admin-api.php?action=create_agent");
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-    'name' => 'Auth Test Agent',
+    'name' => $uniqueName,
     'api_type' => 'chat'
 ]));
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
