@@ -300,7 +300,7 @@ class AdminAuth {
      * @return array Created user and key data
      */
     public function migrateLegacyToken() {
-        $email = 'admin@localhost';
+        $email = 'admin@system.local';
         $password = bin2hex(random_bytes(16)); // Random password (won't be used)
         
         try {
