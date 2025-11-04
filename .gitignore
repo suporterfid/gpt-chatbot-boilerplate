@@ -9,3 +9,22 @@ data/
 # Composer dependencies
 vendor/
 composer.lock
+
+# Node.js dependencies
+node_modules/
+package-lock.json
+
+# Build artifacts
+dist/
+build/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

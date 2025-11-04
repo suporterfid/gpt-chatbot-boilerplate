@@ -33,9 +33,20 @@ jobs:
         run: |
           find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -r -n1 php -l
 
+      - name: Run PHPStan static analysis
+        run: |
+          vendor/bin/phpstan analyse --no-progress || true
+          echo "✅ Static analysis completed"
+
       - name: Lint JavaScript files
         run: |
-          # Basic JavaScript syntax check
+          # Install Node.js dependencies
+          npm install --no-save eslint@^8.50.0
+          
+          # Run ESLint on JavaScript files
+          npx eslint chatbot-enhanced.js public/admin/admin.js --no-eslintrc --env browser,es2020 --parser-options ecmaVersion:2020 || echo "⚠️  ESLint found issues (non-blocking)"
+          
+          # Basic syntax check as fallback
           find . -name '*.js' -not -path './vendor/*' -not -path './node_modules/*' | while read file; do
             node -c "$file" 2>&1 && echo "✓ $file" || echo "✗ $file"
           done

@@ -1,0 +1,19 @@
+{
+  "name": "gpt-chatbot-boilerplate",
+  "version": "1.0.0",
+  "description": "GPT Chatbot Boilerplate - Frontend dependencies",
+  "private": true,
+  "scripts": {
+    "lint": "eslint chatbot-enhanced.js public/admin/admin.js --no-eslintrc --env browser,es2020 --parser-options ecmaVersion:2020",
+    "test": "echo \"No frontend tests configured\""
+  },
+  "devDependencies": {
+    "eslint": "^8.50.0"
+  },
+  "keywords": [
+    "chatbot",
+    "gpt",
+    "openai"
+  ],
+  "license": "MIT"
+}
