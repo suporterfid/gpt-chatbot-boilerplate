@@ -1222,6 +1222,62 @@ try {
             sendResponse(['success' => true, 'message' => 'API key revoked']);
             break;
         
+        case 'rotate_admin_token':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Require super-admin permission
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            try {
+                // Generate new secure token
+                $newToken = bin2hex(random_bytes(32));
+                
+                // Update .env file
+                $envPath = __DIR__ . '/.env';
+                if (!file_exists($envPath)) {
+                    sendError('.env file not found', 500);
+                }
+                
+                $envContent = file_get_contents($envPath);
+                if ($envContent === false) {
+                    sendError('Failed to read .env file', 500);
+                }
+                
+                // Replace ADMIN_TOKEN value
+                $updatedEnv = preg_replace(
+                    '/^ADMIN_TOKEN=.*/m',
+                    'ADMIN_TOKEN=' . $newToken,
+                    $envContent
+                );
+                
+                if ($updatedEnv === null || $updatedEnv === $envContent) {
+                    sendError('Failed to update ADMIN_TOKEN in .env', 500);
+                }
+                
+                // Write back to .env
+                if (file_put_contents($envPath, $updatedEnv) === false) {
+                    sendError('Failed to write .env file', 500);
+                }
+                
+                // Reload config to use new token
+                $config['admin']['token'] = $newToken;
+                
+                log_admin("ADMIN_TOKEN rotated by {$authenticatedUser['email']}");
+                
+                sendResponse([
+                    'success' => true,
+                    'new_token' => $newToken,
+                    'message' => 'ADMIN_TOKEN rotated successfully. Old token is now invalid. Update your .env file and notify administrators.',
+                    'warning' => 'Please reload PHP-FPM for changes to take effect: sudo systemctl reload php-fpm'
+                ], 200);
+            } catch (Exception $e) {
+                log_admin("Failed to rotate ADMIN_TOKEN: " . $e->getMessage(), 'error');
+                sendError('Failed to rotate token: ' . $e->getMessage(), 500);
+            }
+            break;
+        
         case 'migrate_legacy_token':
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
