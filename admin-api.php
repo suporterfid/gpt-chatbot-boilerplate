@@ -635,11 +635,21 @@ try {
             $health = [
                 'status' => 'ok',
                 'timestamp' => date('c'),
-                'database' => false,
-                'openai' => false,
+                'checks' => [
+                    'database' => ['status' => 'unknown', 'message' => null],
+                    'openai' => ['status' => 'unknown', 'message' => null],
+                    'worker' => ['status' => 'unknown', 'message' => null],
+                    'queue' => ['status' => 'unknown', 'message' => null]
+                ],
+                'metrics' => [
+                    'queue_depth' => 0,
+                    'worker_last_seen' => null,
+                    'pending_jobs' => 0,
+                    'running_jobs' => 0,
+                    'failed_jobs_24h' => 0
+                ],
                 'worker' => [
                     'enabled' => $config['admin']['jobs_enabled'] ?? true,
-                    'queue_depth' => 0,
                     'stats' => []
                 ]
             ];
@@ -647,27 +657,90 @@ try {
             // Test database
             try {
                 $db->query("SELECT 1");
-                $health['database'] = true;
+                $health['checks']['database']['status'] = 'healthy';
+                $health['checks']['database']['message'] = 'Database connection successful';
                 
                 // Get worker stats if database is healthy
                 try {
                     $stats = $jobQueue->getStats();
                     $health['worker']['stats'] = $stats;
-                    $health['worker']['queue_depth'] = $stats['pending'] + $stats['running'];
+                    $health['metrics']['queue_depth'] = $stats['pending'] + $stats['running'];
+                    $health['metrics']['pending_jobs'] = $stats['pending'];
+                    $health['metrics']['running_jobs'] = $stats['running'];
+                    
+                    // Check queue depth threshold
+                    if ($health['metrics']['queue_depth'] > 100) {
+                        $health['checks']['queue']['status'] = 'warning';
+                        $health['checks']['queue']['message'] = 'High queue depth: ' . $health['metrics']['queue_depth'];
+                        if ($health['status'] === 'ok') {
+                            $health['status'] = 'degraded';
+                        }
+                    } else {
+                        $health['checks']['queue']['status'] = 'healthy';
+                        $health['checks']['queue']['message'] = 'Queue depth normal';
+                    }
+                    
+                    // Get failed jobs in last 24 hours
+                    $stmt = $db->query("
+                        SELECT COUNT(*) as count 
+                        FROM jobs 
+                        WHERE status = 'failed' 
+                        AND created_at > datetime('now', '-1 day')
+                    ");
+                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                    $health['metrics']['failed_jobs_24h'] = (int)$row['count'];
+                    
+                    // Get worker last seen timestamp
+                    $stmt = $db->query("
+                        SELECT MAX(updated_at) as last_update 
+                        FROM jobs 
+                        WHERE status IN ('running', 'completed', 'failed')
+                    ");
+                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                    if ($row && $row['last_update']) {
+                        $health['metrics']['worker_last_seen'] = $row['last_update'];
+                        $lastUpdate = strtotime($row['last_update']);
+                        $secondsSinceLastJob = time() - $lastUpdate;
+                        
+                        // Check worker health (stale if no activity in 5 minutes)
+                        if ($secondsSinceLastJob > 300 && $health['worker']['enabled']) {
+                            $health['checks']['worker']['status'] = 'unhealthy';
+                            $health['checks']['worker']['message'] = 'Worker inactive for ' . round($secondsSinceLastJob / 60) . ' minutes';
+                            $health['status'] = 'degraded';
+                        } else {
+                            $health['checks']['worker']['status'] = 'healthy';
+                            $health['checks']['worker']['message'] = 'Worker active';
+                        }
+                    } else if ($health['worker']['enabled']) {
+                        $health['checks']['worker']['status'] = 'unknown';
+                        $health['checks']['worker']['message'] = 'No worker activity recorded';
+                    }
+                    
                 } catch (Exception $e) {
                     log_admin('Failed to get worker stats: ' . $e->getMessage(), 'warn');
+                    $health['checks']['worker']['status'] = 'unhealthy';
+                    $health['checks']['worker']['message'] = 'Failed to query worker stats';
+                    $health['status'] = 'degraded';
                 }
             } catch (Exception $e) {
-                $health['status'] = 'degraded';
+                $health['checks']['database']['status'] = 'unhealthy';
+                $health['checks']['database']['message'] = 'Database connection failed';
+                $health['status'] = 'unhealthy';
             }
             
-            // Test OpenAI (optional)
+            // Test OpenAI (optional, non-critical)
             if ($openaiClient) {
                 try {
                     $result = $openaiClient->listVectorStores(1);
-                    $health['openai'] = true;
+                    $health['checks']['openai']['status'] = 'healthy';
+                    $health['checks']['openai']['message'] = 'OpenAI API accessible';
                 } catch (Exception $e) {
-                    $health['status'] = 'degraded';
+                    $health['checks']['openai']['status'] = 'unhealthy';
+                    $health['checks']['openai']['message'] = 'OpenAI API not accessible';
+                    // OpenAI failure is degraded but not critical
+                    if ($health['status'] === 'ok') {
+                        $health['status'] = 'degraded';
+                    }
                 }
             }
             
@@ -877,6 +950,103 @@ try {
             sendResponse($stats);
             break;
         
+        // ==================== Dead Letter Queue Endpoints ====================
+        
+        case 'list_dlq':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            requirePermission($authenticatedUser, 'manage_jobs', $adminAuth);
+            
+            $filters = [];
+            if (isset($_GET['type'])) {
+                $filters['type'] = $_GET['type'];
+            }
+            if (isset($_GET['include_requeued'])) {
+                $filters['include_requeued'] = filter_var($_GET['include_requeued'], FILTER_VALIDATE_BOOLEAN);
+            }
+            if (isset($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            if (isset($_GET['offset'])) {
+                $filters['offset'] = (int)$_GET['offset'];
+            }
+            
+            $dlqEntries = $jobQueue->listDLQ($filters);
+            sendResponse($dlqEntries);
+            break;
+        
+        case 'get_dlq_entry':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            requirePermission($authenticatedUser, 'manage_jobs', $adminAuth);
+            
+            $dlqId = $_GET['id'] ?? '';
+            if (empty($dlqId)) {
+                sendError('DLQ entry ID required', 400);
+            }
+            
+            $entry = $jobQueue->getDLQEntry($dlqId);
+            if (!$entry) {
+                sendError('DLQ entry not found', 404);
+            }
+            
+            sendResponse($entry);
+            break;
+        
+        case 'requeue_dlq':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            requirePermission($authenticatedUser, 'manage_jobs', $adminAuth);
+            
+            $dlqId = $_GET['id'] ?? '';
+            if (empty($dlqId)) {
+                sendError('DLQ entry ID required', 400);
+            }
+            
+            $resetAttempts = isset($_GET['reset_attempts']) 
+                ? filter_var($_GET['reset_attempts'], FILTER_VALIDATE_BOOLEAN) 
+                : true;
+            
+            try {
+                $newJobId = $jobQueue->requeueFromDLQ($dlqId, $resetAttempts);
+                log_admin("DLQ entry requeued: $dlqId -> new job: $newJobId by {$authenticatedUser['email']}");
+                sendResponse([
+                    'success' => true, 
+                    'message' => 'Job requeued from DLQ',
+                    'job_id' => $newJobId
+                ]);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+        
+        case 'delete_dlq_entry':
+            if ($method !== 'DELETE' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            requirePermission($authenticatedUser, 'manage_jobs', $adminAuth);
+            
+            $dlqId = $_GET['id'] ?? '';
+            if (empty($dlqId)) {
+                sendError('DLQ entry ID required', 400);
+            }
+            
+            try {
+                $jobQueue->deleteDLQEntry($dlqId);
+                log_admin("DLQ entry deleted: $dlqId by {$authenticatedUser['email']}");
+                sendResponse(['success' => true, 'message' => 'DLQ entry deleted']);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+        
         // ==================== User Management Endpoints (RBAC) ====================
         
         case 'list_users':
@@ -1050,6 +1220,62 @@ try {
             $adminAuth->revokeApiKey($keyId);
             log_admin("API key revoked: $keyId");
             sendResponse(['success' => true, 'message' => 'API key revoked']);
+            break;
+        
+        case 'rotate_admin_token':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Require super-admin permission
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            try {
+                // Generate new secure token
+                $newToken = bin2hex(random_bytes(32));
+                
+                // Update .env file
+                $envPath = __DIR__ . '/.env';
+                if (!file_exists($envPath)) {
+                    sendError('.env file not found', 500);
+                }
+                
+                $envContent = file_get_contents($envPath);
+                if ($envContent === false) {
+                    sendError('Failed to read .env file', 500);
+                }
+                
+                // Replace ADMIN_TOKEN value
+                $updatedEnv = preg_replace(
+                    '/^ADMIN_TOKEN=.*/m',
+                    'ADMIN_TOKEN=' . $newToken,
+                    $envContent
+                );
+                
+                if ($updatedEnv === null || $updatedEnv === $envContent) {
+                    sendError('Failed to update ADMIN_TOKEN in .env', 500);
+                }
+                
+                // Write back to .env
+                if (file_put_contents($envPath, $updatedEnv) === false) {
+                    sendError('Failed to write .env file', 500);
+                }
+                
+                // Reload config to use new token
+                $config['admin']['token'] = $newToken;
+                
+                log_admin("ADMIN_TOKEN rotated by {$authenticatedUser['email']}");
+                
+                sendResponse([
+                    'success' => true,
+                    'new_token' => $newToken,
+                    'message' => 'ADMIN_TOKEN rotated successfully. Old token is now invalid. Update your .env file and notify administrators.',
+                    'warning' => 'Please reload PHP-FPM for changes to take effect: sudo systemctl reload php-fpm'
+                ], 200);
+            } catch (Exception $e) {
+                log_admin("Failed to rotate ADMIN_TOKEN: " . $e->getMessage(), 'error');
+                sendError('Failed to rotate token: ' . $e->getMessage(), 500);
+            }
             break;
         
         case 'migrate_legacy_token':

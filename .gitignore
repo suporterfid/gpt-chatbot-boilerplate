@@ -5,3 +5,7 @@ logs/chatbot.log
 data/
 *.db
 *.db-journal
+
+# Composer dependencies
+vendor/
+composer.lock

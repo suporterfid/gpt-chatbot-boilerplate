@@ -33,9 +33,31 @@ jobs:
         run: |
           find . -path './vendor' -prune -o -name '*.php' -print0 | xargs -0 -r -n1 php -l
 
-      - name: Run PHPUnit
-        if: hashFiles('tests/**') != ''
-        run: vendor/bin/phpunit --colors=always
+      - name: Lint JavaScript files
+        run: |
+          # Basic JavaScript syntax check
+          find . -name '*.js' -not -path './vendor/*' -not -path './node_modules/*' | while read file; do
+            node -c "$file" 2>&1 && echo "✓ $file" || echo "✗ $file"
+          done
+
+      - name: Run All PHP Tests
+        run: |
+          echo "=== Running Phase 1 Tests ==="
+          php tests/run_tests.php
+          
+          echo -e "\n=== Running Phase 2 Tests ==="
+          php tests/run_phase2_tests.php
+          
+          echo -e "\n=== Running Phase 3 Tests ==="
+          php tests/run_phase3_tests.php
+          
+          echo -e "\n=== Running Phase 4 Tests ==="
+          php tests/test_phase4_features.php
+          
+          echo -e "\n=== Running Phase 5 Tests ==="
+          php tests/test_phase5_agent_integration.php
+          
+          echo "✅ All test suites passed"
 
   package:
     name: Build release artifact

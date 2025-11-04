@@ -191,21 +191,157 @@ class JobQueue {
                 $jobId
             ]);
         } else {
-            // Max attempts reached or retry disabled
-            $sql = "UPDATE jobs 
-                    SET status = 'failed',
-                        attempts = ?,
-                        error_text = ?,
-                        updated_at = ?
-                    WHERE id = ?";
-            
-            $this->db->execute($sql, [
-                $attempts,
-                $error,
-                $now->format('Y-m-d H:i:s'),
-                $jobId
-            ]);
+            // Max attempts reached or retry disabled - move to DLQ
+            $this->moveToDLQ($jobId, $error, $attempts);
         }
+    }
+    
+    /**
+     * Move a failed job to Dead Letter Queue
+     * 
+     * @param string $jobId Job ID
+     * @param string $error Error message
+     * @param int $attempts Number of attempts made
+     */
+    private function moveToDLQ($jobId, $error, $attempts) {
+        $now = new DateTime();
+        
+        // Get job details
+        $job = $this->db->queryOne("SELECT * FROM jobs WHERE id = ?", [$jobId]);
+        
+        if (!$job) {
+            throw new Exception("Job not found: $jobId");
+        }
+        
+        // Insert into DLQ
+        $dlqId = $this->generateUUID();
+        $sql = "INSERT INTO dead_letter_queue (
+            id, original_job_id, type, payload_json, attempts, max_attempts,
+            error_text, original_created_at, failed_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        $this->db->insert($sql, [
+            $dlqId,
+            $job['id'],
+            $job['type'],
+            $job['payload_json'],
+            $attempts,
+            $job['max_attempts'],
+            $error,
+            $job['created_at'],
+            $now->format('Y-m-d H:i:s'),
+            $now->format('Y-m-d H:i:s')
+        ]);
+        
+        // Mark original job as failed
+        $updateSql = "UPDATE jobs 
+                      SET status = 'failed',
+                          attempts = ?,
+                          error_text = ?,
+                          updated_at = ?
+                      WHERE id = ?";
+        
+        $this->db->execute($updateSql, [
+            $attempts,
+            $error,
+            $now->format('Y-m-d H:i:s'),
+            $jobId
+        ]);
+    }
+    
+    /**
+     * List dead letter queue entries
+     * 
+     * @param array $filters Optional filters (type, limit, offset)
+     * @return array DLQ entries
+     */
+    public function listDLQ($filters = []) {
+        $sql = "SELECT * FROM dead_letter_queue WHERE 1=1";
+        $params = [];
+        
+        if (!empty($filters['type'])) {
+            $sql .= " AND type = ?";
+            $params[] = $filters['type'];
+        }
+        
+        // Only show non-requeued items by default
+        if (!isset($filters['include_requeued']) || !$filters['include_requeued']) {
+            $sql .= " AND requeued_at IS NULL";
+        }
+        
+        $sql .= " ORDER BY failed_at DESC";
+        
+        if (!empty($filters['limit'])) {
+            $sql .= " LIMIT " . (int)$filters['limit'];
+            if (!empty($filters['offset'])) {
+                $sql .= " OFFSET " . (int)$filters['offset'];
+            }
+        }
+        
+        return $this->db->query($sql, $params);
+    }
+    
+    /**
+     * Requeue a job from Dead Letter Queue
+     * 
+     * @param string $dlqId DLQ entry ID
+     * @param bool $resetAttempts Whether to reset attempt counter
+     * @return string New job ID
+     */
+    public function requeueFromDLQ($dlqId, $resetAttempts = true) {
+        $now = new DateTime();
+        
+        // Get DLQ entry
+        $dlqEntry = $this->db->queryOne("SELECT * FROM dead_letter_queue WHERE id = ?", [$dlqId]);
+        
+        if (!$dlqEntry) {
+            throw new Exception("DLQ entry not found: $dlqId");
+        }
+        
+        if ($dlqEntry['requeued_at']) {
+            throw new Exception("DLQ entry already requeued: $dlqId");
+        }
+        
+        // Parse payload
+        $payload = json_decode($dlqEntry['payload_json'], true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new Exception("Invalid payload JSON in DLQ entry: $dlqId");
+        }
+        
+        // Create new job
+        $maxAttempts = $resetAttempts ? (int)$dlqEntry['max_attempts'] : (int)$dlqEntry['max_attempts'] - (int)$dlqEntry['attempts'];
+        $newJobId = $this->enqueue($dlqEntry['type'], $payload, max(1, $maxAttempts));
+        
+        // Mark DLQ entry as requeued
+        $updateSql = "UPDATE dead_letter_queue 
+                      SET requeued_at = ?
+                      WHERE id = ?";
+        
+        $this->db->execute($updateSql, [
+            $now->format('Y-m-d H:i:s'),
+            $dlqId
+        ]);
+        
+        return $newJobId;
+    }
+    
+    /**
+     * Get DLQ entry by ID
+     * 
+     * @param string $dlqId DLQ entry ID
+     * @return array|null DLQ entry data
+     */
+    public function getDLQEntry($dlqId) {
+        return $this->db->queryOne("SELECT * FROM dead_letter_queue WHERE id = ?", [$dlqId]);
+    }
+    
+    /**
+     * Delete a DLQ entry
+     * 
+     * @param string $dlqId DLQ entry ID
+     */
+    public function deleteDLQEntry($dlqId) {
+        $this->db->execute("DELETE FROM dead_letter_queue WHERE id = ?", [$dlqId]);
     }
     
     /**
