@@ -840,4 +840,18 @@ This enables detailed logging and error reporting.
 
 ---
 
-For additional support, please check the [main README](README.md) or open an issue on GitHub.
+## Advanced Production Topics
+
+For comprehensive production deployment and operations, refer to:
+
+- **[Production Deployment Guide](ops/production-deploy.md)** - Complete step-by-step production deployment
+- **[Backup & Restore](ops/backup_restore.md)** - Automated backup and disaster recovery procedures
+- **[Incident Response Runbook](ops/incident_runbook.md)** - Incident response procedures and troubleshooting
+- **[Secrets Management](ops/secrets_management.md)** - Token rotation and secrets management
+- **[Logging Guide](ops/logs.md)** - Structured logging and log aggregation
+- **[Monitoring Configuration](ops/monitoring/)** - Prometheus alerts and monitoring setup
+- **[Nginx Production Config](ops/nginx-production.conf)** - Production-ready Nginx configuration
+
+---
+
+For additional support, please check the [main README](../README.md) or open an issue on GitHub.

@@ -1077,5 +1077,14 @@ wrk -t12 -c400 -d30s --script=post.lua \
 
 ---
 
-This API documentation covers all the main interfaces and usage patterns for the GPT Chatbot Boilerplate. For additional examples and use cases, see the [main README](README.md) or check the demo implementation in `default.php`.
+## Additional Resources
+
+For more comprehensive documentation:
+
+- **[Implementation Report](IMPLEMENTATION_REPORT.md)** - Complete implementation details and architecture
+- **[Customization Guide](customization-guide.md)** - Extensive customization options
+- **[Deployment Guide](deployment.md)** - Deployment and operations
+- **[Phase Documentation](IMPLEMENTATION_PLAN.md)** - Detailed phase-by-phase implementation
+
+This API documentation covers all the main interfaces and usage patterns for the GPT Chatbot Boilerplate. For additional examples and use cases, see the [main README](../README.md) or check the demo implementation in `default.php`.
 
