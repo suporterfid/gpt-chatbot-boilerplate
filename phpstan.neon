@@ -1,0 +1,17 @@
+parameters:
+    level: 5
+    paths:
+        - includes
+        - admin-api.php
+        - chat-unified.php
+        - metrics.php
+        - scripts/worker.php
+    excludePaths:
+        - vendor
+    ignoreErrors:
+        # Allow dynamic properties for backward compatibility
+        - '#Access to an undefined property#'
+        # Allow mixed types for config arrays
+        - '#has no value type specified in iterable type array#'
+    checkMissingIterableValueType: false
+    checkGenericClassInNonGenericObjectType: false

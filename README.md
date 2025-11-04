@@ -604,6 +604,75 @@ curl -X POST -H "Content-Type: application/json" \
 ./test-file-upload.sh
 ```
 
+## 🧪 Testing & Validation
+
+### Running Tests
+
+The project includes comprehensive test coverage across all phases:
+
+```bash
+# Run all test suites
+php tests/run_tests.php              # Phase 1: Database & Agents (28 tests)
+php tests/run_phase2_tests.php       # Phase 2: Prompts & Vector Stores (44 tests)
+php tests/run_phase3_tests.php       # Phase 3: Jobs, Webhooks, RBAC (36 tests)
+php tests/test_phase4_features.php   # Phase 4: Production features (14 tests)
+php tests/test_phase5_agent_integration.php  # Phase 5: Agent integration (33 tests)
+```
+
+### Static Analysis
+
+```bash
+# Install dependencies
+composer install --dev
+
+# Run PHPStan static analysis
+composer run analyze
+
+# Or use vendor bin directly
+./vendor/bin/phpstan analyse
+```
+
+### Frontend Linting
+
+```bash
+# Install Node.js dependencies
+npm install
+
+# Run ESLint
+npm run lint
+```
+
+### Production Smoke Tests
+
+Before deploying to production, run the comprehensive smoke test suite:
+
+```bash
+# Run all smoke tests (37 checks + 155 unit tests)
+bash scripts/smoke_test.sh
+```
+
+The smoke test verifies:
+- ✅ File structure and scripts
+- ✅ Documentation completeness
+- ✅ Code quality (syntax, static analysis)
+- ✅ Database migrations
+- ✅ Feature implementations
+- ✅ Configuration validity
+- ✅ All 155 unit tests
+
+**Exit code 0** means production-ready!
+
+### CI/CD Pipeline
+
+All tests run automatically on every PR via GitHub Actions:
+- PHP linting and syntax validation
+- PHPStan static analysis (level 5)
+- ESLint JavaScript validation
+- All 155 unit tests
+- Automated build and deployment
+
+See `.github/workflows/cicd.yml` for details.
+
 ## 🤝 Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
