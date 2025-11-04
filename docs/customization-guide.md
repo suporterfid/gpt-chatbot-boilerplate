@@ -599,4 +599,15 @@ ChatBot.init({
 
 ---
 
+## Additional Resources
+
+For comprehensive documentation on the system architecture and implementation:
+
+- **[Implementation Report](IMPLEMENTATION_REPORT.md)** - Complete implementation details and production readiness assessment
+- **[Implementation Plan](IMPLEMENTATION_PLAN.md)** - Detailed phase-by-phase implementation with status
+- **[API Documentation](api.md)** - Complete API reference
+- **[Deployment Guide](deployment.md)** - Deployment and operations guide
+
+---
+
 For more examples and updates, check the [`docs/`](./) directory and the main [README](../README.md).
