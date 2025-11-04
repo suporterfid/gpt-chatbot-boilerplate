@@ -153,6 +153,7 @@ export function teardown(data) {
     console.log('========================================');
     console.log('Load Test Results');
     console.log('========================================');
-    console.log(`Error Rate: ${(errorRate.rate * 100).toFixed(2)}%`);
+    const rate = errorRate.rate || 0;
+    console.log(`Error Rate: ${(rate * 100).toFixed(2)}%`);
     console.log('========================================');
 }

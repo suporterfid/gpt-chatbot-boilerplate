@@ -29,7 +29,13 @@ function promMetric($name, $type, $help, $value, $labels = []) {
     if (!empty($labels)) {
         $labelPairs = [];
         foreach ($labels as $key => $val) {
-            $labelPairs[] = $key . '="' . addslashes($val) . '"';
+            // Properly escape label values for Prometheus exposition format
+            $escapedVal = str_replace(
+                ['\\', "\n", '"'],
+                ['\\\\', '\\n', '\\"'],
+                (string)$val
+            );
+            $labelPairs[] = $key . '="' . $escapedVal . '"';
         }
         $labelStr = '{' . implode(',', $labelPairs) . '}';
     }
