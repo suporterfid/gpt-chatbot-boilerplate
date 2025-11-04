@@ -270,6 +270,7 @@ Accept: text/event-stream (for SSE) or application/json (for AJAX)
 {
     "message": "Hello, how are you?",
     "conversation_id": "conv_abc123",
+    "agent_id": "agent-uuid-here",
     "stream": true
 }
 ```
@@ -277,6 +278,7 @@ Accept: text/event-stream (for SSE) or application/json (for AJAX)
 **Parameters:**
 - `message` (string, required): User's message
 - `conversation_id` (string, optional): Unique conversation identifier
+- `agent_id` (string, optional): UUID of the agent to use for this request. If not provided, the default agent (if set) will be used, otherwise falls back to config.php settings
 - `stream` (boolean, optional): Enable streaming response (default: true for SSE, false for AJAX)
 
 #### Response (SSE)
@@ -286,7 +288,7 @@ Server-Sent Events stream with the following event types:
 **Start Event:**
 ```
 event: start
-data: {"conversation_id": "conv_abc123"}
+data: {"conversation_id": "conv_abc123", "agent_id": "agent-uuid-here", "api_type": "responses"}
 ```
 
 **Message Events:**
@@ -346,15 +348,91 @@ Alternative GET endpoint for SSE streaming (useful for EventSource API).
 **Query Parameters:**
 - `message` (string, required): User's message (URL encoded)
 - `conversation_id` (string, optional): Conversation identifier
+- `agent_id` (string, optional): UUID of the agent to use
 
 **Example:**
 ```
-GET /chat-unified.php?message=Hello&conversation_id=conv_abc123
+GET /chat-unified.php?message=Hello&conversation_id=conv_abc123&agent_id=agent-uuid-here
 ```
 
 #### Response
 
 Same SSE format as POST endpoint.
+
+### Agent Selection Behavior
+
+The chat endpoint supports dynamic agent selection via the `agent_id` parameter. This allows you to override the default chat behavior with agent-specific configurations.
+
+#### Agent Selection Priority
+
+The system follows this priority order when determining which configuration to use:
+
+1. **Explicit agent_id**: If provided in the request, the agent configuration is loaded
+2. **Default agent**: If no agent_id is provided, the system uses the agent marked as default
+3. **Config fallback**: If no default agent exists, falls back to config.php settings
+
+#### Configuration Merging
+
+When an agent is selected, its configuration overrides config.php defaults. The merging precedence is:
+
+**Request parameters > Agent configuration > config.php defaults**
+
+For example:
+- If request includes `prompt_id`, it overrides agent's prompt_id
+- If agent specifies `model: "gpt-4"`, it overrides config.php model
+- If neither request nor agent specify a value, config.php default is used
+
+#### Agent Configuration Fields
+
+An agent can override the following configuration fields:
+
+- `api_type`: 'chat' or 'responses'
+- `prompt_id`: OpenAI prompt identifier
+- `prompt_version`: Specific prompt version
+- `model`: OpenAI model (e.g., 'gpt-4', 'gpt-3.5-turbo')
+- `temperature`: Randomness (0.0 - 2.0)
+- `top_p`: Nucleus sampling parameter
+- `max_output_tokens`: Maximum response length
+- `system_message`: System prompt (for chat API)
+- `tools`: Array of tool definitions
+- `vector_store_ids`: Array of vector store IDs for file_search
+- `max_num_results`: Maximum file search results
+
+#### Example: Using an Agent
+
+```bash
+# Create an agent via Admin API
+curl -X POST "http://localhost/admin-api.php?action=create_agent" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Customer Support Bot",
+    "api_type": "responses",
+    "prompt_id": "prompt_abc123",
+    "model": "gpt-4",
+    "temperature": 0.7,
+    "tools": [{"type": "file_search"}],
+    "vector_store_ids": ["vs_xyz789"]
+  }'
+
+# Response includes agent UUID
+# {"data": {"id": "agent_uuid_here", ...}}
+
+# Use the agent in chat
+curl -X POST "http://localhost/chat-unified.php" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What is your return policy?",
+    "agent_id": "agent_uuid_here",
+    "conversation_id": "conv_123"
+  }'
+```
+
+#### Error Handling
+
+- **Invalid agent_id**: Logs warning and falls back to default agent
+- **Agent not found**: Falls back to default agent or config.php
+- **No AgentService**: Falls back to config.php (backwards compatible)
 
 ### GET /health
 

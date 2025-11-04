@@ -379,6 +379,47 @@ return [
 
 The `RESPONSES_TOOLS`, `RESPONSES_VECTOR_STORE_IDS`, and `RESPONSES_MAX_NUM_RESULTS` environment variables hydrate these defaults automatically. Provide JSON arrays (e.g., `[{"type":"file_search"}]`) or comma-separated lists (`vs_123,vs_456`) and the backend merges them with any request-level overrides (config → request → final payload).
 
+### Agent-Based Configuration (Phase 5)
+
+In addition to static config.php settings, you can create dynamic agents that override configuration at runtime:
+
+#### Using Agents in Requests
+
+```bash
+# Use a specific agent
+curl -X POST "http://localhost/chat-unified.php" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Help me with my order",
+    "agent_id": "agent_uuid_here",
+    "conversation_id": "conv_123"
+  }'
+
+# Or use the default agent (no agent_id needed)
+curl -X POST "http://localhost/chat-unified.php" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Help me with my order",
+    "conversation_id": "conv_123"
+  }'
+```
+
+#### Configuration Priority
+
+When using agents, configuration values merge with this priority:
+
+1. **Request parameters** (highest)
+2. **Agent configuration**
+3. **config.php defaults** (lowest)
+
+This allows you to:
+- Create multiple AI personalities without code changes
+- Override prompts, models, tools per agent
+- Set a default agent for all requests
+- Override agent settings per request if needed
+
+For complete agent documentation, see [docs/customization-guide.md](docs/customization-guide.md#agent-based-configuration).
+
 ### File Upload Configuration
 
 ```php

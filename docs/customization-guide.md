@@ -5,6 +5,7 @@ This guide covers extensive customization options for both Chat Completions API 
 ## Table of Contents
 
 - [API Selection & Configuration](#api-selection--configuration)
+- [Agent-Based Configuration](#agent-based-configuration)
 - [Chat Completions Customization](#chat-completions-customization)
 - [Responses API Customization](#responses-api-customization)
 - [UI/UX Customization](#uiux-customization)
@@ -71,6 +72,278 @@ class AdaptiveChatBot {
     }
 }
 ```
+
+## Agent-Based Configuration
+
+The chatbot supports dynamic agent selection, allowing you to create multiple AI personalities with different configurations that can be selected at runtime. Agents are managed via the Admin UI or Admin API and can override any configuration parameter.
+
+### Why Use Agents?
+
+**Benefits:**
+- **No Code Deployments**: Update prompts, models, and tools without redeploying
+- **Multi-Personality Bots**: Different agents for different use cases
+- **A/B Testing**: Test different configurations without code changes
+- **User Segmentation**: Route different users to different agents
+- **Centralized Management**: Manage all configurations from Admin UI
+
+### Creating an Agent
+
+#### Via Admin UI
+
+1. Navigate to `/public/admin/`
+2. Go to "Agents" section
+3. Click "Create Agent"
+4. Configure:
+   - **Name**: Customer Support Bot
+   - **API Type**: Responses
+   - **Model**: gpt-4
+   - **Prompt**: Select from OpenAI prompts
+   - **Tools**: Enable file_search, add vector stores
+   - **Temperature**: 0.7
+5. Click "Save"
+6. Optionally click "Make Default" to use this agent for all requests without explicit agent_id
+
+#### Via Admin API
+
+```bash
+curl -X POST "http://localhost/admin-api.php?action=create_agent" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Customer Support Bot",
+    "description": "Handles customer inquiries with knowledge base access",
+    "api_type": "responses",
+    "prompt_id": "prompt_abc123",
+    "prompt_version": "v1",
+    "model": "gpt-4",
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "max_output_tokens": 1000,
+    "tools": [
+      {
+        "type": "file_search"
+      }
+    ],
+    "vector_store_ids": ["vs_xyz789"],
+    "max_num_results": 20
+  }'
+```
+
+### Using Agents in Chat Requests
+
+#### Option 1: Explicit Agent Selection
+
+```javascript
+// JavaScript widget - floating mode
+const chatbot = ChatBot.init({
+    mode: 'floating',
+    apiEndpoint: '/chat-unified.php',
+    // Pass agent_id with every request
+    requestModifier: (payload) => {
+        payload.agent_id = 'agent_uuid_here';
+        return payload;
+    }
+});
+```
+
+```bash
+# Direct API call
+curl -X POST "http://localhost/chat-unified.php" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What is your return policy?",
+    "agent_id": "agent_uuid_here",
+    "conversation_id": "conv_123"
+  }'
+```
+
+#### Option 2: Default Agent (No agent_id)
+
+If you've marked an agent as default in the Admin UI, all requests without an explicit `agent_id` will use that agent:
+
+```bash
+# Uses default agent automatically
+curl -X POST "http://localhost/chat-unified.php" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What is your return policy?",
+    "conversation_id": "conv_123"
+  }'
+```
+
+#### Option 3: Dynamic Agent Selection
+
+```javascript
+// Allow users to select agents dynamically
+class MultiAgentChatBot {
+    constructor(container, agents) {
+        this.agents = agents; // Array of {id, name, description}
+        this.currentAgentId = agents[0]?.id;
+        this.chatbot = ChatBot.init(container, {
+            requestModifier: (payload) => {
+                payload.agent_id = this.currentAgentId;
+                return payload;
+            }
+        });
+        this.renderAgentSelector(container);
+    }
+
+    renderAgentSelector(container) {
+        const selector = document.createElement('select');
+        selector.className = 'agent-selector';
+        
+        this.agents.forEach(agent => {
+            const option = document.createElement('option');
+            option.value = agent.id;
+            option.textContent = agent.name;
+            selector.appendChild(option);
+        });
+
+        selector.addEventListener('change', (e) => {
+            this.switchAgent(e.target.value);
+        });
+
+        container.prepend(selector);
+    }
+
+    switchAgent(agentId) {
+        this.currentAgentId = agentId;
+        console.log(`Switched to agent: ${agentId}`);
+        // Note: Agent selection takes effect on next message
+        // The updated agent_id will be sent with the next request
+    }
+}
+
+// Usage
+fetch('/admin-api.php?action=list_agents')
+    .then(r => r.json())
+    .then(data => {
+        const chatbot = new MultiAgentChatBot('#chat', data.data);
+    });
+```
+
+### Agent Configuration Examples
+
+#### Example 1: Technical Support Agent
+
+```json
+{
+    "name": "Technical Support",
+    "api_type": "responses",
+    "prompt_id": "tech_support_prompt",
+    "model": "gpt-4",
+    "temperature": 0.3,
+    "tools": [
+        {"type": "file_search"}
+    ],
+    "vector_store_ids": ["vs_tech_docs"],
+    "max_num_results": 10
+}
+```
+
+**Use Case**: Precise, factual responses based on technical documentation.
+
+#### Example 2: Creative Writing Assistant
+
+```json
+{
+    "name": "Creative Writer",
+    "api_type": "chat",
+    "system_message": "You are a creative writing assistant. Help users brainstorm ideas, develop characters, and craft compelling narratives.",
+    "model": "gpt-4",
+    "temperature": 1.2,
+    "top_p": 0.95,
+    "max_output_tokens": 2000
+}
+```
+
+**Use Case**: High creativity for brainstorming and storytelling.
+
+#### Example 3: Sales Assistant with Product Catalog
+
+```json
+{
+    "name": "Sales Assistant",
+    "api_type": "responses",
+    "prompt_id": "sales_prompt",
+    "model": "gpt-3.5-turbo",
+    "temperature": 0.7,
+    "tools": [
+        {"type": "file_search"}
+    ],
+    "vector_store_ids": ["vs_product_catalog", "vs_sales_materials"],
+    "max_num_results": 20
+}
+```
+
+**Use Case**: Answer product questions using catalog and sales materials.
+
+### Configuration Merging Priority
+
+When using agents, configuration values are merged with the following priority:
+
+1. **Request Parameters** (highest priority)
+2. **Agent Configuration**
+3. **config.php Defaults** (lowest priority)
+
+**Example:**
+```javascript
+// Agent has: model = "gpt-4", temperature = 0.7
+// Request overrides model
+const chatbot = ChatBot.init('#chat-container', {
+    requestModifier: (payload) => {
+        payload.agent_id = 'agent_123';
+        payload.model = 'gpt-3.5-turbo'; // Overrides agent's model
+        return payload;
+    }
+});
+// Result: Uses gpt-3.5-turbo with temperature 0.7
+```
+
+### Testing Agents
+
+#### Via Admin UI
+1. Navigate to Agents page
+2. Click "Test" button on any agent
+3. Enter a test message
+4. See streaming response with agent configuration applied
+
+#### Via API
+```bash
+curl -X POST "http://localhost/chat-unified.php" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Test message",
+    "agent_id": "agent_uuid",
+    "stream": false
+  }'
+```
+
+### Best Practices
+
+1. **Use Descriptive Names**: Name agents clearly (e.g., "Customer Support - English", "Sales Bot - EU")
+2. **Set Appropriate Temperatures**: Lower (0.1-0.4) for factual, higher (0.7-1.5) for creative
+3. **Leverage Default Agent**: Set a sensible default for backward compatibility
+4. **Version Prompts**: Use versioned prompts to track changes and roll back if needed
+5. **Monitor Performance**: Use audit logs to track which agents are used and their performance
+6. **Test Thoroughly**: Use the Test feature before deploying agents to production
+7. **Document Agents**: Use the description field to document each agent's purpose
+
+### Troubleshooting
+
+**Agent not found error:**
+- Verify agent_id exists via Admin UI
+- Check that Admin is enabled in .env (ADMIN_ENABLED=true)
+- Ensure database is accessible
+
+**Agent changes not applying:**
+- Agents are loaded per-request (no caching by default)
+- Verify request includes correct agent_id
+- Check server logs for agent resolution messages
+
+**Fallback to config.php:**
+- Normal behavior when no agent_id provided and no default agent set
+- To use agents, either pass agent_id or set a default agent
 
 ## Chat Completions Customization
 
