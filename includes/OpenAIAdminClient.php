@@ -409,6 +409,21 @@ class OpenAIAdminClient {
         }
     }
 
+    // ==================== Models API Methods ====================
+
+    /**
+     * List available models
+     */
+    public function listModels() {
+        try {
+            $result = $this->makeRequest('GET', '/models');
+            return $result ?? ['data' => []];
+        } catch (Exception $e) {
+            $this->logWarning('Failed to list models: ' . $e->getMessage());
+            return ['data' => []];
+        }
+    }
+
     // ==================== Logging Methods ====================
 
     private function logRequest($method, $endpoint, $data) {

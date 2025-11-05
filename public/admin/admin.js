@@ -184,6 +184,10 @@ class AdminAPI {
     health() {
         return this.request('health');
     }
+
+    listModels() {
+        return this.request('list_models');
+    }
 }
 
 let api = new AdminAPI();
@@ -484,19 +488,49 @@ async function loadAgentsPage() {
 }
 
 async function showCreateAgentModal() {
-    // Load prompts and vector stores for dropdowns
+    // Load prompts, vector stores, and models for dropdowns
     let prompts = [];
     let vectorStores = [];
+    let models = [];
     
     try {
         prompts = await api.listPrompts();
         vectorStores = await api.listVectorStores();
+        models = await api.listModels();
     } catch (error) {
         console.error('Error loading resources:', error);
     }
     
     const promptOptions = prompts.map(p => `<option value="${p.openai_prompt_id || ''}">${p.name}</option>`).join('');
     const vectorStoreOptions = vectorStores.map(vs => `<option value="${vs.openai_store_id || ''}">${vs.name}</option>`).join('');
+    
+    // Build model options with priority sorting
+    const buildModelOptions = (modelsData) => {
+        if (!modelsData || !modelsData.data || modelsData.data.length === 0) {
+            return '';
+        }
+        
+        // Priority map for model prefixes
+        const getPriority = (modelId) => {
+            if (modelId.startsWith('gpt-4')) return 1;
+            if (modelId.startsWith('gpt-3.5')) return 2;
+            return 3;
+        };
+        
+        const sortedModels = modelsData.data.sort((a, b) => {
+            const priorityDiff = getPriority(a.id) - getPriority(b.id);
+            return priorityDiff !== 0 ? priorityDiff : a.id.localeCompare(b.id);
+        });
+        
+        return sortedModels.map(m => `<option value="${m.id}">${m.id}</option>`).join('');
+    };
+    
+    const modelOptions = buildModelOptions(models);
+    
+    // Build model input field (dropdown or text fallback)
+    const modelInputHtml = modelOptions 
+        ? `<select name="model" class="form-select"><option value="">Use default</option>${modelOptions}</select>`
+        : `<input type="text" name="model" class="form-input" placeholder="e.g., gpt-4o, gpt-4o-mini" />`;
     
     const content = `
         <form id="agent-form" onsubmit="handleCreateAgent(event)">
@@ -520,8 +554,8 @@ async function showCreateAgentModal() {
             
             <div class="form-group">
                 <label class="form-label">Model</label>
-                <input type="text" name="model" class="form-input" placeholder="e.g., gpt-4o, gpt-4o-mini" />
-                <small class="form-help">Leave empty to use default</small>
+                ${modelInputHtml}
+                <small class="form-help">Select a model or leave as default</small>
             </div>
             
             <div class="form-group">
