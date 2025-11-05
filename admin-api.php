@@ -741,22 +741,22 @@ try {
                     }
                     
                     // Get failed jobs in last 24 hours
-                    $stmt = $db->query("
+                    $result = $db->query("
                         SELECT COUNT(*) as count 
                         FROM jobs 
                         WHERE status = 'failed' 
                         AND created_at > datetime('now', '-1 day')
                     ");
-                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-                    $health['metrics']['failed_jobs_24h'] = (int)$row['count'];
+                    $row = $result[0] ?? null;
+                    $health['metrics']['failed_jobs_24h'] = $row ? (int)$row['count'] : 0;
                     
                     // Get worker last seen timestamp
-                    $stmt = $db->query("
+                    $result = $db->query("
                         SELECT MAX(updated_at) as last_update 
                         FROM jobs 
                         WHERE status IN ('running', 'completed', 'failed')
                     ");
-                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                    $row = $result[0] ?? null;
                     if ($row && $row['last_update']) {
                         $health['metrics']['worker_last_seen'] = $row['last_update'];
                         $lastUpdate = strtotime($row['last_update']);
