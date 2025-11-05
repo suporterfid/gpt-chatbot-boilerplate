@@ -71,7 +71,11 @@ function checkAuthentication($config, $adminAuth) {
     
     if (empty($authHeader)) {
         log_admin('Missing Authorization header', 'warn');
-        log_admin('Available SERVER vars: ' . implode(', ', array_keys($_SERVER)), 'debug');
+        // Only log server vars in debug mode
+        if (isset($config['debug']) && $config['debug']) {
+            $serverKeys = array_keys($_SERVER);
+            log_admin('Available SERVER keys: ' . implode(', ', $serverKeys), 'debug');
+        }
         sendError('Authorization header required', 403);
     }
     

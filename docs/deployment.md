@@ -337,6 +337,11 @@ If you encounter "403 Forbidden - Authorization header required" errors:
 
 4. Verify the Authorization header is being sent by checking browser Network tab (DevTools)
 
+**Security Note**: The default `.htaccess` configuration includes `Access-Control-Allow-Origin "*"` for development convenience. For production deployments, update this to specify your domain:
+```apache
+Header always set Access-Control-Allow-Origin "https://yourdomain.com"
+```
+
 ### Production with Docker
 
 1. **Create production docker-compose.yml**:

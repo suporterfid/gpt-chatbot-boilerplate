@@ -14,6 +14,8 @@
 </IfModule>
 
 # CORS headers for admin API
+# NOTE: For production, replace "*" with specific allowed origins
+# Example: Header always set Access-Control-Allow-Origin "https://yourdomain.com"
 <IfModule mod_headers.c>
     Header always set Access-Control-Allow-Origin "*"
     Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
