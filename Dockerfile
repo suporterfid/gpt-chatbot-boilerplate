@@ -20,8 +20,8 @@ RUN a2enmod setenvif
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
 # Ensure Apache always serves our PHP entrypoint instead of returning a 403
-RUN printf "DirectoryIndex index.php default.php index.html\n" > /etc/apache2/conf-available/project-directoryindex.conf \
-    && a2enconf project-directoryindex
+# Update the dir.conf module to include default.php in the DirectoryIndex
+RUN sed -i 's/DirectoryIndex.*/DirectoryIndex index.php default.php index.html/' /etc/apache2/mods-enabled/dir.conf
 
 # Enable .htaccess files (AllowOverride All)
 RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
