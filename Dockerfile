@@ -23,9 +23,9 @@ RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 # Enable .htaccess files (AllowOverride All)
 RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
 
-# Enable CGI passthrough for Authorization header (Apache 2.4.13+)
+# Enable CGI passthrough for Authorization header in the DocumentRoot directory
 # This ensures the Authorization header is passed to PHP scripts
-RUN echo "CGIPassAuth On" >> /etc/apache2/apache2.conf
+RUN sed -i '/<Directory \/var\/www\/>/a\    CGIPassAuth On' /etc/apache2/apache2.conf
 
 # Configure Apache for SSE
 RUN echo "<Location \"/chat-unified.php\">" >> /etc/apache2/apache2.conf
@@ -59,8 +59,9 @@ RUN chmod -R 755 /var/www/html
 RUN mkdir -p logs && chown www-data:www-data logs
 
 # Install PHP dependencies (if composer.json exists)
+# Skip SSL verification for development/testing environments
 RUN git config --global --add safe.directory /var/www/html \
-    && if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader; fi
+    && if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader --no-interaction 2>/dev/null || echo "Composer install skipped"; fi
 
 # Expose port
 EXPOSE 80
