@@ -59,15 +59,35 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Files API**: Standalone file management endpoints (list, upload, delete).
 - **Complete API Coverage**: 37 endpoints across all resources (agents, prompts, vector stores, jobs, users).
 - **Enhanced Security**: Comprehensive error handling, audit logging, and permission checks.
-- **Production Ready**: Full test coverage (122 tests), documented configuration, backward compatible.
+- **Production Ready**: Full test coverage (14 tests in phase 4, 155 total at completion), static analysis (PHPStan), documented configuration, backward compatible.
 - See [PHASE4_COMPLETION_REPORT.md](PHASE4_COMPLETION_REPORT.md) for details.
+
+### 🎯 **Phase 5: Agent Integration & Testing**
+- **Agent Integration**: Full agent support in chat interface with configuration merging.
+- **Widget Integration**: JavaScript widget supports agent selection.
+- **Configuration Priority**: Request → Agent → Config defaults.
+- **Comprehensive Testing**: 33 integration tests validating agent functionality.
+- **Backward Compatible**: Existing code works unchanged, agents are optional.
+
+### 🚀 **Phase 10: Production Readiness & Operations**
+- **CI/CD Pipeline**: Automated testing (183 tests), static analysis (PHPStan), and linting (ESLint).
+- **Backup & Restore**: Automated database backup scripts with rotation and disaster recovery procedures.
+- **Observability**: Prometheus metrics endpoint (`/metrics.php`) and enhanced health checks.
+- **Dead Letter Queue**: Failed job management with retry and requeue capabilities.
+- **Secrets Management**: Admin token rotation and comprehensive secrets documentation.
+- **Security Hardening**: Production-ready Nginx configuration with security headers and rate limiting.
+- **Load Testing**: K6 scripts for capacity testing and performance validation.
+- **Operational Docs**: Complete runbooks for incident response, monitoring, and log aggregation.
+- See [PHASE10_PRODUCTION_COMPLETION.md](PHASE10_PRODUCTION_COMPLETION.md) for details.
 
 ## 📋 Requirements
 
-- PHP 8.0+ with cURL extension.
-- Apache or Nginx web server.
-- OpenAI API key.
-- Optional: Docker for containerized deployment.
+- PHP 8.0+ with cURL and JSON extensions
+- Apache or Nginx web server
+- OpenAI API key
+- Composer (for dependency management)
+- Optional: Docker for containerized deployment
+- Optional: Node.js and npm (for frontend development and linting)
 
 ## 🚀 Quick Start
 
@@ -84,7 +104,7 @@ cp .env.example .env
 ```bash
 API_TYPE=chat
 OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-3.5-turbo
+OPENAI_MODEL=gpt-4o-mini
 ```
 
 3. Start with Docker:
@@ -98,7 +118,7 @@ docker-compose up -d
 ```bash
 API_TYPE=responses
 OPENAI_API_KEY=your_openai_api_key_here
-RESPONSES_MODEL=gpt-4.1-mini
+RESPONSES_MODEL=gpt-4o-mini
 RESPONSES_PROMPT_ID=pmpt_your_prompt_id   # optional, reference a saved prompt
 RESPONSES_PROMPT_VERSION=1                # optional, defaults to latest
 RESPONSES_TEMPERATURE=0.7
@@ -356,14 +376,14 @@ return [
 
     // Chat Completions settings
     'chat' => [
-        'model' => 'gpt-3.5-turbo',
+        'model' => 'gpt-4o-mini',
         'temperature' => 0.7,
         'system_message' => 'You are a helpful assistant.'
     ],
 
     // Responses API settings
     'responses' => [
-        'model' => 'gpt-4.1-mini',
+        'model' => 'gpt-4o-mini',
         'temperature' => 0.7,
         'max_output_tokens' => 1024,
         'prompt_id' => 'pmpt_your_prompt_id',
@@ -436,12 +456,37 @@ For complete agent documentation, see [docs/customization-guide.md](docs/customi
 
 ```
 ├── chat-unified.php          # Unified endpoint for both APIs
-├── chatbot-enhanced.js       # Enhanced JavaScript client
+├── chatbot-enhanced.js       # Enhanced JavaScript widget (2,176 lines)
+├── admin-api.php             # Admin API endpoint (1,336 lines)
+├── metrics.php               # Prometheus metrics endpoint
+├── websocket-server.php      # Optional WebSocket relay
 ├── includes/
-│   ├── ChatHandler.php       # Unified chat handler for chat & responses
-│   └── OpenAIClient.php      # OpenAI client with streaming helpers
+│   ├── ChatHandler.php       # Chat orchestration & conversation management (1,410 lines)
+│   ├── OpenAIClient.php      # OpenAI API transport layer (300 lines)
+│   ├── AgentService.php      # Agent CRUD & configuration (394 lines)
+│   ├── OpenAIAdminClient.php # OpenAI admin APIs (prompts, stores, files) (437 lines)
+│   ├── PromptService.php     # Prompt management (341 lines)
+│   ├── VectorStoreService.php # Vector store management (486 lines)
+│   ├── JobQueue.php          # Background job queue (663 lines)
+│   ├── WebhookHandler.php    # OpenAI webhook processing (156 lines)
+│   ├── AdminAuth.php         # RBAC & API key auth (345 lines)
+│   └── DB.php                # Database abstraction layer (265 lines)
+├── public/admin/             # Admin UI (SPA)
+│   ├── index.html
+│   ├── admin.js              # Admin interface logic (1,661 lines)
+│   └── admin.css
+├── scripts/
+│   ├── worker.php            # Background job worker
+│   ├── db_backup.sh          # Database backup automation
+│   ├── db_restore.sh         # Database restore tool
+│   └── smoke_test.sh         # Production readiness checks
+├── db/migrations/            # 9 database migrations
+├── tests/                    # 183 automated tests
+├── webhooks/
+│   └── openai.php            # OpenAI webhook receiver
 ├── config.php                # Unified configuration loader
-└── .env.example              # Environment template
+├── .env.example              # Environment template
+└── docs/                     # Comprehensive documentation
 ```
 
 ### API Flow Comparison
@@ -521,6 +566,7 @@ Unified endpoint supporting both APIs.
     "message": "Hello",
     "conversation_id": "conv_123",
     "api_type": "responses",
+    "agent_id": "agent_uuid",  // optional, uses default agent if not specified
     "prompt_id": "pmpt_your_prompt_id",
     "prompt_version": "1",
     "file_data": [
@@ -553,7 +599,7 @@ OPENAI_API_KEY=sk-...
 OPENAI_BASE_URL=https://api.openai.com/v1
 
 # Responses API
-RESPONSES_MODEL=gpt-4.1-mini
+RESPONSES_MODEL=gpt-4o-mini
 RESPONSES_PROMPT_ID=pmpt_your_prompt_id
 RESPONSES_PROMPT_VERSION=1
 RESPONSES_MAX_OUTPUT_TOKENS=1024
@@ -562,6 +608,25 @@ RESPONSES_TEMPERATURE=0.7
 RESPONSES_TOOLS=[{"type":"file_search"}]
 RESPONSES_VECTOR_STORE_IDS=vs_1234567890,vs_0987654321
 RESPONSES_MAX_NUM_RESULTS=20
+
+# Chat Completions API
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_TEMPERATURE=0.7
+OPENAI_MAX_TOKENS=1000
+
+# Admin API & Database
+ADMIN_ENABLED=true
+ADMIN_TOKEN=your_random_admin_token_here_min_32_chars
+DATABASE_PATH=./data/chatbot.db
+# Or use MySQL/PostgreSQL:
+# DATABASE_URL=mysql://user:password@localhost/chatbot_db
+
+# Admin API Rate Limiting
+ADMIN_RATE_LIMIT_REQUESTS=300
+ADMIN_RATE_LIMIT_WINDOW=60
+
+# Background Jobs
+JOBS_ENABLED=true
 
 # File Upload
 ENABLE_FILE_UPLOAD=true
@@ -575,10 +640,18 @@ STORAGE_PATH=/var/chatbot/data
 
 ### Production Considerations
 
-- **File storage**: Configure appropriate storage for uploaded files.
+- **Database**: SQLite for development, PostgreSQL/MySQL for production. See [docs/ops/backup_restore.md](docs/ops/backup_restore.md).
+- **File storage**: Configure appropriate storage for uploaded files and backups.
 - **Prompt management**: Version control saved prompts and fallback strategies.
-- **Resource limits**: Monitor API usage and costs.
-- **Backup strategy**: Backup conversation history if persisted to disk.
+- **Resource limits**: Monitor API usage and costs via `/metrics.php` endpoint.
+- **Backup strategy**: Use `scripts/db_backup.sh` with automated rotation (7-day default).
+- **Observability**: Configure Prometheus scraping of `/metrics.php` and set up alerts.
+- **Security**: Use production Nginx config from `docs/ops/nginx-production.conf` with HTTPS, security headers, and rate limiting.
+- **Worker Process**: Run `scripts/worker.php --daemon` for background job processing.
+- **Webhooks**: Configure OpenAI webhooks to point to `https://yourdomain.com/webhooks/openai.php`.
+- **Load Testing**: Run K6 scripts from `tests/load/` to validate capacity before production deployment.
+
+For complete operational documentation, see `docs/ops/` directory.
 
 ## 🔄 Migration from v2.0 (Assistants API)
 
@@ -587,7 +660,9 @@ STORAGE_PATH=/var/chatbot/data
 3. **Deploy updated code**: This release removes `AssistantManager` and `ThreadManager`—ensure custom code no longer references them.
 4. **Test both modes**: Verify chat completions and responses streaming with your prompt templates.
 
-## 🧪 Testing
+## 🧪 Testing & Validation
+
+### Quick API Testing
 
 ```bash
 # Test Chat Completions API
@@ -600,23 +675,26 @@ curl -X POST -H "Content-Type: application/json" \
   -d '{"message": "Hello", "api_type": "responses"}' \
   http://localhost:8080/chat-unified.php
 
-# Test file upload
-./test-file-upload.sh
+# Test with agent
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"message": "Hello", "agent_id": "your_agent_id"}' \
+  http://localhost:8080/chat-unified.php
 ```
-
-## 🧪 Testing & Validation
 
 ### Running Tests
 
-The project includes comprehensive test coverage across all phases:
+The project includes comprehensive test coverage (183 tests total):
 
 ```bash
 # Run all test suites
-php tests/run_tests.php              # Phase 1: Database & Agents (28 tests)
-php tests/run_phase2_tests.php       # Phase 2: Prompts & Vector Stores (44 tests)
-php tests/run_phase3_tests.php       # Phase 3: Jobs, Webhooks, RBAC (36 tests)
-php tests/test_phase4_features.php   # Phase 4: Production features (14 tests)
-php tests/test_phase5_agent_integration.php  # Phase 5: Agent integration (33 tests)
+php tests/run_tests.php                       # Phase 1: Database & Agents (28 tests)
+php tests/run_phase2_tests.php                # Phase 2: Prompts & Vector Stores (44 tests)
+php tests/run_phase3_tests.php                # Phase 3: Jobs, Webhooks, RBAC (36 tests)
+php tests/test_phase4_features.php            # Phase 4: Production features (14 tests)
+php tests/test_phase5_agent_integration.php   # Phase 5: Agent integration (33 tests)
+# Additional specialized tests
+php tests/test_admin_auth.php                 # Admin authentication tests
+php tests/test_rbac_integration.php           # RBAC integration tests
 ```
 
 ### Static Analysis
@@ -647,7 +725,7 @@ npm run lint
 Before deploying to production, run the comprehensive smoke test suite:
 
 ```bash
-# Run all smoke tests (37 checks + 155 unit tests)
+# Run all smoke tests (37 checks + 183 unit tests)
 bash scripts/smoke_test.sh
 ```
 
@@ -658,9 +736,24 @@ The smoke test verifies:
 - ✅ Database migrations
 - ✅ Feature implementations
 - ✅ Configuration validity
-- ✅ All 155 unit tests
+- ✅ All 183 unit tests
 
 **Exit code 0** means production-ready!
+
+### Load Testing
+
+Validate system capacity before production deployment:
+
+```bash
+# Install K6
+# On macOS: brew install k6
+# On Ubuntu: snap install k6
+
+# Run load tests
+k6 run tests/load/chat_api.js
+```
+
+See `tests/load/README.md` for detailed load testing documentation and scenarios.
 
 ### CI/CD Pipeline
 
@@ -668,33 +761,139 @@ All tests run automatically on every PR via GitHub Actions:
 - PHP linting and syntax validation
 - PHPStan static analysis (level 5)
 - ESLint JavaScript validation
-- All 155 unit tests
+- All 183 unit tests (Phases 1-5)
 - Automated build and deployment
 
 See `.github/workflows/cicd.yml` for details.
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Here's how to get started:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes and add tests
+4. Run the test suite to ensure everything passes
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to your branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
 ### Development Setup
 
 ```bash
-# Install development dependencies
+# Clone the repository
+git clone https://github.com/suporterfid/gpt-chatbot-boilerplate.git
+cd gpt-chatbot-boilerplate
+
+# Install PHP dependencies
 composer install --dev
 
-# Run tests
-./vendor/bin/phpunit
+# Install Node.js dependencies for linting
+npm install
 
-# Start development server
-docker-compose -f docker-compose.dev.yml up
+# Copy environment file and configure
+cp .env.example .env
+# Edit .env with your settings
+
+# Start with Docker
+docker-compose up -d
+
+# Or run locally with PHP built-in server
+php -S localhost:8080
 ```
 
-## 📚 Implementation Documentation
+### Running Tests & Quality Checks
+
+```bash
+# Run all test suites
+php tests/run_tests.php
+php tests/run_phase2_tests.php
+php tests/run_phase3_tests.php
+php tests/test_phase4_features.php
+php tests/test_phase5_agent_integration.php
+
+# Run static analysis
+composer run analyze
+
+# Run linting
+npm run lint
+
+# Run smoke tests
+bash scripts/smoke_test.sh
+```
+
+## 📚 Documentation
+
+### Implementation & Feature Documentation
 
 For a comprehensive overview of the complete implementation across all phases:
 - 📋 [Implementation Report](docs/IMPLEMENTATION_REPORT.md) - Complete implementation details, metrics, and production readiness assessment
 - 📝 [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) - Detailed phase-by-phase implementation plan with status updates
+- 🔐 [Phase 1: Database & Agent Model](docs/PHASE1_DB_AGENT.md) - Agent management and Admin API
+- 🎨 [Phase 2: Admin UI](docs/PHASE2_ADMIN_UI.md) - Visual interface, prompts, and vector stores
+- 🔧 [Phase 3: Workers & Webhooks](docs/PHASE3_WORKERS_WEBHOOKS.md) - Background jobs, webhooks, and RBAC
+
+### Operational Documentation
+
+Production operations guides in `docs/ops/`:
+- 🔧 [Backup & Restore](docs/ops/backup_restore.md) - Database backup, rotation, and disaster recovery
+- 📊 [Monitoring](docs/ops/monitoring/) - Prometheus metrics, alerts, and health checks
+- 📝 [Logging](docs/ops/logs.md) - Structured logging, aggregation (ELK, CloudWatch, LogDNA)
+- 🔐 [Secrets Management](docs/ops/secrets_management.md) - Token rotation, key management, vault integration
+- 🛡️ [Security](docs/ops/nginx-production.conf) - Production Nginx config with HTTPS and security headers
+- 🚨 [Incident Response](docs/ops/incident_runbook.md) - Runbook for common production issues
+- 🚀 [Production Deployment](docs/ops/production-deploy.md) - Step-by-step production deployment guide
+
+### API & Customization Guides
+
+- 📖 [API Reference](docs/api.md) - Complete endpoint documentation
+- 🎨 [Customization Guide](docs/customization-guide.md) - Styling, configuration, and extension
+- 🚀 [Deployment Guide](docs/deployment.md) - Docker, cloud deployment, and scaling
+
+## 📊 Observability & Monitoring
+
+### Metrics Endpoint
+
+The application exposes Prometheus-compatible metrics at `/metrics.php`:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  http://localhost/metrics.php
+```
+
+**Available Metrics:**
+- **Job Metrics**: Queue depth, processed/failed jobs, job types
+- **System Metrics**: Total agents, prompts, vector stores, users by role
+- **Worker Metrics**: Last job timestamp, worker health status
+- **Database Metrics**: Database size (SQLite)
+- **API Metrics**: Admin API requests by resource
+- **Webhook Metrics**: Processed vs pending events
+
+### Health Checks
+
+Enhanced health endpoint at `/admin-api.php?action=health`:
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  http://localhost/admin-api.php?action=health
+```
+
+Returns detailed status for:
+- Database connectivity
+- OpenAI API accessibility
+- Worker process health
+- Job queue depth
+- Failed jobs in last 24 hours
+
+### Alerting
+
+Configure Prometheus alerts using the provided rules in `docs/ops/monitoring/alerts.yml`:
+- High job failure rate (10%+ warning, 50%+ critical)
+- Queue depth warnings (100+ jobs)
+- Worker down detection (5+ minutes inactive)
+- OpenAI API error rate monitoring
+- Database growth tracking
+- SSL certificate expiration warnings
 
 ## 📝 License
 
