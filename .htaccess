@@ -1,3 +1,6 @@
+# Ensure a default landing page is always returned
+DirectoryIndex index.php default.php index.html
+
 # Pass Authorization header to PHP (Apache 2.4.13+)
 # This is the most reliable method for passing the Authorization header
 CGIPassAuth On
@@ -10,6 +13,14 @@ CGIPassAuth On
     # This is required for Bearer token authentication in admin-api.php
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Serve the Admin SPA entrypoint when the directory itself is requested
+    RewriteRule ^public/admin/?$ public/admin/index.html [L]
+
+    # Handle deep links within the Admin SPA (e.g. /public/admin/#/prompts)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^public/admin/ public/admin/index.html [L]
 </IfModule>
 
 # Set environment variable for Authorization header (alternative method)
