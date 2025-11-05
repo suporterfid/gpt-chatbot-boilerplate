@@ -1,0 +1,24 @@
+# Enable rewrite engine
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Pass Authorization header to PHP
+    # This is required for Bearer token authentication in admin-api.php
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
+# Set environment variable for Authorization header (alternative method)
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+</IfModule>
+
+# CORS headers for admin API
+# NOTE: For production, replace "*" with specific allowed origins
+# Example: Header always set Access-Control-Allow-Origin "https://yourdomain.com"
+<IfModule mod_headers.c>
+    Header always set Access-Control-Allow-Origin "*"
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
+    Header always set Access-Control-Max-Age "3600"
+</IfModule>

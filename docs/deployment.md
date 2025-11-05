@@ -73,7 +73,7 @@ This guide covers various deployment scenarios for the GPT Chatbot Boilerplate, 
 2. **Enable site and modules**:
    ```bash
    sudo a2ensite chatbot
-   sudo a2enmod rewrite headers
+   sudo a2enmod rewrite headers setenvif
    sudo systemctl restart apache2
    ```
 
@@ -292,6 +292,7 @@ cd gpt-chatbot-boilerplate
 # Configure environment
 cp .env.example .env
 # Edit .env with your settings
+# IMPORTANT: Set ADMIN_TOKEN to a secure random string (min 32 chars)
 
 # Start development environment
 docker-compose up -d
@@ -301,6 +302,44 @@ docker-compose logs -f
 
 # Access application
 curl http://localhost:8080
+
+# Access admin panel
+# Open http://localhost:8080/public/admin/ in your browser
+# Enter the ADMIN_TOKEN from your .env file when prompted
+```
+
+### Admin Panel Access in Docker
+
+The admin panel requires proper Authorization header handling. The application includes:
+
+1. **Root `.htaccess` configuration** to pass Authorization headers to PHP
+2. **Dockerfile configuration** with required Apache modules (`mod_rewrite`, `mod_headers`, `mod_setenvif`)
+3. **Multi-source header detection** in `admin-api.php` to handle different Apache configurations
+
+If you encounter "403 Forbidden - Authorization header required" errors:
+
+1. Ensure your `.env` file contains a valid `ADMIN_TOKEN`:
+   ```bash
+   ADMIN_TOKEN=your_random_admin_token_here_min_32_chars
+   ```
+
+2. Rebuild the Docker container to apply configuration changes:
+   ```bash
+   docker-compose down
+   docker-compose build --no-cache
+   docker-compose up -d
+   ```
+
+3. Check Apache logs for authorization issues:
+   ```bash
+   docker-compose logs chatbot | grep -i authorization
+   ```
+
+4. Verify the Authorization header is being sent by checking browser Network tab (DevTools)
+
+**Security Note**: The default `.htaccess` configuration includes `Access-Control-Allow-Origin "*"` for development convenience. For production deployments, update this to specify your domain:
+```apache
+Header always set Access-Control-Allow-Origin "https://yourdomain.com"
 ```
 
 ### Production with Docker
