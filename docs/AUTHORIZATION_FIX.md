@@ -40,6 +40,15 @@ CGIPassAuth On
 
 ## Testing
 
+### Test Results ✅
+
+**Verified working in Docker environment:**
+- ✅ Without Authorization header: Returns "Authorization header required" (HTTP 403)
+- ✅ With invalid token: Returns "Invalid authentication token" (HTTP 403) - proves header is received
+- ✅ With valid token: Authentication succeeds and processes request (HTTP 200)
+
+The fix has been tested and confirmed to work in the Docker/Apache/PHP environment.
+
 ### Automated Test
 Run the authorization header passing test:
 ```bash
