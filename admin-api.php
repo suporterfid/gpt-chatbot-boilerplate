@@ -41,6 +41,25 @@ function log_admin($message, $level = 'info') {
     @file_put_contents($logFile, $line, FILE_APPEND);
 }
 
+/**
+ * Send SSE event to client
+ */
+function sendSSEEvent($type, $data = null, $id = null) {
+    if ($id !== null) {
+        echo "id: $id\n";
+    }
+
+    echo "event: $type\n";
+
+    if ($data !== null) {
+        $jsonData = json_encode($data);
+        echo "data: $jsonData\n";
+    }
+
+    echo "\n";
+    flush();
+}
+
 // Authentication check - supports both legacy ADMIN_TOKEN and AdminAuth
 function checkAuthentication($config, $adminAuth) {
     $headers = [];
