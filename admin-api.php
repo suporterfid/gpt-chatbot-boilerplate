@@ -200,29 +200,37 @@ try {
     // Initialize AdminAuth before authentication check
     $adminAuth = new AdminAuth($db, $config);
     
-    // Check authentication and get user
-    $authenticatedUser = checkAuthentication($config, $adminAuth);
-    
-    // Check rate limit (after authentication, before processing request)
-    checkAdminRateLimit($config);
-    
+    // Determine action and request method early so we can decide on authentication requirements
+    $action = $_GET['action'] ?? '';
+    $method = $_SERVER['REQUEST_METHOD'];
+
+    // Public endpoints that don't require authentication (e.g., health checks for login screen)
+    $publicActions = ['health'];
+    $requiresAuth = !in_array($action, $publicActions, true);
+
+    // Check authentication and get user when required
+    $authenticatedUser = null;
+    if ($requiresAuth) {
+        $authenticatedUser = checkAuthentication($config, $adminAuth);
+
+        // Check rate limit (after authentication, before processing request)
+        checkAdminRateLimit($config);
+    }
+
     // Initialize OpenAI Admin Client
     $openaiClient = null;
     if (!empty($config['openai']['api_key'])) {
         $openaiClient = new OpenAIAdminClient($config['openai']);
     }
-    
+
     // Initialize services
     $agentService = new AgentService($db);
     $promptService = new PromptService($db, $openaiClient);
     $vectorStoreService = new VectorStoreService($db, $openaiClient);
     $jobQueue = new JobQueue($db);
-    
-    // Get action from query parameter
-    $action = $_GET['action'] ?? '';
-    $method = $_SERVER['REQUEST_METHOD'];
-    
-    log_admin("$method /admin-api.php?action=$action [user: {$authenticatedUser['email']}]");
+
+    $logUser = $authenticatedUser['email'] ?? 'anonymous';
+    log_admin("$method /admin-api.php?action=$action [user: $logUser]");
     
     // Route to appropriate handler
     switch ($action) {
