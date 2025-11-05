@@ -1,8 +1,13 @@
 # AI Agents and Integration Guide
 
+> **🇧🇷 Guia em Português:** Para um guia completo de criação e publicação de agentes em português, consulte [GUIA_CRIACAO_AGENTES.md](docs/GUIA_CRIACAO_AGENTES.md)
+
+> **📚 Quick Start:** For a step-by-step guide on creating agents, see the [Agent Creation Guide](docs/GUIA_CRIACAO_AGENTES.md) (Portuguese) or the [Customization Guide](docs/customization-guide.md#agent-based-configuration) (English)
+
 ## Overview
 - This project provides a dual-mode PHP backend and JavaScript widget that can switch between OpenAI's Chat Completions and Responses APIs, including streaming, file uploads, and optional WebSocket transport.【F:README.md†L1-L110】【F:chat-unified.php†L1-L265】
 - `ChatHandler` orchestrates validation, rate limiting, conversation storage, and agent-specific flows while delegating OpenAI calls to `OpenAIClient`. Both classes are reusable across HTTP SSE, AJAX fallbacks, and the optional Ratchet WebSocket server.【F:includes/ChatHandler.php†L15-L1276】【F:includes/OpenAIClient.php†L17-L299】【F:websocket-server.php†L18-L220】
+- **Agents** are persistent AI configurations that can be created and managed via the Admin UI or Admin API without code changes.
 
 ## Architecture Map
 - **HTTP entrypoint** – `chat-unified.php` normalizes GET/POST payloads, negotiates SSE headers, exposes the `sendSSEEvent` helper, and routes to chat or responses handlers with JSON fallbacks when `stream=false`. All API errors are funneled into SSE `error` events or JSON responses.【F:chat-unified.php†L35-L268】
@@ -11,6 +16,49 @@
 - **Front-end widget** – `chatbot-enhanced.js` renders the UI, assembles requests (including Responses overrides and file payloads), negotiates WebSocket→SSE→AJAX fallbacks, and interprets streamed SSE/WebSocket chunks (`start`/`chunk`/`done`/`tool_call`).【F:chatbot-enhanced.js†L13-L1484】
 - **Optional WebSocket relay** – `websocket-server.php` mirrors the chat-completions streaming loop over Ratchet, emitting JSON `start`/`chunk`/`done`/`error` events to clients while maintaining per-connection history.【F:websocket-server.php†L31-L220】
 - **Configuration** – `config.php` hydrates environment variables (including prompt IDs, tool defaults, vector store IDs, upload limits, and WebSocket toggles) and materializes them for both agents.【F:config.php†L185-L297】
+
+## Creating and Managing Agents
+
+Agents can be created and managed in two ways:
+
+### Via Admin UI (Recommended)
+
+1. Access `/public/admin/` and authenticate with your admin token
+2. Navigate to the "Agents" section (default page)
+3. Click "Create Agent" button
+4. Fill in the agent configuration:
+   - **Name** (required): Unique identifier
+   - **Description**: Purpose of the agent
+   - **API Type**: Responses API or Chat Completions API
+   - **Model**: GPT-4o, GPT-4o-mini, etc.
+   - **Prompt ID**: Reference to saved OpenAI prompt
+   - **System Message**: Custom instructions
+   - **Temperature**: 0-2 (creativity level)
+   - **Vector Store IDs**: For file search capabilities
+   - **Tools**: Enable file search or other tools
+   - **Set as Default**: Make this the default agent
+5. Click "Create Agent" to save
+
+For detailed step-by-step instructions with screenshots, see [GUIA_CRIACAO_AGENTES.md](docs/GUIA_CRIACAO_AGENTES.md).
+
+### Via Admin API
+
+```bash
+curl -X POST "http://localhost/admin-api.php?action=create_agent" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Customer Support",
+    "api_type": "responses",
+    "model": "gpt-4o-mini",
+    "temperature": 0.7,
+    "tools": [{"type": "file_search"}],
+    "vector_store_ids": ["vs_knowledge_base"],
+    "is_default": true
+  }'
+```
+
+For complete API documentation, see [docs/PHASE1_DB_AGENT.md](docs/PHASE1_DB_AGENT.md).
 
 ## Agent Profiles
 ### Chat Completions Agent (`api_type=chat`)

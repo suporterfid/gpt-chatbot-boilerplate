@@ -75,6 +75,8 @@ class AdaptiveChatBot {
 
 ## Agent-Based Configuration
 
+> **🇧🇷 Guia em Português:** Para um guia completo e ilustrado sobre criação de agentes, veja [GUIA_CRIACAO_AGENTES.md](GUIA_CRIACAO_AGENTES.md)
+
 The chatbot supports dynamic agent selection, allowing you to create multiple AI personalities with different configurations that can be selected at runtime. Agents are managed via the Admin UI or Admin API and can override any configuration parameter.
 
 ### Why Use Agents?
