@@ -1277,13 +1277,9 @@ async function refreshJobsPage() {
         
         content.innerHTML = html;
         
-        // Restore scroll position after refresh (restore both if needed)
-        if (contentScrollTop > 0) {
-            content.scrollTop = contentScrollTop;
-        }
-        if (windowScrollY > 0) {
-            window.scrollTo(window.scrollX || window.pageXOffset || 0, windowScrollY);
-        }
+        // Restore scroll position after refresh
+        content.scrollTop = contentScrollTop;
+        window.scrollTo(window.scrollX || document.documentElement.scrollLeft || 0, windowScrollY);
     } catch (error) {
         content.innerHTML = `<div class="card"><div class="card-body">Error loading jobs: ${error.message}</div></div>`;
         showToast('Failed to load jobs: ' + error.message, 'error');
