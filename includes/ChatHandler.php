@@ -84,6 +84,9 @@ class ChatHandler {
             if (isset($agent['system_message'])) {
                 $overrides['system_message'] = $agent['system_message'];
             }
+            if (isset($agent['response_format'])) {
+                $overrides['response_format'] = $agent['response_format'];
+            }
             
             return $overrides;
         } catch (Exception $e) {
@@ -207,9 +210,10 @@ class ChatHandler {
      * @param string|null $promptId
      * @param string|null $promptVersion
      * @param array|null $tools Optional Responses tools configuration overrides.
+     * @param array|null $responseFormat Optional response_format configuration for structured outputs.
      * @param string|null $agentId Optional agent ID to load configuration from.
      */
-    public function handleResponsesChat($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null, $agentId = null) {
+    public function handleResponsesChat($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null, $responseFormat = null, $agentId = null) {
         // Resolve agent overrides (agent > config.php)
         $agentOverrides = $this->resolveAgentOverrides($agentId);
         
@@ -296,6 +300,20 @@ class ChatHandler {
                 $prompt['version'] = $effectivePromptVersion;
             }
             $payload['prompt'] = $prompt;
+        }
+
+        // Apply response_format with precedence: request > agent > config
+        $effectiveResponseFormat = null;
+        if ($responseFormat !== null && is_array($responseFormat)) {
+            $effectiveResponseFormat = $responseFormat;
+        } elseif (isset($agentOverrides['response_format']) && is_array($agentOverrides['response_format'])) {
+            $effectiveResponseFormat = $agentOverrides['response_format'];
+        } elseif (isset($responsesConfig['response_format']) && is_array($responsesConfig['response_format'])) {
+            $effectiveResponseFormat = $responsesConfig['response_format'];
+        }
+
+        if ($effectiveResponseFormat !== null) {
+            $payload['response_format'] = $effectiveResponseFormat;
         }
 
         $messageStarted = false;
@@ -495,11 +513,12 @@ class ChatHandler {
      * @param string|null $promptId
      * @param string|null $promptVersion
      * @param array|null $tools Optional Responses tools configuration overrides.
+     * @param array|null $responseFormat Optional response_format configuration for structured outputs.
      * @param string|null $agentId Optional agent ID to load configuration from.
      *
      * @return array
      */
-    public function handleResponsesChatSync($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null, $agentId = null) {
+    public function handleResponsesChatSync($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null, $responseFormat = null, $agentId = null) {
         // Resolve agent overrides (agent > config.php)
         $agentOverrides = $this->resolveAgentOverrides($agentId);
         
@@ -586,6 +605,20 @@ class ChatHandler {
                 $prompt['version'] = $effectivePromptVersion;
             }
             $payload['prompt'] = $prompt;
+        }
+
+        // Apply response_format with precedence: request > agent > config
+        $effectiveResponseFormat = null;
+        if ($responseFormat !== null && is_array($responseFormat)) {
+            $effectiveResponseFormat = $responseFormat;
+        } elseif (isset($agentOverrides['response_format']) && is_array($agentOverrides['response_format'])) {
+            $effectiveResponseFormat = $agentOverrides['response_format'];
+        } elseif (isset($responsesConfig['response_format']) && is_array($responsesConfig['response_format'])) {
+            $effectiveResponseFormat = $responsesConfig['response_format'];
+        }
+
+        if ($effectiveResponseFormat !== null) {
+            $payload['response_format'] = $effectiveResponseFormat;
         }
 
         $execute = function(array $payload) use (&$messages, $conversationId) {

@@ -174,13 +174,41 @@ if (!function_exists('parseIntFromEnv')) {
     }
 }
 
+if (!function_exists('parseResponseFormatEnv')) {
+    function parseResponseFormatEnv($value): ?array {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        
+        if (is_string($value)) {
+            $value = trim($value);
+            if ($value === '') {
+                return null;
+            }
+            
+            $decoded = json_decode($value, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                return $decoded;
+            }
+        }
+        
+        if (is_array($value)) {
+            return $value;
+        }
+        
+        return null;
+    }
+}
+
 $responsesToolsEnv = getEnvValue('RESPONSES_TOOLS');
 $responsesVectorStoreIdsEnv = getEnvValue('RESPONSES_VECTOR_STORE_IDS');
 $responsesMaxResultsEnv = getEnvValue('RESPONSES_MAX_NUM_RESULTS');
+$responsesResponseFormatEnv = getEnvValue('RESPONSES_RESPONSE_FORMAT');
 
 $defaultResponsesTools = parseResponsesToolsEnv($responsesToolsEnv);
 $defaultVectorStoreIds = parseResponsesVectorStoreIdsEnv($responsesVectorStoreIdsEnv);
 $defaultMaxNumResults = parseIntFromEnv($responsesMaxResultsEnv, 1, 200);
+$defaultResponseFormat = parseResponseFormatEnv($responsesResponseFormatEnv);
 
 $config = [
     // API Configuration - Choose between 'chat' or 'responses'
@@ -218,6 +246,7 @@ $config = [
         'default_tools' => $defaultResponsesTools,
         'default_vector_store_ids' => $defaultVectorStoreIds,
         'default_max_num_results' => $defaultMaxNumResults,
+        'response_format' => $defaultResponseFormat,
     ],
 
     // Session & Storage Configuration
