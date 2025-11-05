@@ -80,7 +80,7 @@ if (strpos($adminJsContent, '<select name="model"') !== false &&
 
 // Test 8: Verify model dropdown has fallback
 echo "Test 8: Model input has fallback to text field... ";
-if (strpos($adminJsContent, 'modelOptions ?') !== false && 
+if (strpos($adminJsContent, 'modelInputHtml') !== false && 
     strpos($adminJsContent, '<input type="text" name="model"') !== false) {
     echo "✓ PASS\n";
 } else {

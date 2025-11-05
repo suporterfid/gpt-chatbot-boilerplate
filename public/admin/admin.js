@@ -504,26 +504,33 @@ async function showCreateAgentModal() {
     const promptOptions = prompts.map(p => `<option value="${p.openai_prompt_id || ''}">${p.name}</option>`).join('');
     const vectorStoreOptions = vectorStores.map(vs => `<option value="${vs.openai_store_id || ''}">${vs.name}</option>`).join('');
     
-    // Filter and sort models - prioritize GPT models
-    let modelOptions = '';
-    if (models && models.data && models.data.length > 0) {
-        // Sort models: gpt-4 first, then gpt-3.5, then others
-        const sortedModels = models.data.sort((a, b) => {
-            const aIsGpt4 = a.id.startsWith('gpt-4');
-            const bIsGpt4 = b.id.startsWith('gpt-4');
-            const aIsGpt35 = a.id.startsWith('gpt-3.5');
-            const bIsGpt35 = b.id.startsWith('gpt-3.5');
-            
-            if (aIsGpt4 && !bIsGpt4) return -1;
-            if (!aIsGpt4 && bIsGpt4) return 1;
-            if (aIsGpt35 && !bIsGpt35) return -1;
-            if (!aIsGpt35 && bIsGpt35) return 1;
-            
-            return a.id.localeCompare(b.id);
+    // Build model options with priority sorting
+    const buildModelOptions = (modelsData) => {
+        if (!modelsData || !modelsData.data || modelsData.data.length === 0) {
+            return '';
+        }
+        
+        // Priority map for model prefixes
+        const getPriority = (modelId) => {
+            if (modelId.startsWith('gpt-4')) return 1;
+            if (modelId.startsWith('gpt-3.5')) return 2;
+            return 3;
+        };
+        
+        const sortedModels = modelsData.data.sort((a, b) => {
+            const priorityDiff = getPriority(a.id) - getPriority(b.id);
+            return priorityDiff !== 0 ? priorityDiff : a.id.localeCompare(b.id);
         });
         
-        modelOptions = sortedModels.map(m => `<option value="${m.id}">${m.id}</option>`).join('');
-    }
+        return sortedModels.map(m => `<option value="${m.id}">${m.id}</option>`).join('');
+    };
+    
+    const modelOptions = buildModelOptions(models);
+    
+    // Build model input field (dropdown or text fallback)
+    const modelInputHtml = modelOptions 
+        ? `<select name="model" class="form-select"><option value="">Use default</option>${modelOptions}</select>`
+        : `<input type="text" name="model" class="form-input" placeholder="e.g., gpt-4o, gpt-4o-mini" />`;
     
     const content = `
         <form id="agent-form" onsubmit="handleCreateAgent(event)">
@@ -547,7 +554,7 @@ async function showCreateAgentModal() {
             
             <div class="form-group">
                 <label class="form-label">Model</label>
-                ${modelOptions ? `<select name="model" class="form-select"><option value="">Use default</option>${modelOptions}</select>` : `<input type="text" name="model" class="form-input" placeholder="e.g., gpt-4o, gpt-4o-mini" />`}
+                ${modelInputHtml}
                 <small class="form-help">Select a model or leave as default</small>
             </div>
             
