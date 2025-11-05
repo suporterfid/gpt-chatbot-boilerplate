@@ -6,8 +6,11 @@
 
 echo "=== Test Agent Endpoint Test ===\n\n";
 
+// Test credentials (generated for testing only, not for production use)
+const TEST_TOKEN = 'test_admin_token_for_phase1_testing_min32chars';
+
 // Set up .env file for testing
-$envContent = "ADMIN_TOKEN=test_admin_token_for_phase1_testing_min32chars\n";
+$envContent = "ADMIN_TOKEN=" . TEST_TOKEN . "\n";
 $envContent .= "OPENAI_API_KEY=test_key\n";
 $envPath = __DIR__ . '/../.env';
 $envBackupPath = __DIR__ . '/../.env.backup.test';
@@ -33,7 +36,6 @@ sleep(3); // Wait for server to start
 echo "Started test server (PID: $pid) on port $port\n\n";
 
 $baseUrl = "http://localhost:$port";
-$testToken = "test_admin_token_for_phase1_testing_min32chars";
 
 $testsPassed = 0;
 $testsFailed = 0;
@@ -79,10 +81,9 @@ function testRequest($name, $url, $method = 'GET', $headers = [], $body = null) 
 }
 
 // First, create a test agent
-// Set ADMIN_TOKEN environment variable for testing
-$testToken = "test_admin_token_for_phase1_testing_min32chars";
-putenv("ADMIN_TOKEN=$testToken");
-$_ENV['ADMIN_TOKEN'] = $testToken;
+// Set test token for authentication (generated for testing only)
+putenv("ADMIN_TOKEN=" . TEST_TOKEN);
+$_ENV['ADMIN_TOKEN'] = TEST_TOKEN;
 
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/DB.php';
@@ -104,9 +105,9 @@ try {
 }
 
 // Verify the token is set in config
-if (!isset($config['admin']['token']) || $config['admin']['token'] !== $testToken) {
+if (!isset($config['admin']['token']) || $config['admin']['token'] !== TEST_TOKEN) {
     echo "Warning: ADMIN_TOKEN not properly set in config\n";
-    $config['admin']['token'] = $testToken;
+    $config['admin']['token'] = TEST_TOKEN;
 }
 
 $agentService = new AgentService($db);
@@ -127,7 +128,7 @@ echo "Created test agent: $agentId\n\n";
 
 // Test 1: GET request with token parameter (should work now)
 echo "--- Test 1: GET request with token parameter ---\n";
-$url1 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId&token=" . urlencode($testToken);
+$url1 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId&token=" . urlencode(TEST_TOKEN);
 $result1 = testRequest('GET with token param', $url1);
 
 if ($result1['code'] === 200 || strpos($result1['headers'], 'text/event-stream') !== false) {
@@ -142,7 +143,7 @@ if ($result1['code'] === 200 || strpos($result1['headers'], 'text/event-stream')
 // Test 2: GET request with Authorization header (should also work)
 echo "\n--- Test 2: GET request with Authorization header ---\n";
 $url2 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId";
-$result2 = testRequest('GET with Auth header', $url2, 'GET', ["Authorization: Bearer $testToken"]);
+$result2 = testRequest('GET with Auth header', $url2, 'GET', ["Authorization: Bearer " . TEST_TOKEN]);
 
 if ($result2['code'] === 200 || strpos($result2['headers'], 'text/event-stream') !== false) {
     echo "✓ PASS: GET request with Authorization header works\n";
@@ -155,7 +156,7 @@ if ($result2['code'] === 200 || strpos($result2['headers'], 'text/event-stream')
 
 // Test 3: GET request with admin_token parameter (legacy, should still work)
 echo "\n--- Test 3: GET request with admin_token parameter ---\n";
-$url3 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId&admin_token=" . urlencode($testToken);
+$url3 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId&admin_token=" . urlencode(TEST_TOKEN);
 $result3 = testRequest('GET with admin_token param', $url3);
 
 if ($result3['code'] === 200 || strpos($result3['headers'], 'text/event-stream') !== false) {
@@ -185,7 +186,7 @@ echo "\n--- Test 5: POST request with JSON body ---\n";
 $url5 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId";
 $postData = json_encode(['message' => 'Test message from POST']);
 $result5 = testRequest('POST with JSON', $url5, 'POST', [
-    "Authorization: Bearer $testToken",
+    "Authorization: Bearer " . TEST_TOKEN,
     "Content-Type: application/json"
 ], $postData);
 

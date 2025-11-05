@@ -8,10 +8,14 @@ echo
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR/.."
 
+# Generate test credentials (for testing only, not for production)
+TEST_TOKEN="${TEST_TOKEN:-test_admin_token_for_phase1_testing_min32chars}"
+TEST_API_KEY="${TEST_API_KEY:-sk-test-fake-key-for-demo}"
+
 # Create .env for testing
-cat > .env << 'EOF'
-ADMIN_TOKEN=test_admin_token_for_phase1_testing_min32chars
-OPENAI_API_KEY=sk-test-fake-key-for-demo
+cat > .env << EOF
+ADMIN_TOKEN=$TEST_TOKEN
+OPENAI_API_KEY=$TEST_API_KEY
 ADMIN_ENABLED=true
 DATABASE_PATH=./data/chatbot.db
 EOF
@@ -29,7 +33,7 @@ echo
 # Create test agent using the API
 echo "Creating test agent..."
 AGENT_RESPONSE=$(curl -s -X POST \
-  -H "Authorization: Bearer test_admin_token_for_phase1_testing_min32chars" \
+  -H "Authorization: Bearer $TEST_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Manual Test Agent",
@@ -64,7 +68,7 @@ echo
 timeout 5 curl -s -N \
   -H "Accept: text/event-stream" \
   -H "Cache-Control: no-cache" \
-  "http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID&token=test_admin_token_for_phase1_testing_min32chars" \
+  "http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID&token=$TEST_TOKEN" \
   | head -20
 
 echo
@@ -74,7 +78,7 @@ echo
 # Test 2: Check HTTP status code directly
 echo "--- Test 2: Check HTTP status code ---"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-  "http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID&token=test_admin_token_for_phase1_testing_min32chars")
+  "http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID&token=$TEST_TOKEN")
 
 echo "HTTP Status Code: $HTTP_CODE"
 if [ "$HTTP_CODE" = "200" ]; then
@@ -87,7 +91,7 @@ echo
 # Clean up
 echo "Cleaning up..."
 curl -s -X DELETE \
-  -H "Authorization: Bearer test_admin_token_for_phase1_testing_min32chars" \
+  -H "Authorization: Bearer $TEST_TOKEN" \
   "http://localhost:8088/admin-api.php?action=delete_agent&id=$AGENT_ID" > /dev/null
 
 kill $SERVER_PID
