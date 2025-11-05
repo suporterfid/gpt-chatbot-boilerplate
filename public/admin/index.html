@@ -51,6 +51,7 @@
                 <div class="header-right">
                     <span class="status-indicator" id="status-indicator">●</span>
                     <span id="status-text">Connected</span>
+                    <button type="button" class="btn btn-small btn-secondary" id="change-token-button">Change token</button>
                 </div>
             </header>
 
@@ -78,13 +79,18 @@
     <div class="toast-container" id="toast-container"></div>
 
     <!-- Token Setup Modal (shown on first load) -->
-    <div class="token-modal" id="token-modal" style="display: none;">
+    <div class="token-modal" id="token-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="token-modal-title">
         <div class="token-modal-content">
-            <h2>Admin Authentication</h2>
-            <p>Please enter your admin token to continue:</p>
-            <input type="password" id="token-input" placeholder="Enter admin token" />
-            <button onclick="saveToken()">Continue</button>
-            <p class="token-help">The admin token should be set in your .env file as ADMIN_TOKEN</p>
+            <h2 id="token-modal-title">Admin authentication required</h2>
+            <p>Please enter your admin token to continue.</p>
+            <form id="token-form">
+                <label class="sr-only" for="token-input">Admin token</label>
+                <input type="password" id="token-input" name="token" placeholder="Enter admin token" autocomplete="off" required />
+                <div class="token-modal-actions">
+                    <button type="submit" class="btn btn-primary">Continue</button>
+                </div>
+            </form>
+            <p class="token-help">This value should match the <code>ADMIN_TOKEN</code> from your server configuration.</p>
         </div>
     </div>
 

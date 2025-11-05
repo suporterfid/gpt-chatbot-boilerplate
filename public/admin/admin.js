@@ -3,26 +3,25 @@
 // Configuration
 const API_BASE = window.location.origin;
 const API_ENDPOINT = `${API_BASE}/admin-api.php`;
+const TOKEN_STORAGE_KEY = 'adminToken';
 
 // State
-let adminToken = localStorage.getItem('admin_token') || '';
+let adminToken = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
 let currentPage = 'agents';
 
 // API Client
 class AdminAPI {
-    constructor(token) {
-        this.token = token;
-    }
-
     async request(action, options = {}) {
         const url = `${API_ENDPOINT}?action=${action}${options.params || ''}`;
         const headers = {
             'Content-Type': 'application/json',
         };
 
-        if (this.token) {
-            headers['Authorization'] = `Bearer ${this.token}`;
-            headers['X-Admin-Token'] = this.token;
+        const token = getStoredToken();
+
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+            headers['X-Admin-Token'] = token;
         }
 
         const config = {
@@ -74,8 +73,10 @@ class AdminAPI {
         return this.request('make_default', { method: 'POST', params: `&id=${id}` });
     }
 
-    testAgent(id, message) {
-        return `${API_ENDPOINT}?action=test_agent&id=${id}`;
+    testAgent(id) {
+        const token = getStoredToken();
+        const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+        return `${API_ENDPOINT}?action=test_agent&id=${id}${tokenParam}`;
     }
 
     // Prompts
@@ -185,7 +186,7 @@ class AdminAPI {
     }
 }
 
-let api = new AdminAPI(adminToken);
+let api = new AdminAPI();
 
 // UI Helpers
 function showToast(message, type = 'success') {
@@ -227,27 +228,102 @@ function formatDate(dateString) {
 }
 
 // Token Management
+function getStoredToken() {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (token) {
+        return token;
+    }
+
+    const legacyToken = localStorage.getItem('admin_token');
+    if (legacyToken) {
+        setStoredToken(legacyToken);
+        localStorage.removeItem('admin_token');
+        return legacyToken;
+    }
+
+    return '';
+}
+
+function setStoredToken(token) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    adminToken = token;
+}
+
+function clearStoredToken() {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    adminToken = '';
+}
+
+function showTokenModal() {
+    const modal = document.getElementById('token-modal');
+    const form = document.getElementById('token-form');
+    const input = document.getElementById('token-input');
+
+    if (!modal) {
+        return;
+    }
+
+    if (form) {
+        form.reset();
+    }
+
+    modal.style.display = 'flex';
+
+    requestAnimationFrame(() => {
+        if (input) {
+            input.focus();
+        }
+    });
+}
+
+function hideTokenModal() {
+    const modal = document.getElementById('token-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
 function checkToken() {
+    adminToken = getStoredToken();
     if (!adminToken) {
-        document.getElementById('token-modal').style.display = 'flex';
+        const indicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+
+        if (indicator) {
+            indicator.classList.add('error');
+        }
+
+        if (statusText) {
+            statusText.textContent = 'Token required';
+        }
+
+        showTokenModal();
         return false;
     }
     return true;
 }
 
-function saveToken() {
-    const token = document.getElementById('token-input').value.trim();
+function saveToken(event) {
+    if (event) {
+        event.preventDefault();
+    }
+
+    const input = document.getElementById('token-input');
+    const token = input ? input.value.trim() : '';
+
     if (!token) {
         showToast('Please enter a valid token', 'error');
+        if (input) {
+            input.focus();
+        }
         return;
     }
-    
-    adminToken = token;
-    localStorage.setItem('admin_token', token);
-    api = new AdminAPI(token);
-    
-    document.getElementById('token-modal').style.display = 'none';
-    
+
+    setStoredToken(token);
+    api = new AdminAPI();
+
+    hideTokenModal();
+
     // Test the token
     testConnection();
 }
@@ -263,12 +339,11 @@ async function testConnection() {
         document.getElementById('status-indicator').classList.add('error');
         document.getElementById('status-text').textContent = 'Error';
         showToast('Failed to connect: ' + error.message, 'error');
-        
+
         // Clear token if authentication failed
         if (error.message.includes('token') || error.message.includes('401') || error.message.includes('403')) {
-            adminToken = '';
-            localStorage.removeItem('admin_token');
-            document.getElementById('token-modal').style.display = 'flex';
+            clearStoredToken();
+            showTokenModal();
         }
     }
 }
@@ -1611,8 +1686,8 @@ async function loadSettingsPage() {
                 </div>
                 <div class="card-body">
                     <p>Current token is configured and active.</p>
-                    <button class="btn btn-danger mt-2" onclick="clearToken()">Clear Token</button>
-                    <p class="form-help mt-1">You will need to re-enter your admin token after clearing it.</p>
+                    <button class="btn btn-secondary mt-2" onclick="changeToken()">Change Token</button>
+                    <p class="form-help mt-1">You will need to re-enter your admin token after changing it.</p>
                 </div>
             </div>
         `;
@@ -1624,19 +1699,36 @@ async function loadSettingsPage() {
     }
 }
 
-function clearToken() {
-    if (!confirm('Are you sure you want to clear the admin token? You will need to re-enter it.')) {
-        return;
+function changeToken() {
+    clearStoredToken();
+    const indicator = document.getElementById('status-indicator');
+    const statusText = document.getElementById('status-text');
+
+    if (indicator) {
+        indicator.classList.add('error');
     }
-    
-    adminToken = '';
-    localStorage.removeItem('admin_token');
-    document.getElementById('token-modal').style.display = 'flex';
+
+    if (statusText) {
+        statusText.textContent = 'Token required';
+    }
+
+    showToast('Admin token cleared. Please enter a new token.', 'info');
+    showTokenModal();
 }
 
 // ==================== Initialization ====================
 
 document.addEventListener('DOMContentLoaded', function() {
+    const tokenForm = document.getElementById('token-form');
+    if (tokenForm) {
+        tokenForm.addEventListener('submit', saveToken);
+    }
+
+    const changeTokenButton = document.getElementById('change-token-button');
+    if (changeTokenButton) {
+        changeTokenButton.addEventListener('click', () => changeToken());
+    }
+
     // Setup navigation
     document.querySelectorAll('.nav-link').forEach(link => {
         link.addEventListener('click', function(e) {
