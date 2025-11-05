@@ -24,8 +24,11 @@ echo "Cleaning up example agents...\n";
 foreach ($exampleAgents as $name) {
     $agents = $agentService->listAgents(['name' => $name]);
     foreach ($agents as $agent) {
-        $agentService->deleteAgent($agent['id']);
-        echo "  Deleted: {$agent['name']} ({$agent['id']})\n";
+        // Double-check exact name match before deletion (since LIKE uses wildcards)
+        if ($agent['name'] === $name) {
+            $agentService->deleteAgent($agent['id']);
+            echo "  Deleted: {$agent['name']} ({$agent['id']})\n";
+        }
     }
 }
 echo "Cleanup complete!\n";
