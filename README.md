@@ -60,7 +60,6 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Complete API Coverage**: 37 endpoints across all resources (agents, prompts, vector stores, jobs, users).
 - **Enhanced Security**: Comprehensive error handling, audit logging, and permission checks.
 - **Production Ready**: Full test coverage (14 tests in phase 4, 155 total at completion), static analysis (PHPStan), documented configuration, backward compatible.
-- See [PHASE4_COMPLETION_REPORT.md](PHASE4_COMPLETION_REPORT.md) for details.
 
 ### 🎯 **Phase 5: Agent Integration & Testing**
 - **Agent Integration**: Full agent support in chat interface with configuration merging.
@@ -78,7 +77,6 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Security Hardening**: Production-ready Nginx configuration with security headers and rate limiting.
 - **Load Testing**: K6 scripts for capacity testing and performance validation.
 - **Operational Docs**: Complete runbooks for incident response, monitoring, and log aggregation.
-- See [PHASE10_PRODUCTION_COMPLETION.md](PHASE10_PRODUCTION_COMPLETION.md) for details.
 
 ## 📋 Requirements
 
