@@ -188,6 +188,33 @@ class AdminAPI {
     listModels() {
         return this.request('list_models');
     }
+
+    // Channels
+    listAgentChannels(agentId) {
+        return this.request('list_agent_channels', { params: `&agent_id=${agentId}` });
+    }
+
+    getAgentChannel(agentId, channel) {
+        return this.request('get_agent_channel', { params: `&agent_id=${agentId}&channel=${channel}` });
+    }
+
+    upsertAgentChannel(agentId, channel, data) {
+        return this.request('upsert_agent_channel', { method: 'POST', params: `&agent_id=${agentId}&channel=${channel}`, body: data });
+    }
+
+    deleteAgentChannel(agentId, channel) {
+        return this.request('delete_agent_channel', { method: 'POST', params: `&agent_id=${agentId}&channel=${channel}` });
+    }
+
+    testChannelSend(agentId, channel, data) {
+        return this.request('test_channel_send', { method: 'POST', params: `&agent_id=${agentId}&channel=${channel}`, body: data });
+    }
+
+    listChannelSessions(agentId, channel = null, limit = 50, offset = 0) {
+        let params = `&agent_id=${agentId}&limit=${limit}&offset=${offset}`;
+        if (channel) params += `&channel=${channel}`;
+        return this.request('list_channel_sessions', { params });
+    }
 }
 
 let api = new AdminAPI();
@@ -460,6 +487,7 @@ async function loadAgentsPage() {
                         <td>${formatDate(agent.updated_at)}</td>
                         <td class="table-actions">
                             <button class="btn btn-small btn-secondary" onclick="editAgent('${agent.id}')">Edit</button>
+                            <button class="btn btn-small btn-info" onclick="manageChannels('${agent.id}', '${agent.name}')">Channels</button>
                             <button class="btn btn-small btn-primary" onclick="testAgent('${agent.id}')">Test</button>
                             ${!agent.is_default ? `<button class="btn btn-small btn-success" onclick="makeDefaultAgent('${agent.id}')">Make Default</button>` : ''}
                             <button class="btn btn-small btn-danger" onclick="deleteAgent('${agent.id}', '${agent.name}')">Delete</button>
@@ -1757,6 +1785,279 @@ function changeToken() {
 
     showToast('Admin token cleared. Please enter a new token.', 'info');
     showTokenModal();
+}
+
+// ==================== Channel Management ====================
+
+async function manageChannels(agentId, agentName) {
+    try {
+        const channels = await api.listAgentChannels(agentId);
+        
+        // Currently only WhatsApp is supported
+        const whatsapp = channels.find(c => c.channel === 'whatsapp');
+        
+        const content = `
+            <div class="channel-management">
+                <h4>Agent: ${agentName}</h4>
+                <p class="text-muted">Configure communication channels for this agent</p>
+                
+                <div class="channel-section">
+                    <div class="channel-header">
+                        <h5>📱 WhatsApp (via Z-API)</h5>
+                        <button class="btn btn-small btn-primary" onclick="configureWhatsApp('${agentId}', ${whatsapp ? `'${whatsapp.id}'` : 'null'})">
+                            ${whatsapp ? 'Edit Configuration' : 'Configure WhatsApp'}
+                        </button>
+                    </div>
+                    
+                    ${whatsapp ? `
+                        <div class="channel-status">
+                            <p><strong>Status:</strong> ${whatsapp.enabled ? '<span class="badge badge-success">Enabled</span>' : '<span class="badge badge-secondary">Disabled</span>'}</p>
+                            <p><strong>Business Number:</strong> ${whatsapp.config.whatsapp_business_number || 'Not configured'}</p>
+                            <p><strong>Instance ID:</strong> ${whatsapp.config.zapi_instance_id || 'N/A'}</p>
+                            <p><strong>Webhook URL:</strong> <code>${window.location.origin}/channels/whatsapp/${agentId}/webhook</code></p>
+                            
+                            <div class="channel-actions">
+                                <button class="btn btn-small btn-secondary" onclick="testWhatsAppMessage('${agentId}')">Send Test Message</button>
+                                <button class="btn btn-small btn-info" onclick="viewChannelSessions('${agentId}', 'whatsapp')">View Sessions</button>
+                                <button class="btn btn-small btn-danger" onclick="deleteChannelConfig('${agentId}', 'whatsapp')">Remove</button>
+                            </div>
+                        </div>
+                    ` : `
+                        <p class="text-muted">WhatsApp channel is not configured for this agent.</p>
+                    `}
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
+                </div>
+            </div>
+        `;
+        
+        openModal('Manage Channels', content);
+        
+    } catch (error) {
+        showToast('Failed to load channels: ' + error.message, 'error');
+    }
+}
+
+async function configureWhatsApp(agentId, channelId) {
+    // Load existing config if editing
+    let config = {
+        enabled: false,
+        whatsapp_business_number: '',
+        zapi_instance_id: '',
+        zapi_token: '',
+        zapi_base_url: 'https://api.z-api.io',
+        zapi_timeout_ms: 30000,
+        zapi_retries: 3,
+        reply_chunk_size: 4000,
+        allow_media_upload: true,
+        max_media_size_bytes: 10485760,
+        allowed_media_types: ['image/jpeg', 'image/png', 'application/pdf']
+    };
+    
+    if (channelId) {
+        try {
+            const existing = await api.getAgentChannel(agentId, 'whatsapp');
+            config = {...config, ...existing.config, enabled: existing.enabled};
+        } catch (error) {
+            console.error('Error loading channel config:', error);
+        }
+    }
+    
+    const content = `
+        <form id="whatsapp-config-form" onsubmit="handleSaveWhatsAppConfig(event, '${agentId}')">
+            <div class="form-group">
+                <label class="form-checkbox">
+                    <input type="checkbox" name="enabled" ${config.enabled ? 'checked' : ''} />
+                    Enable WhatsApp Channel
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">WhatsApp Business Number *</label>
+                <input type="text" name="whatsapp_business_number" class="form-input" 
+                       value="${config.whatsapp_business_number}" 
+                       placeholder="+5511999999999" required />
+                <small class="form-help">E.164 format (e.g., +5511999999999)</small>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Z-API Instance ID *</label>
+                <input type="text" name="zapi_instance_id" class="form-input" 
+                       value="${config.zapi_instance_id}" required />
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Z-API Token *</label>
+                <input type="password" name="zapi_token" class="form-input" 
+                       value="${config.zapi_token}" required />
+                <small class="form-help">Keep this secret!</small>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Z-API Base URL</label>
+                <input type="text" name="zapi_base_url" class="form-input" 
+                       value="${config.zapi_base_url}" />
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Timeout (ms)</label>
+                <input type="number" name="zapi_timeout_ms" class="form-input" 
+                       value="${config.zapi_timeout_ms}" min="1000" />
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Retries</label>
+                <input type="number" name="zapi_retries" class="form-input" 
+                       value="${config.zapi_retries}" min="1" max="10" />
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Reply Chunk Size</label>
+                <input type="number" name="reply_chunk_size" class="form-input" 
+                       value="${config.reply_chunk_size}" min="100" />
+                <small class="form-help">Long messages will be split into chunks</small>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-checkbox">
+                    <input type="checkbox" name="allow_media_upload" ${config.allow_media_upload ? 'checked' : ''} />
+                    Allow Media Upload
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Max Media Size (bytes)</label>
+                <input type="number" name="max_media_size_bytes" class="form-input" 
+                       value="${config.max_media_size_bytes}" min="1" />
+                <small class="form-help">10485760 = 10MB</small>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Allowed Media Types</label>
+                <input type="text" name="allowed_media_types" class="form-input" 
+                       value="${config.allowed_media_types.join(', ')}" />
+                <small class="form-help">Comma-separated MIME types</small>
+            </div>
+            
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="manageChannels('${agentId}', 'Agent')">Back</button>
+                <button type="submit" class="btn btn-primary">Save Configuration</button>
+            </div>
+        </form>
+    `;
+    
+    openModal('Configure WhatsApp', content);
+}
+
+async function handleSaveWhatsAppConfig(event, agentId) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    const data = {
+        enabled: formData.get('enabled') === 'on',
+        whatsapp_business_number: formData.get('whatsapp_business_number'),
+        zapi_instance_id: formData.get('zapi_instance_id'),
+        zapi_token: formData.get('zapi_token'),
+        zapi_base_url: formData.get('zapi_base_url'),
+        zapi_timeout_ms: parseInt(formData.get('zapi_timeout_ms')),
+        zapi_retries: parseInt(formData.get('zapi_retries')),
+        reply_chunk_size: parseInt(formData.get('reply_chunk_size')),
+        allow_media_upload: formData.get('allow_media_upload') === 'on',
+        max_media_size_bytes: parseInt(formData.get('max_media_size_bytes')),
+        allowed_media_types: formData.get('allowed_media_types').split(',').map(s => s.trim()).filter(s => s)
+    };
+    
+    try {
+        await api.upsertAgentChannel(agentId, 'whatsapp', data);
+        showToast('WhatsApp configuration saved successfully', 'success');
+        closeModal();
+        // Reopen the manage channels modal
+        setTimeout(() => manageChannels(agentId, 'Agent'), 300);
+    } catch (error) {
+        showToast('Failed to save configuration: ' + error.message, 'error');
+    }
+}
+
+async function testWhatsAppMessage(agentId) {
+    const phone = prompt('Enter phone number to send test message (E.164 format, e.g., +5511999999999):');
+    if (!phone) return;
+    
+    try {
+        await api.testChannelSend(agentId, 'whatsapp', {
+            to: phone,
+            message: 'Test message from GPT Chatbot Admin'
+        });
+        showToast('Test message sent successfully!', 'success');
+    } catch (error) {
+        showToast('Failed to send test message: ' + error.message, 'error');
+    }
+}
+
+async function viewChannelSessions(agentId, channel) {
+    try {
+        const sessions = await api.listChannelSessions(agentId, channel);
+        
+        let content = `
+            <div class="channel-sessions">
+                <h4>Active Sessions</h4>
+                ${sessions.length === 0 ? '<p class="text-muted">No active sessions</p>' : ''}
+                
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Conversation ID</th>
+                            <th>Last Seen</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        sessions.forEach(session => {
+            content += `
+                <tr>
+                    <td>${session.external_user_id}</td>
+                    <td><code>${session.conversation_id}</code></td>
+                    <td>${formatDate(session.last_seen_at)}</td>
+                    <td>${formatDate(session.created_at)}</td>
+                </tr>
+            `;
+        });
+        
+        content += `
+                    </tbody>
+                </table>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Close</button>
+                </div>
+            </div>
+        `;
+        
+        openModal('Channel Sessions', content);
+        
+    } catch (error) {
+        showToast('Failed to load sessions: ' + error.message, 'error');
+    }
+}
+
+async function deleteChannelConfig(agentId, channel) {
+    if (!confirm(`Are you sure you want to remove the ${channel} channel configuration?`)) {
+        return;
+    }
+    
+    try {
+        await api.deleteAgentChannel(agentId, channel);
+        showToast('Channel configuration removed successfully', 'success');
+        closeModal();
+    } catch (error) {
+        showToast('Failed to remove channel: ' + error.message, 'error');
+    }
 }
 
 // ==================== Initialization ====================
