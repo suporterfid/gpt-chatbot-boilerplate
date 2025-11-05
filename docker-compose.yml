@@ -4,11 +4,84 @@ services:
     ports:
       - "8080:80"
     environment:
+      # OpenAI Configuration
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-3.5-turbo}
-      - DEBUG=${DEBUG:-false}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE:-0.7}
+      - OPENAI_MAX_TOKENS=${OPENAI_MAX_TOKENS:-1000}
+      - OPENAI_TOP_P=${OPENAI_TOP_P:-1.0}
+      - OPENAI_FREQUENCY_PENALTY=${OPENAI_FREQUENCY_PENALTY:-0.0}
+      - OPENAI_PRESENCE_PENALTY=${OPENAI_PRESENCE_PENALTY:-0.0}
+
+      # Responses API Configuration
+      - RESPONSES_MODEL=${RESPONSES_MODEL:-gpt-4o-mini}
+      - RESPONSES_TEMPERATURE=${RESPONSES_TEMPERATURE:-0.7}
+      - RESPONSES_MAX_OUTPUT_TOKENS=${RESPONSES_MAX_OUTPUT_TOKENS:-1024}
+      - RESPONSES_TOP_P=${RESPONSES_TOP_P:-1.0}
+      - RESPONSES_FREQUENCY_PENALTY=${RESPONSES_FREQUENCY_PENALTY:-0.0}
+      - RESPONSES_PRESENCE_PENALTY=${RESPONSES_PRESENCE_PENALTY:-0.0}
+      - RESPONSES_PROMPT_ID=${RESPONSES_PROMPT_ID}
+      - RESPONSES_PROMPT_VERSION=${RESPONSES_PROMPT_VERSION}
+      - RESPONSES_TOOLS=${RESPONSES_TOOLS}
+      - RESPONSES_VECTOR_STORE_IDS=${RESPONSES_VECTOR_STORE_IDS}
+      - RESPONSES_MAX_NUM_RESULTS=${RESPONSES_MAX_NUM_RESULTS:-20}
+
+      # General Chat Configuration
+      - CHAT_MAX_MESSAGES=${CHAT_MAX_MESSAGES:-50}
+      - CHAT_SESSION_TIMEOUT=${CHAT_SESSION_TIMEOUT:-3600}
+      - CHAT_RATE_LIMIT=${CHAT_RATE_LIMIT:-60}
+      - CHAT_RATE_WINDOW=${CHAT_RATE_WINDOW:-60}
+      - CHAT_ENABLE_LOGGING=${CHAT_ENABLE_LOGGING:-true}
+
+      # Security
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - VALIDATE_REFERER=${VALIDATE_REFERER:-false}
+      - API_KEY_VALIDATION=${API_KEY_VALIDATION:-true}
+      - SANITIZE_INPUT=${SANITIZE_INPUT:-true}
+      - MAX_MESSAGE_LENGTH=${MAX_MESSAGE_LENGTH:-4000}
+
+      # WebSocket
+      - WEBSOCKET_ENABLED=${WEBSOCKET_ENABLED:-false}
+      - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
+      - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8080}
+      - WEBSOCKET_SSL=${WEBSOCKET_SSL:-false}
+      - WEBSOCKET_SSL_CERT=${WEBSOCKET_SSL_CERT}
+      - WEBSOCKET_SSL_KEY=${WEBSOCKET_SSL_KEY}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FILE=${LOG_FILE:-logs/chatbot.log}
+      - LOG_MAX_SIZE=${LOG_MAX_SIZE:-10485760}
+      - LOG_MAX_FILES=${LOG_MAX_FILES:-5}
+
+      # Storage
+      - STORAGE_TYPE=${STORAGE_TYPE:-session}
+      - STORAGE_PATH=${STORAGE_PATH:-/tmp/assistant_chatbot_data}
+
+      # Features & Limits
+      - ENABLE_FILE_UPLOAD=${ENABLE_FILE_UPLOAD:-true}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-25165824}
+      - ALLOWED_FILE_TYPES=${ALLOWED_FILE_TYPES:-pdf,doc,docx,txt,jpg,png,csv,xlsx}
+
+      # Admin & Jobs
+      - ADMIN_ENABLED=${ADMIN_ENABLED:-true}
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - DATABASE_PATH=${DATABASE_PATH:-./data/chatbot.db}
+      - JOBS_ENABLED=${JOBS_ENABLED:-true}
+      - ADMIN_RATE_LIMIT_REQUESTS=${ADMIN_RATE_LIMIT_REQUESTS:-300}
+      - ADMIN_RATE_LIMIT_WINDOW=${ADMIN_RATE_LIMIT_WINDOW:-60}
+
+      # Performance
+      - CACHE_ENABLED=${CACHE_ENABLED:-false}
+      - CACHE_TTL=${CACHE_TTL:-3600}
+      - COMPRESSION_ENABLED=${COMPRESSION_ENABLED:-true}
+
+      # Miscellaneous
+      - DEBUG=${DEBUG:-false}
+      - THREAD_CLEANUP_HOURS=${THREAD_CLEANUP_HOURS:-24}
+      - API_TYPE=${API_TYPE:-responses}
+
     volumes:
       - ./logs:/var/www/html/logs
       - ./.env:/var/www/html/.env:ro
@@ -19,6 +92,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
 
   # Optional WebSocket server (uncomment if needed)
   # websocket:
