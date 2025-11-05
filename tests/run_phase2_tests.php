@@ -330,6 +330,28 @@ try {
     echo "✗ Test failed: " . $e->getMessage() . "\n";
 }
 
+echo "\n--- Test 21: Create Vector Store with Existing OpenAI ID (Sync Scenario) ---\n";
+try {
+    // Simulate syncing from OpenAI - should NOT create duplicate
+    // Mock OpenAI client would be called in normal createVectorStore, but with openai_store_id provided, it should skip
+    $existingOpenAIId = 'vs_test_existing_123';
+    
+    $store = $vectorStoreService->createVectorStore([
+        'name' => 'Synced Store',
+        'openai_store_id' => $existingOpenAIId
+    ]);
+    
+    assert_not_null($store, 'Vector store created with existing OpenAI ID');
+    assert_equals('Synced Store', $store['name'], 'Store name matches');
+    assert_equals($existingOpenAIId, $store['openai_store_id'], 'OpenAI ID preserved');
+    assert_equals('ready', $store['status'], 'Store status is ready');
+    
+    // Cleanup
+    $vectorStoreService->deleteVectorStore($store['id']);
+} catch (Exception $e) {
+    echo "✗ Test failed: " . $e->getMessage() . "\n";
+}
+
 // Cleanup
 echo "\n--- Cleanup ---\n";
 try {
