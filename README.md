@@ -912,6 +912,7 @@ Production operations guides in `docs/ops/`:
 - 📖 [API Reference](docs/api.md) - Complete endpoint documentation
 - 🎨 [Customization Guide](docs/customization-guide.md) - Styling, configuration, and extension
 - 🚀 [Deployment Guide](docs/deployment.md) - Docker, cloud deployment, and scaling
+- 🤖 [Agent Creation Guide](docs/GUIA_CRIACAO_AGENTES.md) - 🇧🇷 Guia completo de criação e publicação de agentes (Portuguese)
 
 ## 📊 Observability & Monitoring
 
