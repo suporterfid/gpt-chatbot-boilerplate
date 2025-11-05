@@ -1201,6 +1201,9 @@ async function loadJobsPage() {
 async function refreshJobsPage() {
     const content = document.getElementById('content');
     
+    // Save scroll position before refresh
+    const scrollTop = content.scrollTop;
+    
     try {
         const [stats, pendingJobs, runningJobs, recentJobs] = await Promise.all([
             api.jobStats(),
@@ -1272,6 +1275,9 @@ async function refreshJobsPage() {
         `;
         
         content.innerHTML = html;
+        
+        // Restore scroll position after refresh
+        content.scrollTop = scrollTop;
     } catch (error) {
         content.innerHTML = `<div class="card"><div class="card-body">Error loading jobs: ${error.message}</div></div>`;
         showToast('Failed to load jobs: ' + error.message, 'error');
