@@ -1,0 +1,63 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+README.md
+CHANGELOG.md
+PROJECT_DESCRIPTION.md
+AGENTS.md
+docs/
+
+# Tests
+tests/
+phpstan.neon
+phpunit.xml
+
+# Development files
+.env
+.env.example
+*.log
+
+# Node modules (if any)
+node_modules/
+npm-debug.log
+package-lock.json
+
+# Composer
+vendor/
+composer.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.tar
+*.zip
+
+# Temporary files
+/tmp/
+*.tmp
+
+# Database (will be volume mounted)
+data/
+*.db
+*.sqlite
+
+# Logs (will be volume mounted)
+logs/
+*.log
+
+# Scripts that aren't needed in container
+scripts/smoke_test.sh
+scripts/db_backup.sh
+scripts/db_restore.sh

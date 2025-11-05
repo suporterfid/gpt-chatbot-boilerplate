@@ -84,7 +84,6 @@ services:
 
     volumes:
       - ./logs:/var/www/html/logs
-      - ./.env:/var/www/html/.env:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
@@ -111,10 +110,6 @@ services:
   #   restart: unless-stopped
   #   depends_on:
   #     - chatbot
-
-volumes:
-  logs:
-    driver: local
 
 networks:
   default:
