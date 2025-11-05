@@ -81,7 +81,7 @@ function checkAuthentication($config, $adminAuth) {
         }
     }
 
-    // Fallback: custom header or explicit admin_token parameter
+    // Fallback: custom header or explicit admin_token/token parameter
     if (empty($token)) {
         $fallbackToken = null;
 
@@ -93,6 +93,10 @@ function checkAuthentication($config, $adminAuth) {
             $fallbackToken = $_GET['admin_token'];
         } elseif (isset($_POST['admin_token'])) {
             $fallbackToken = $_POST['admin_token'];
+        } elseif (isset($_GET['token'])) {
+            $fallbackToken = $_GET['token'];
+        } elseif (isset($_POST['token'])) {
+            $fallbackToken = $_POST['token'];
         }
 
         if (!empty($fallbackToken)) {
@@ -808,7 +812,7 @@ try {
             break;
             
         case 'test_agent':
-            if ($method !== 'POST') {
+            if ($method !== 'POST' && $method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
             
@@ -818,8 +822,16 @@ try {
                 sendError('Agent ID required', 400);
             }
             
-            $data = getRequestBody();
-            $message = $data['message'] ?? 'Hello, this is a test message.';
+            // Support both POST body and GET/POST parameters for message
+            $message = 'Hello, this is a test message.';
+            if ($method === 'POST') {
+                $data = getRequestBody();
+                $message = $data['message'] ?? $message;
+            } elseif (isset($_GET['message'])) {
+                $message = $_GET['message'];
+            } elseif (isset($_POST['message'])) {
+                $message = $_POST['message'];
+            }
             
             // Get agent
             $agent = $agentService->getAgent($id);
