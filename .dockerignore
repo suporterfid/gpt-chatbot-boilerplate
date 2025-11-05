@@ -18,7 +18,6 @@ phpunit.xml
 # Development files
 .env
 .env.example
-*.log
 
 # Node modules (if any)
 node_modules/
@@ -27,7 +26,7 @@ package-lock.json
 
 # Composer
 vendor/
-composer.lock
+# Note: composer.lock is included for reproducible builds
 
 # IDE
 .vscode/
