@@ -78,6 +78,15 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Load Testing**: K6 scripts for capacity testing and performance validation.
 - **Operational Docs**: Complete runbooks for incident response, monitoring, and log aggregation.
 
+### 🛡️ **Hybrid Guardrails Integration**
+- **Response Format Support**: Enforce structured outputs using JSON schemas with the Responses API.
+- **Hybrid Configuration**: Combine OpenAI stored prompts (`prompt_id`) with local system messages and response format guardrails.
+- **Three Format Types**: Text (default), JSON Object (flexible), and JSON Schema (strict validation).
+- **Configuration Precedence**: Request > Agent > Config > Defaults for maximum flexibility.
+- **Database Storage**: Store response_format configurations in agent records for reusability.
+- **Practical Examples**: Bedtime story generator, research assistant with citations, data extraction, and more.
+- See [docs/HYBRID_GUARDRAILS.md](docs/HYBRID_GUARDRAILS.md) for detailed guide and examples.
+
 ## 📋 Requirements
 
 - PHP 8.0+ with cURL and JSON extensions
@@ -185,7 +194,63 @@ curl -X POST "http://localhost/chat-unified.php" \
 
 For complete Admin API documentation, see [docs/PHASE1_DB_AGENT.md](docs/PHASE1_DB_AGENT.md).
 
-### Option 4: Admin UI for Visual Management (Phase 2)
+### Option 4: Hybrid Guardrails for Structured Outputs
+
+1. Create an agent with JSON schema response format:
+```bash
+curl -X POST "http://localhost/admin-api.php" \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "create_agent",
+    "data": {
+      "name": "Bedtime Story Generator",
+      "api_type": "responses",
+      "model": "gpt-4.1",
+      "system_message": "Always respond according to the JSON schema. If unsure, use empty strings.",
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "bedtime_story",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "title": {"type": "string"},
+              "story": {"type": "string"},
+              "moral": {"type": "string"}
+            },
+            "required": ["title", "story", "moral"]
+          }
+        }
+      }
+    }
+  }'
+```
+
+2. Use the agent in chat:
+```bash
+curl -X POST "http://localhost/chat-unified.php" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Create a bedtime story about a unicorn that learns to share.",
+    "conversation_id": "story_001",
+    "api_type": "responses",
+    "agent_id": "YOUR_AGENT_ID"
+  }'
+```
+
+3. Expected response format (enforced by JSON schema):
+```json
+{
+  "title": "Luna the Unicorn Learns to Share",
+  "story": "Once upon a time...",
+  "moral": "Sharing brings joy to everyone."
+}
+```
+
+For complete Hybrid Guardrails documentation and examples, see [docs/HYBRID_GUARDRAILS.md](docs/HYBRID_GUARDRAILS.md).
+
+### Option 5: Admin UI for Visual Management (Phase 2)
 
 1. Complete Phase 1 setup (database and admin token).
 
@@ -210,7 +275,7 @@ http://localhost/public/admin/
 
 For complete Admin UI documentation, see [docs/PHASE2_ADMIN_UI.md](docs/PHASE2_ADMIN_UI.md).
 
-### Option 5: Background Workers, Webhooks & RBAC (Phase 3)
+### Option 6: Background Workers, Webhooks & RBAC (Phase 3)
 
 1. Complete Phase 1 and Phase 2 setup.
 
