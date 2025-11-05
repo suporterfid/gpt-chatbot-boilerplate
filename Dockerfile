@@ -23,6 +23,10 @@ RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 # Enable .htaccess files (AllowOverride All)
 RUN sed -i '/<Directory \/var\/www\/>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
 
+# Enable CGI passthrough for Authorization header (Apache 2.4.13+)
+# This ensures the Authorization header is passed to PHP scripts
+RUN echo "CGIPassAuth On" >> /etc/apache2/apache2.conf
+
 # Configure Apache for SSE
 RUN echo "<Location \"/chat-unified.php\">" >> /etc/apache2/apache2.conf
 RUN echo "    SetEnv no-gzip 1" >> /etc/apache2/apache2.conf
