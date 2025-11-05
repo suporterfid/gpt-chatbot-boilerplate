@@ -7,7 +7,6 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     git \
     unzip \
-    && docker-php-ext-install curl \
     && docker-php-ext-install sockets \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -63,9 +62,11 @@ RUN chmod -R 755 /var/www/html
 RUN mkdir -p logs && chown www-data:www-data logs
 
 # Install PHP dependencies (if composer.json exists)
-# Note: Composer install may fail in restricted environments; errors are silently ignored
 RUN git config --global --add safe.directory /var/www/html \
-    && if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader --no-interaction 2>/dev/null || echo "Composer install skipped"; fi
+    && if [ -f composer.json ]; then \
+        composer install --no-dev --optimize-autoloader --no-interaction || \
+        echo "Warning: Composer install failed - dependencies may be missing"; \
+    fi
 
 # Expose port
 EXPOSE 80
