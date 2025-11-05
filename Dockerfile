@@ -16,9 +16,11 @@ RUN apt-get update && apt-get install -y \
 RUN a2enmod rewrite
 RUN a2enmod headers
 
+# Configure Apache ServerName to suppress FQDN warnings
+RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
+
 # Configure Apache for SSE
-RUN echo "LoadModule headers_module modules/mod_headers.so" >> /etc/apache2/apache2.conf
-RUN echo "<Location "/chat-unified.php">" >> /etc/apache2/apache2.conf
+RUN echo "<Location \"/chat-unified.php\">" >> /etc/apache2/apache2.conf
 RUN echo "    SetEnv no-gzip 1" >> /etc/apache2/apache2.conf
 RUN echo "    SetEnv no-buffer 1" >> /etc/apache2/apache2.conf
 RUN echo "</Location>" >> /etc/apache2/apache2.conf
