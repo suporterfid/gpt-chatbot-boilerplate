@@ -59,7 +59,7 @@ RUN chmod -R 755 /var/www/html
 RUN mkdir -p logs && chown www-data:www-data logs
 
 # Install PHP dependencies (if composer.json exists)
-# Skip SSL verification for development/testing environments
+# Note: Composer install may fail in restricted environments; errors are silently ignored
 RUN git config --global --add safe.directory /var/www/html \
     && if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader --no-interaction 2>/dev/null || echo "Composer install skipped"; fi
 

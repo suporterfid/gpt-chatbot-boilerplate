@@ -10,7 +10,8 @@ echo "=== Authorization Header Passing Test ===\n\n";
 // Start PHP built-in server
 $port = 9997;
 $serverLog = '/tmp/test_auth_header_server.log';
-$cmd = "php -S localhost:$port -t " . __DIR__ . "/.. > $serverLog 2>&1 & echo \$!";
+$baseDir = escapeshellarg(__DIR__ . "/..");
+$cmd = "php -S localhost:$port -t $baseDir > $serverLog 2>&1 & echo \$!";
 $pid = trim(shell_exec($cmd));
 sleep(2); // Wait for server to start
 
@@ -38,8 +39,14 @@ function testAuthHeader($name, $url, $token, $expectedStatus, $checkAuthReceived
     
     // Split headers and body
     $headerSize = strpos($response, "\r\n\r\n");
-    $headers = substr($response, 0, $headerSize);
-    $body = substr($response, $headerSize + 4);
+    if ($headerSize === false) {
+        // Malformed response, treat entire response as body
+        $headers = '';
+        $body = $response;
+    } else {
+        $headers = substr($response, 0, $headerSize);
+        $body = substr($response, $headerSize + 4);
+    }
     
     $passed = true;
     $messages = [];
@@ -134,7 +141,16 @@ echo "\n";
 
 // Cleanup
 echo "Cleaning up...\n";
-posix_kill($pid, SIGTERM);
+if (function_exists('posix_kill')) {
+    posix_kill($pid, SIGTERM);
+} else {
+    // Fallback for systems without POSIX extension
+    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+        exec("taskkill /F /PID $pid");
+    } else {
+        exec("kill -15 $pid");
+    }
+}
 sleep(1);
 
 // Summary
