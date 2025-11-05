@@ -768,19 +768,58 @@ See `.github/workflows/cicd.yml` for details.
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Here's how to get started:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes and add tests
+4. Run the test suite to ensure everything passes
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to your branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
 
 ### Development Setup
 
 ```bash
-# Install development dependencies
+# Clone the repository
+git clone https://github.com/suporterfid/gpt-chatbot-boilerplate.git
+cd gpt-chatbot-boilerplate
+
+# Install PHP dependencies
 composer install --dev
 
-# Run tests
-./vendor/bin/phpunit
+# Install Node.js dependencies for linting
+npm install
 
-# Start development server
-docker-compose -f docker-compose.dev.yml up
+# Copy environment file and configure
+cp .env.example .env
+# Edit .env with your settings
+
+# Start with Docker
+docker-compose up -d
+
+# Or run locally with PHP built-in server
+php -S localhost:8080
+```
+
+### Running Tests & Quality Checks
+
+```bash
+# Run all test suites
+php tests/run_tests.php
+php tests/run_phase2_tests.php
+php tests/run_phase3_tests.php
+php tests/test_phase4_features.php
+php tests/test_phase5_agent_integration.php
+
+# Run static analysis
+composer run analyze
+
+# Run linting
+npm run lint
+
+# Run smoke tests
+bash scripts/smoke_test.sh
 ```
 
 ## 📚 Documentation
