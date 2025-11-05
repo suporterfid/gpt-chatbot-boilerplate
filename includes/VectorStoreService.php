@@ -41,8 +41,12 @@ class VectorStoreService {
         
         $openaiStoreId = null;
         
-        // Try to create on OpenAI if client available
-        if ($this->openaiClient) {
+        // Use provided OpenAI store ID if available (e.g., when syncing from OpenAI)
+        if (!empty($data['openai_store_id'])) {
+            $openaiStoreId = $data['openai_store_id'];
+        }
+        // Otherwise, try to create a new vector store on OpenAI if client available
+        elseif ($this->openaiClient) {
             try {
                 $metadata = $data['metadata'] ?? [];
                 $result = $this->openaiClient->createVectorStore($data['name'], $metadata);
