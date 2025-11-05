@@ -751,8 +751,9 @@ Validate system capacity before production deployment:
 
 # Run load tests
 k6 run tests/load/chat_api.js
-k6 run tests/load/admin_api.js
 ```
+
+See `tests/load/README.md` for detailed load testing documentation and scenarios.
 
 ### CI/CD Pipeline
 
@@ -801,7 +802,8 @@ Production operations guides in `docs/ops/`:
 - 📝 [Logging](docs/ops/logs.md) - Structured logging, aggregation (ELK, CloudWatch, LogDNA)
 - 🔐 [Secrets Management](docs/ops/secrets_management.md) - Token rotation, key management, vault integration
 - 🛡️ [Security](docs/ops/nginx-production.conf) - Production Nginx config with HTTPS and security headers
-- 🚨 [Incident Response](docs/ops/runbooks/) - Runbooks for common production issues
+- 🚨 [Incident Response](docs/ops/incident_runbook.md) - Runbook for common production issues
+- 🚀 [Production Deployment](docs/ops/production-deploy.md) - Step-by-step production deployment guide
 
 ### API & Customization Guides
 
