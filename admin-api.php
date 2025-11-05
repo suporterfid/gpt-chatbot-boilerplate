@@ -43,10 +43,17 @@ function log_admin($message, $level = 'info') {
 
 // Authentication check - supports both legacy ADMIN_TOKEN and AdminAuth
 function checkAuthentication($config, $adminAuth) {
+    $headers = [];
+    if (function_exists('getallheaders')) {
+        $headers = array_change_key_case(getallheaders(), CASE_LOWER);
+    } elseif (function_exists('apache_request_headers')) {
+        $headers = array_change_key_case(apache_request_headers(), CASE_LOWER);
+    }
+
     // Try to get Authorization header from multiple sources
     // Apache/PHP can place it in different locations depending on configuration
     $authHeader = '';
-    
+
     // Method 1: Direct HTTP_AUTHORIZATION
     if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
         $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
@@ -55,38 +62,54 @@ function checkAuthentication($config, $adminAuth) {
     elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
         $authHeader = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
     }
-    // Method 3: Apache getallheaders() function
-    elseif (function_exists('apache_request_headers')) {
-        $headers = apache_request_headers();
-        if (isset($headers['Authorization'])) {
-            $authHeader = $headers['Authorization'];
-        } elseif (isset($headers['authorization'])) {
-            $authHeader = $headers['authorization'];
-        }
+    // Method 3: getallheaders()/apache_request_headers()
+    elseif (!empty($headers['authorization'])) {
+        $authHeader = $headers['authorization'];
     }
     // Method 4: PHP_AUTH_* variables (Basic/Digest auth fallback)
     elseif (isset($_SERVER['PHP_AUTH_USER']) && isset($_SERVER['PHP_AUTH_PW'])) {
         $authHeader = 'Basic ' . base64_encode($_SERVER['PHP_AUTH_USER'] . ':' . $_SERVER['PHP_AUTH_PW']);
     }
-    
-    if (empty($authHeader)) {
-        log_admin('Missing Authorization header', 'warn');
+
+    $token = null;
+
+    if (!empty($authHeader)) {
+        if (preg_match('/^Bearer\s+(.+)$/i', $authHeader, $matches)) {
+            $token = trim($matches[1]);
+        } else {
+            log_admin('Invalid Authorization header format', 'warn');
+        }
+    }
+
+    // Fallback: custom header or explicit admin_token parameter
+    if (empty($token)) {
+        $fallbackToken = null;
+
+        if (isset($_SERVER['HTTP_X_ADMIN_TOKEN'])) {
+            $fallbackToken = $_SERVER['HTTP_X_ADMIN_TOKEN'];
+        } elseif (!empty($headers['x-admin-token'])) {
+            $fallbackToken = $headers['x-admin-token'];
+        } elseif (isset($_GET['admin_token'])) {
+            $fallbackToken = $_GET['admin_token'];
+        } elseif (isset($_POST['admin_token'])) {
+            $fallbackToken = $_POST['admin_token'];
+        }
+
+        if (!empty($fallbackToken)) {
+            $token = trim($fallbackToken);
+        }
+    }
+
+    if (empty($token)) {
+        log_admin('Missing admin token', 'warn');
         // Only log server vars in debug mode
         if (isset($config['debug']) && $config['debug']) {
             $serverKeys = array_keys($_SERVER);
             log_admin('Available SERVER keys: ' . implode(', ', $serverKeys), 'debug');
         }
-        sendError('Authorization header required', 403);
+        sendError('Authorization token required', 403);
     }
-    
-    // Extract Bearer token
-    if (!preg_match('/^Bearer\s+(.+)$/i', $authHeader, $matches)) {
-        log_admin('Invalid Authorization header format', 'warn');
-        sendError('Invalid Authorization header format', 403);
-    }
-    
-    $token = $matches[1];
-    
+
     // Try to authenticate with AdminAuth (supports both legacy token and API keys)
     try {
         $user = $adminAuth->authenticate($token);
