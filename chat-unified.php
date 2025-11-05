@@ -213,6 +213,22 @@ try {
         }
     }
 
+    // Extract response_format from request
+    $responseFormat = null;
+    if ($method === 'GET' && isset($_GET['response_format'])) {
+        $rawFormat = $_GET['response_format'];
+        if (is_string($rawFormat)) {
+            $decoded = json_decode($rawFormat, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $responseFormat = $decoded;
+            }
+        }
+    } elseif ($method === 'POST' && array_key_exists('response_format', $input)) {
+        if (is_array($input['response_format'])) {
+            $responseFormat = $input['response_format'];
+        }
+    }
+
     log_debug("Incoming request method=$method apiType=$apiType conv=$conversationId agentId=$agentId msgLen=" . strlen($message));
 
     if (empty($message)) {
@@ -242,13 +258,13 @@ try {
 
         // Route to appropriate handler
         if ($apiType === 'responses') {
-            $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion, $tools, $agentId);
+            $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion, $tools, $responseFormat, $agentId);
         } else {
             $chatHandler->handleChatCompletion($message, $conversationId, $agentId);
         }
     } else {
         if ($apiType === 'responses') {
-            $result = $chatHandler->handleResponsesChatSync($message, $conversationId, $fileData, $promptId, $promptVersion, $tools, $agentId);
+            $result = $chatHandler->handleResponsesChatSync($message, $conversationId, $fileData, $promptId, $promptVersion, $tools, $responseFormat, $agentId);
         } else {
             $result = $chatHandler->handleChatCompletionSync($message, $conversationId, $agentId);
         }

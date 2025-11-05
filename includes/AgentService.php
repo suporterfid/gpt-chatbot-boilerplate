@@ -28,9 +28,9 @@ class AgentService {
         $sql = "INSERT INTO agents (
             id, name, description, api_type, prompt_id, prompt_version,
             system_message, model, temperature, top_p, max_output_tokens,
-            tools_json, vector_store_ids_json, max_num_results, is_default,
+            tools_json, vector_store_ids_json, max_num_results, response_format_json, is_default,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $params = [
             $id,
@@ -47,6 +47,7 @@ class AgentService {
             isset($data['tools']) ? json_encode($data['tools']) : null,
             isset($data['vector_store_ids']) ? json_encode($data['vector_store_ids']) : null,
             isset($data['max_num_results']) ? (int)$data['max_num_results'] : null,
+            isset($data['response_format']) ? json_encode($data['response_format']) : null,
             isset($data['is_default']) ? (int)(bool)$data['is_default'] : 0,
             $now,
             $now
@@ -138,6 +139,10 @@ class AgentService {
         if (array_key_exists('max_num_results', $data)) {
             $updates[] = 'max_num_results = ?';
             $params[] = isset($data['max_num_results']) ? (int)$data['max_num_results'] : null;
+        }
+        if (array_key_exists('response_format', $data)) {
+            $updates[] = 'response_format_json = ?';
+            $params[] = isset($data['response_format']) ? json_encode($data['response_format']) : null;
         }
         
         // Always update updated_at
@@ -354,6 +359,34 @@ class AgentService {
                 throw new Exception('tools must be an array', 400);
             }
         }
+        
+        // Validate response_format
+        if (isset($data['response_format'])) {
+            if (!is_array($data['response_format'])) {
+                throw new Exception('response_format must be an array', 400);
+            }
+            
+            // Basic validation of response_format structure
+            if (isset($data['response_format']['type'])) {
+                $validTypes = ['text', 'json_object', 'json_schema'];
+                if (!in_array($data['response_format']['type'], $validTypes, true)) {
+                    throw new Exception('response_format type must be one of: ' . implode(', ', $validTypes), 400);
+                }
+                
+                // If type is json_schema, validate required fields
+                if ($data['response_format']['type'] === 'json_schema') {
+                    if (!isset($data['response_format']['json_schema'])) {
+                        throw new Exception('response_format with type json_schema must include json_schema field', 400);
+                    }
+                    if (!isset($data['response_format']['json_schema']['name'])) {
+                        throw new Exception('response_format json_schema must include name field', 400);
+                    }
+                    if (!isset($data['response_format']['json_schema']['schema'])) {
+                        throw new Exception('response_format json_schema must include schema field', 400);
+                    }
+                }
+            }
+        }
     }
     
     /**
@@ -372,12 +405,19 @@ class AgentService {
             $agent['vector_store_ids'] = null;
         }
         
+        if (isset($agent['response_format_json']) && $agent['response_format_json']) {
+            $agent['response_format'] = json_decode($agent['response_format_json'], true);
+        } else {
+            $agent['response_format'] = null;
+        }
+        
         // Convert is_default to boolean
         $agent['is_default'] = (bool)$agent['is_default'];
         
         // Remove JSON fields from response
         unset($agent['tools_json']);
         unset($agent['vector_store_ids_json']);
+        unset($agent['response_format_json']);
         
         return $agent;
     }
