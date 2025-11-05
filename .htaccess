@@ -1,8 +1,12 @@
+# Pass Authorization header to PHP (Apache 2.4.13+)
+# This is the most reliable method for passing the Authorization header
+CGIPassAuth On
+
 # Enable rewrite engine
 <IfModule mod_rewrite.c>
     RewriteEngine On
     
-    # Pass Authorization header to PHP
+    # Pass Authorization header to PHP (fallback for older Apache versions)
     # This is required for Bearer token authentication in admin-api.php
     RewriteCond %{HTTP:Authorization} .
     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
