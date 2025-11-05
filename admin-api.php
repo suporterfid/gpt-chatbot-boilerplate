@@ -43,10 +43,35 @@ function log_admin($message, $level = 'info') {
 
 // Authentication check - supports both legacy ADMIN_TOKEN and AdminAuth
 function checkAuthentication($config, $adminAuth) {
-    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    // Try to get Authorization header from multiple sources
+    // Apache/PHP can place it in different locations depending on configuration
+    $authHeader = '';
+    
+    // Method 1: Direct HTTP_AUTHORIZATION
+    if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+        $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
+    }
+    // Method 2: REDIRECT_HTTP_AUTHORIZATION (when using mod_rewrite)
+    elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        $authHeader = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    }
+    // Method 3: Apache getallheaders() function
+    elseif (function_exists('apache_request_headers')) {
+        $headers = apache_request_headers();
+        if (isset($headers['Authorization'])) {
+            $authHeader = $headers['Authorization'];
+        } elseif (isset($headers['authorization'])) {
+            $authHeader = $headers['authorization'];
+        }
+    }
+    // Method 4: PHP_AUTH_* variables (Basic/Digest auth fallback)
+    elseif (isset($_SERVER['PHP_AUTH_USER']) && isset($_SERVER['PHP_AUTH_PW'])) {
+        $authHeader = 'Basic ' . base64_encode($_SERVER['PHP_AUTH_USER'] . ':' . $_SERVER['PHP_AUTH_PW']);
+    }
     
     if (empty($authHeader)) {
         log_admin('Missing Authorization header', 'warn');
+        log_admin('Available SERVER vars: ' . implode(', ', array_keys($_SERVER)), 'debug');
         sendError('Authorization header required', 403);
     }
     
