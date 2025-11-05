@@ -708,6 +708,27 @@ try {
             }
             break;
         
+        // ==================== Models Endpoints ====================
+        
+        case 'list_models':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            if (!$openaiClient) {
+                sendError('OpenAI client not configured', 500);
+            }
+            
+            try {
+                $models = $openaiClient->listModels();
+                sendResponse($models);
+            } catch (Exception $e) {
+                log_admin('Failed to list models: ' . $e->getMessage(), 'error');
+                sendError('Failed to list models: ' . $e->getMessage(), 500);
+            }
+            break;
+        
         // ==================== Health & Utility Endpoints ====================
         
         case 'health':
