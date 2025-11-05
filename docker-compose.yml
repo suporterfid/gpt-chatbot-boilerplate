@@ -2,7 +2,7 @@ services:
   chatbot:
     build: .
     ports:
-      - "8080:80"
+      - "8088:80"
     environment:
       # OpenAI Configuration
       - OPENAI_API_KEY=${OPENAI_API_KEY}
