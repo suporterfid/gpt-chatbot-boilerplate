@@ -17,9 +17,13 @@ class AdminAPI {
     async request(action, options = {}) {
         const url = `${API_ENDPOINT}?action=${action}${options.params || ''}`;
         const headers = {
-            'Authorization': `Bearer ${this.token}`,
             'Content-Type': 'application/json',
         };
+
+        if (this.token) {
+            headers['Authorization'] = `Bearer ${this.token}`;
+            headers['X-Admin-Token'] = this.token;
+        }
 
         const config = {
             method: options.method || 'GET',
