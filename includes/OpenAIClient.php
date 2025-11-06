@@ -7,11 +7,13 @@ class OpenAIClient {
     private $apiKey;
     private $organization;
     private $baseUrl;
+    private $auditService;
 
-    public function __construct($config) {
+    public function __construct($config, $auditService = null) {
         $this->apiKey = $config['api_key'];
         $this->organization = $config['organization'] ?? '';
         $this->baseUrl = $config['base_url'];
+        $this->auditService = $auditService;
     }
 
     // Chat Completions API Methods
