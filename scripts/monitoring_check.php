@@ -77,8 +77,8 @@ try {
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     $queueDepth = (int)$row['count'];
     
-    $warningThreshold = 100;
-    $criticalThreshold = 500;
+    $warningThreshold = $config['monitoring']['queue_depth_warning'] ?? 100;
+    $criticalThreshold = $config['monitoring']['queue_depth_critical'] ?? 500;
     
     if ($queueDepth > $criticalThreshold) {
         log_message("CRITICAL: Queue depth is {$queueDepth} (threshold: {$criticalThreshold})", $quiet);
@@ -156,12 +156,14 @@ if ($config['admin']['database_type'] === 'sqlite') {
     log_message("Checking database size...", $quiet);
     try {
         $dbPath = $config['admin']['database_path'];
+        $dbSizeThresholdMB = $config['monitoring']['db_size_threshold_mb'] ?? 1024;
+        
         if (file_exists($dbPath)) {
             $dbSize = filesize($dbPath);
             $dbSizeMB = $dbSize / 1024 / 1024;
             
-            // Alert if database is > 1GB
-            if ($dbSizeMB > 1024) {
+            // Alert if database is > threshold
+            if ($dbSizeMB > $dbSizeThresholdMB) {
                 log_message("WARNING: Database size is {$dbSizeMB} MB", $quiet);
                 $alertManager->sendAlert(
                     'Large Database Size',

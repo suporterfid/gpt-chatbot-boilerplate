@@ -222,8 +222,8 @@ class ObservabilityLogger {
             return true;
         }
         
-        // Sample based on rate
-        return (mt_rand(1, 100) / 100) <= $rate;
+        // Sample based on rate using more accurate random
+        return (mt_rand() / mt_getrandmax()) <= $rate;
     }
     
     /**

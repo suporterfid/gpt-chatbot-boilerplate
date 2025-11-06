@@ -301,7 +301,7 @@ class TracingService {
         // Format: version-trace_id-parent_id-flags
         $version = '00';
         $flags = '01'; // Sampled
-        $parentId = $this->currentSpan ? str_pad($this->currentSpan, 16, '0') : str_pad('', 16, '0');
+        $parentId = $this->currentSpan ? str_pad($this->currentSpan, 16, '0', STR_PAD_LEFT) : str_repeat('0', 16);
         
         return sprintf('%s-%s-%s-%s', $version, $this->traceId, $parentId, $flags);
     }

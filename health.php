@@ -199,9 +199,11 @@ try {
     $memoryLimit = ini_get('memory_limit');
     
     // Convert memory limit to bytes
-    if (preg_match('/^(\d+)(.)$/', $memoryLimit, $matches)) {
+    if (preg_match('/^(\d+)([KMGTPE]?)$/i', $memoryLimit, $matches)) {
         $memoryLimitBytes = (int)$matches[1];
-        switch (strtoupper($matches[2])) {
+        $unit = strtoupper($matches[2]);
+        
+        switch ($unit) {
             case 'G':
                 $memoryLimitBytes *= 1024 * 1024 * 1024;
                 break;
@@ -210,6 +212,9 @@ try {
                 break;
             case 'K':
                 $memoryLimitBytes *= 1024;
+                break;
+            case '':
+                // Already in bytes
                 break;
         }
     } else {

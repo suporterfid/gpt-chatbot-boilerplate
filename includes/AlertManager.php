@@ -111,6 +111,9 @@ class AlertManager {
     
     /**
      * Send alert via email
+     * 
+     * Note: For production use, consider using PHPMailer, SwiftMailer, 
+     * or queuing emails for better reliability instead of PHP's mail() function.
      */
     private function sendToEmail($alert) {
         $emailTo = $this->config['alerting']['email_to'] ?? '';
@@ -150,7 +153,8 @@ class AlertManager {
             'Content-Type: text/plain; charset=UTF-8'
         ];
         
-        mail($emailTo, $subject, $body, implode("\r\n", $headers));
+        // Using mail() for simplicity - consider using a proper mail library for production
+        @mail($emailTo, $subject, $body, implode("\r\n", $headers));
     }
     
     /**

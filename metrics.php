@@ -486,14 +486,16 @@ try {
 
 // Metric: Error rate by component (from structured logs if available)
 $logFile = $config['logging']['file'] ?? '/var/log/chatbot/application.log';
+$logReadSize = $config['monitoring']['log_read_size'] ?? 100000; // Default 100KB
+
 if (file_exists($logFile) && is_readable($logFile)) {
     try {
-        // Read last 1000 lines and count errors by component
+        // Read last portion of log file
         $lines = [];
         $handle = fopen($logFile, 'r');
         if ($handle) {
             // Seek to end and read backwards
-            fseek($handle, -min(filesize($logFile), 100000), SEEK_END);
+            fseek($handle, -min(filesize($logFile), $logReadSize), SEEK_END);
             while (!feof($handle)) {
                 $lines[] = fgets($handle);
             }

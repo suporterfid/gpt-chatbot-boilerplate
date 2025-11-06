@@ -434,6 +434,14 @@ $config = [
         'email_from' => $_ENV['ALERT_EMAIL_FROM'] ?? getenv('ALERT_EMAIL_FROM') ?: 'alerts@chatbot.local',
         'email_all_severities' => filter_var($_ENV['ALERT_EMAIL_ALL_SEVERITIES'] ?? getenv('ALERT_EMAIL_ALL_SEVERITIES') ?: 'false', FILTER_VALIDATE_BOOLEAN),
         'pagerduty_routing_key' => $_ENV['PAGERDUTY_ROUTING_KEY'] ?? getenv('PAGERDUTY_ROUTING_KEY') ?: '',
+    ],
+    
+    // Monitoring Configuration
+    'monitoring' => [
+        'queue_depth_warning' => (int)($_ENV['MONITOR_QUEUE_WARNING'] ?? getenv('MONITOR_QUEUE_WARNING') ?: 100),
+        'queue_depth_critical' => (int)($_ENV['MONITOR_QUEUE_CRITICAL'] ?? getenv('MONITOR_QUEUE_CRITICAL') ?: 500),
+        'db_size_threshold_mb' => (int)($_ENV['MONITOR_DB_SIZE_MB'] ?? getenv('MONITOR_DB_SIZE_MB') ?: 1024),
+        'log_read_size' => (int)($_ENV['MONITOR_LOG_READ_SIZE'] ?? getenv('MONITOR_LOG_READ_SIZE') ?: 100000),
     ]
 ];
 
