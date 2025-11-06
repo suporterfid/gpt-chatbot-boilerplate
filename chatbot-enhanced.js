@@ -32,6 +32,10 @@
         enableFileUpload: false,
         maxFileSize: 10485760, // 10MB
         allowedFileTypes: ['txt', 'pdf', 'doc', 'docx', 'jpg', 'png'],
+        
+        // Whitelabel parameters (set by whitelabel page, not modifiable by user)
+        agentPublicId: null,
+        wlToken: null,
 
         // Responses-specific settings
         responsesConfig: {
@@ -999,6 +1003,15 @@
                     conversation_id: this.conversationId,
                     api_type: this.options.apiType
                 };
+                
+                // Add whitelabel parameters if provided (always included, never removable)
+                if (this.options.agentPublicId) {
+                    requestData.agent_public_id = this.options.agentPublicId;
+                }
+                
+                if (this.options.wlToken) {
+                    requestData.wl_token = this.options.wlToken;
+                }
 
                 if (this.options.apiType === 'responses') {
                     const responsesConfig = this.options.responsesConfig || {};
