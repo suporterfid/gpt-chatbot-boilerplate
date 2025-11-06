@@ -7,6 +7,7 @@
 require_once 'config.php';
 require_once 'includes/DB.php';
 require_once 'includes/JobQueue.php';
+require_once 'includes/MetricsCollector.php';
 
 header('Content-Type: text/plain; version=0.0.4; charset=utf-8');
 
@@ -14,6 +15,7 @@ header('Content-Type: text/plain; version=0.0.4; charset=utf-8');
 try {
     $db = new DB($config);
     $jobQueue = new JobQueue($db);
+    $metricsCollector = MetricsCollector::getInstance($config['observability']['metrics'] ?? []);
 } catch (Exception $e) {
     http_response_code(500);
     echo "# ERROR: Failed to initialize metrics\n";
@@ -318,6 +320,31 @@ if ($config['admin']['database_type'] === 'sqlite') {
             $dbSize
         );
     }
+}
+
+// Export runtime metrics from MetricsCollector
+$runtimeMetrics = $metricsCollector->getMetrics();
+foreach ($runtimeMetrics as $metric) {
+    $metricType = $metric['type'];
+    $metricName = $metric['name'];
+    $value = $metric['value'] ?? 0;
+    $labels = $metric['labels'] ?? [];
+    
+    // Convert metric type to Prometheus type
+    $promType = match($metricType) {
+        'counter' => 'counter',
+        'gauge' => 'gauge',
+        'histogram' => 'summary',
+        default => 'gauge',
+    };
+    
+    echo promMetric(
+        $metricName,
+        $promType,
+        "Runtime metric: $metricName",
+        $value,
+        $labels
+    );
 }
 
 // Metric: Scrape duration
