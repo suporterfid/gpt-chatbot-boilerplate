@@ -338,6 +338,62 @@ $config = [
         'evaluate_async' => filter_var($_ENV['AUDIT_EVAL_ASYNC'] ?? getenv('AUDIT_EVAL_ASYNC') ?: 'false', FILTER_VALIDATE_BOOLEAN),
         'database_url' => $_ENV['DATABASE_URL'] ?? getenv('DATABASE_URL') ?: '',
         'database_path' => $_ENV['DATABASE_PATH'] ?? getenv('DATABASE_PATH') ?: __DIR__ . '/data/chatbot.db',
+    ],
+    
+    // LeadSense Configuration - Commercial Opportunity Detection
+    'leadsense' => [
+        'enabled' => filter_var($_ENV['LEADSENSE_ENABLED'] ?? getenv('LEADSENSE_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+        'intent_threshold' => (float)($_ENV['LEADSENSE_INTENT_THRESHOLD'] ?? getenv('LEADSENSE_INTENT_THRESHOLD') ?: 0.6),
+        'score_threshold' => (int)($_ENV['LEADSENSE_SCORE_THRESHOLD'] ?? getenv('LEADSENSE_SCORE_THRESHOLD') ?: 70),
+        'followup_enabled' => filter_var($_ENV['LEADSENSE_FOLLOWUP_ENABLED'] ?? getenv('LEADSENSE_FOLLOWUP_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'pii_redaction' => filter_var($_ENV['LEADSENSE_PII_REDACTION'] ?? getenv('LEADSENSE_PII_REDACTION') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'database_url' => $_ENV['DATABASE_URL'] ?? getenv('DATABASE_URL') ?: '',
+        'database_path' => $_ENV['DATABASE_PATH'] ?? getenv('DATABASE_PATH') ?: __DIR__ . '/data/chatbot.db',
+        
+        // Notification settings
+        'notify' => [
+            'slack_webhook_url' => $_ENV['LEADSENSE_SLACK_WEBHOOK'] ?? getenv('LEADSENSE_SLACK_WEBHOOK') ?: '',
+            'webhook_url' => $_ENV['LEADSENSE_WEBHOOK_URL'] ?? getenv('LEADSENSE_WEBHOOK_URL') ?: '',
+            'webhook_secret' => $_ENV['LEADSENSE_WEBHOOK_SECRET'] ?? getenv('LEADSENSE_WEBHOOK_SECRET') ?: '',
+        ],
+        
+        // Storage settings
+        'storage' => [
+            'encryption' => filter_var($_ENV['LEADSENSE_ENCRYPTION'] ?? getenv('LEADSENSE_ENCRYPTION') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+            'encryption_key' => $_ENV['LEADSENSE_ENC_KEY'] ?? getenv('LEADSENSE_ENC_KEY') ?: '',
+        ],
+        
+        // Extractor settings
+        'extractor' => [
+            'max_tokens' => (int)($_ENV['LEADSENSE_MAX_TOKENS'] ?? getenv('LEADSENSE_MAX_TOKENS') ?: 1000),
+            'max_fields' => (int)($_ENV['LEADSENSE_MAX_FIELDS'] ?? getenv('LEADSENSE_MAX_FIELDS') ?: 20),
+            'context_window' => (int)($_ENV['LEADSENSE_CONTEXT_WINDOW'] ?? getenv('LEADSENSE_CONTEXT_WINDOW') ?: 10),
+        ],
+        
+        // Scoring settings
+        'scoring' => [
+            'mode' => $_ENV['LEADSENSE_SCORING_MODE'] ?? getenv('LEADSENSE_SCORING_MODE') ?: 'rules',
+            'weights' => [
+                'intent_low' => 20,
+                'intent_medium' => 50,
+                'intent_high' => 75,
+                'decision_maker' => 15,
+                'active_project' => 10,
+                'icp_fit' => 10,
+                'urgency' => 10,
+                'no_contact' => -10,
+            ],
+        ],
+        
+        // ML settings (future)
+        'ml' => [
+            'endpoint' => $_ENV['LEADSENSE_ML_ENDPOINT'] ?? getenv('LEADSENSE_ML_ENDPOINT') ?: '',
+            'api_key' => $_ENV['LEADSENSE_ML_API_KEY'] ?? getenv('LEADSENSE_ML_API_KEY') ?: '',
+        ],
+        
+        // Rate limiting
+        'debounce_window' => (int)($_ENV['LEADSENSE_DEBOUNCE_WINDOW'] ?? getenv('LEADSENSE_DEBOUNCE_WINDOW') ?: 300), // 5 minutes
+        'max_daily_notifications' => (int)($_ENV['LEADSENSE_MAX_DAILY_NOTIFICATIONS'] ?? getenv('LEADSENSE_MAX_DAILY_NOTIFICATIONS') ?: 100),
     ]
 ];
 
