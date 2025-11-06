@@ -297,6 +297,17 @@ try {
     
     // Initialize Resource Authorization Service
     $resourceAuth = new ResourceAuthService($db, $adminAuth, $auditService);
+    
+    // Initialize Billing Services
+    require_once __DIR__ . '/includes/UsageTrackingService.php';
+    require_once __DIR__ . '/includes/QuotaService.php';
+    require_once __DIR__ . '/includes/BillingService.php';
+    require_once __DIR__ . '/includes/NotificationService.php';
+    
+    $usageTrackingService = new UsageTrackingService($db);
+    $quotaService = new QuotaService($db, $usageTrackingService);
+    $billingService = new BillingService($db);
+    $notificationService = new NotificationService($db);
 
     $logUser = $authenticatedUser['email'] ?? 'anonymous';
     log_admin("$method /admin-api.php?action=$action [user: $logUser]");
@@ -2665,6 +2676,416 @@ try {
                 }
                 sendError($e->getMessage(), $statusCode);
             }
+            break;
+            
+        // ===== Billing & Usage Tracking Endpoints =====
+        
+        case 'get_usage_stats':
+            // Get usage statistics for a tenant
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            // Only super-admin can view other tenants' usage
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $filters = [];
+            if (!empty($_GET['start_date'])) {
+                $filters['start_date'] = $_GET['start_date'];
+            }
+            if (!empty($_GET['end_date'])) {
+                $filters['end_date'] = $_GET['end_date'];
+            }
+            if (!empty($_GET['resource_type'])) {
+                $filters['resource_type'] = $_GET['resource_type'];
+            }
+            
+            $stats = $usageTrackingService->getUsageStats($targetTenantId, $filters);
+            sendResponse($stats);
+            break;
+            
+        case 'get_usage_timeseries':
+            // Get usage time series data
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $filters = [];
+            if (!empty($_GET['start_date'])) {
+                $filters['start_date'] = $_GET['start_date'];
+            }
+            if (!empty($_GET['end_date'])) {
+                $filters['end_date'] = $_GET['end_date'];
+            }
+            if (!empty($_GET['resource_type'])) {
+                $filters['resource_type'] = $_GET['resource_type'];
+            }
+            if (!empty($_GET['interval'])) {
+                $filters['interval'] = $_GET['interval'];
+            }
+            
+            $timeseries = $usageTrackingService->getUsageTimeSeries($targetTenantId, $filters);
+            sendResponse($timeseries);
+            break;
+            
+        case 'list_quotas':
+            // List all quotas for a tenant
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $quotas = $quotaService->listQuotas($targetTenantId);
+            sendResponse($quotas);
+            break;
+            
+        case 'get_quota_status':
+            // Get current quota status for all resources
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $status = $quotaService->getQuotaStatus($targetTenantId);
+            sendResponse($status);
+            break;
+            
+        case 'set_quota':
+            // Create or update a quota
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Only admins can set quotas
+            if (!$adminAuth->hasPermission($authenticatedUser, 'update')) {
+                sendError('Forbidden', 403);
+            }
+            
+            $body = getRequestBody();
+            
+            if (!isset($body['resource_type']) || !isset($body['limit_value']) || !isset($body['period'])) {
+                sendError('Missing required fields', 400);
+            }
+            
+            $targetTenantId = $body['tenant_id'] ?? $tenantId;
+            
+            // Only super-admin can set quotas for other tenants
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $quota = $quotaService->setQuota(
+                $targetTenantId,
+                $body['resource_type'],
+                $body['limit_value'],
+                $body['period'],
+                [
+                    'is_hard_limit' => $body['is_hard_limit'] ?? false,
+                    'notification_threshold' => $body['notification_threshold'] ?? null
+                ]
+            );
+            
+            sendResponse($quota, 201);
+            break;
+            
+        case 'delete_quota':
+            // Delete a quota
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Only admins can delete quotas
+            if (!$adminAuth->hasPermission($authenticatedUser, 'delete')) {
+                sendError('Forbidden', 403);
+            }
+            
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                sendError('Quota ID is required', 400);
+            }
+            
+            $quotaService->deleteQuota($id);
+            sendResponse(['success' => true]);
+            break;
+            
+        case 'get_subscription':
+            // Get subscription for a tenant
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $subscription = $billingService->getSubscription($targetTenantId);
+            if (!$subscription) {
+                sendError('Subscription not found', 404);
+            }
+            
+            sendResponse($subscription);
+            break;
+            
+        case 'create_subscription':
+            // Create a subscription
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Only admins can create subscriptions
+            if (!$adminAuth->hasPermission($authenticatedUser, 'create')) {
+                sendError('Forbidden', 403);
+            }
+            
+            $body = getRequestBody();
+            
+            if (!isset($body['plan_type']) || !isset($body['billing_cycle'])) {
+                sendError('Missing required fields', 400);
+            }
+            
+            $targetTenantId = $body['tenant_id'] ?? $tenantId;
+            
+            // Only super-admin can create subscriptions for other tenants
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $subscription = $billingService->createSubscription($targetTenantId, $body);
+            sendResponse($subscription, 201);
+            break;
+            
+        case 'update_subscription':
+            // Update a subscription
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Only admins can update subscriptions
+            if (!$adminAuth->hasPermission($authenticatedUser, 'update')) {
+                sendError('Forbidden', 403);
+            }
+            
+            $body = getRequestBody();
+            $targetTenantId = $body['tenant_id'] ?? $tenantId;
+            
+            // Only super-admin can update subscriptions for other tenants
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $subscription = $billingService->updateSubscription($targetTenantId, $body);
+            sendResponse($subscription);
+            break;
+            
+        case 'cancel_subscription':
+            // Cancel a subscription
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Only admins can cancel subscriptions
+            if (!$adminAuth->hasPermission($authenticatedUser, 'update')) {
+                sendError('Forbidden', 403);
+            }
+            
+            $body = getRequestBody();
+            $targetTenantId = $body['tenant_id'] ?? $tenantId;
+            
+            // Only super-admin can cancel subscriptions for other tenants
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $immediately = $body['immediately'] ?? false;
+            $subscription = $billingService->cancelSubscription($targetTenantId, $immediately);
+            sendResponse($subscription);
+            break;
+            
+        case 'list_invoices':
+            // List invoices for a tenant
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $filters = [];
+            if (!empty($_GET['status'])) {
+                $filters['status'] = $_GET['status'];
+            }
+            if (!empty($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            if (!empty($_GET['offset'])) {
+                $filters['offset'] = (int)$_GET['offset'];
+            }
+            
+            $invoices = $billingService->listInvoices($targetTenantId, $filters);
+            sendResponse($invoices);
+            break;
+            
+        case 'get_invoice':
+            // Get a specific invoice
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                sendError('Invoice ID is required', 400);
+            }
+            
+            $invoice = $billingService->getInvoiceById($id);
+            if (!$invoice) {
+                sendError('Invoice not found', 404);
+            }
+            
+            // Check if user has access to this invoice
+            if ($invoice['tenant_id'] !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            sendResponse($invoice);
+            break;
+            
+        case 'create_invoice':
+            // Create an invoice
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Only admins can create invoices
+            if (!$adminAuth->hasPermission($authenticatedUser, 'create')) {
+                sendError('Forbidden', 403);
+            }
+            
+            $body = getRequestBody();
+            
+            if (!isset($body['amount_cents']) || !isset($body['due_date'])) {
+                sendError('Missing required fields', 400);
+            }
+            
+            $targetTenantId = $body['tenant_id'] ?? $tenantId;
+            
+            // Only super-admin can create invoices for other tenants
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $invoice = $billingService->createInvoice($targetTenantId, $body);
+            sendResponse($invoice, 201);
+            break;
+            
+        case 'update_invoice':
+            // Update an invoice
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Only admins can update invoices
+            if (!$adminAuth->hasPermission($authenticatedUser, 'update')) {
+                sendError('Forbidden', 403);
+            }
+            
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                sendError('Invoice ID is required', 400);
+            }
+            
+            $body = getRequestBody();
+            
+            $invoice = $billingService->updateInvoice($id, $body);
+            sendResponse($invoice);
+            break;
+            
+        case 'list_notifications':
+            // List notifications for a tenant
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $filters = [];
+            if (!empty($_GET['type'])) {
+                $filters['type'] = $_GET['type'];
+            }
+            if (!empty($_GET['status'])) {
+                $filters['status'] = $_GET['status'];
+            }
+            if (isset($_GET['unread_only'])) {
+                $filters['unread_only'] = filter_var($_GET['unread_only'], FILTER_VALIDATE_BOOLEAN);
+            }
+            if (!empty($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            if (!empty($_GET['offset'])) {
+                $filters['offset'] = (int)$_GET['offset'];
+            }
+            
+            $notifications = $notificationService->listNotifications($targetTenantId, $filters);
+            sendResponse($notifications);
+            break;
+            
+        case 'mark_notification_read':
+            // Mark a notification as read
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                sendError('Notification ID is required', 400);
+            }
+            
+            $notification = $notificationService->markAsRead($id);
+            sendResponse($notification);
+            break;
+            
+        case 'get_unread_count':
+            // Get count of unread notifications
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $count = $notificationService->getUnreadCount($targetTenantId);
+            sendResponse(['count' => $count]);
             break;
             
         default:
