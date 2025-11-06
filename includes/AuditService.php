@@ -496,4 +496,42 @@ class AuditService {
             return '[DECRYPTION_FAILED]';
         }
     }
+    
+    /**
+     * Log a generic event (not tied to a specific conversation)
+     * Used for system events like access denied, authentication failures, etc.
+     * 
+     * @param array $eventData Event data (event_type, user_id, etc.)
+     * @return string Event ID or empty string on failure
+     */
+    public function logEvent(array $eventData) {
+        if (!$this->enabled) {
+            return '';
+        }
+        
+        try {
+            $id = $this->generateUUID();
+            $now = gmdate('Y-m-d\TH:i:s\Z');
+            
+            // Store in audit_events with null conversation_id for system events
+            $sql = "INSERT INTO audit_events 
+                    (id, conversation_id, message_id, type, payload_json, created_at) 
+                    VALUES (?, NULL, NULL, ?, ?, ?)";
+            
+            $eventType = $eventData['event_type'] ?? 'system_event';
+            unset($eventData['event_type']); // Remove from payload
+            
+            $this->db->execute($sql, [
+                $id,
+                $eventType,
+                json_encode($eventData),
+                $now
+            ]);
+            
+            return $id;
+        } catch (Exception $e) {
+            error_log('AuditService: Failed to log event: ' . $e->getMessage());
+            return '';
+        }
+    }
 }
