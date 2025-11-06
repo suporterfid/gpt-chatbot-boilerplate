@@ -32,7 +32,7 @@ $overallHealthy = true;
 // Check: Database connectivity
 try {
     $db = new DB($config);
-    $db->query("SELECT 1")->fetch();
+    $result = $db->query("SELECT 1");
     
     $health['checks']['database'] = [
         'status' => 'healthy',

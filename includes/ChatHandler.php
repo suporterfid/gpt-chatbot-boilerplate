@@ -9,9 +9,27 @@ class ChatHandler {
     private $agentService;
     private $auditService;
     private $leadSenseService;
+    private $logger;
+    private $tracing;
 
-    public function __construct($config, $agentService = null, $auditService = null) {
+    public function __construct($config, $agentService = null, $auditService = null, $logger = null, $tracing = null) {
         $this->config = $config;
+        
+        // Initialize observability services if enabled
+        if ($logger === null && isset($config['observability']['structured_logging']) && $config['observability']['structured_logging']) {
+            require_once __DIR__ . '/ObservabilityLogger.php';
+            $this->logger = new ObservabilityLogger($config);
+        } else {
+            $this->logger = $logger;
+        }
+        
+        if ($tracing === null && isset($config['tracing']['enabled']) && $config['tracing']['enabled']) {
+            require_once __DIR__ . '/TracingService.php';
+            $this->tracing = new TracingService($this->logger, $config);
+        } else {
+            $this->tracing = $tracing;
+        }
+        
         $this->openAIClient = new OpenAIClient($config['openai'], $auditService);
         $this->agentService = $agentService;
         $this->auditService = $auditService;
@@ -20,6 +38,15 @@ class ChatHandler {
         if (isset($config['leadsense']) && ($config['leadsense']['enabled'] ?? false)) {
             require_once __DIR__ . '/LeadSense/LeadSenseService.php';
             $this->leadSenseService = new LeadSenseService($config['leadsense']);
+        }
+        
+        // Log handler initialization
+        if ($this->logger) {
+            $this->logger->debug('chat_handler', 'initialized', [
+                'has_agent_service' => $agentService !== null,
+                'has_audit_service' => $auditService !== null,
+                'tracing_enabled' => $this->tracing !== null
+            ]);
         }
     }
     
