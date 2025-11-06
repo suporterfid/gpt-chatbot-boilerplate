@@ -1,0 +1,10 @@
+[Unit]
+Description=GPT Chatbot Backup Monitoring Timer
+
+[Timer]
+# Run every hour
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

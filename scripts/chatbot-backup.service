@@ -1,0 +1,16 @@
+[Unit]
+Description=GPT Chatbot Full Backup
+After=network.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/chatbot
+ExecStart=/var/www/chatbot/scripts/backup_all.sh --retention-days 7
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=chatbot-backup
+
+[Install]
+WantedBy=multi-user.target

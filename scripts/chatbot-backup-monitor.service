@@ -1,0 +1,16 @@
+[Unit]
+Description=GPT Chatbot Backup Monitoring
+After=network.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/chatbot
+ExecStart=/var/www/chatbot/scripts/monitor_backups.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=chatbot-backup-monitor
+
+[Install]
+WantedBy=multi-user.target
