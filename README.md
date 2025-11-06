@@ -1015,22 +1015,100 @@ Production operations guides in `docs/ops/`:
 
 ## 📊 Observability & Monitoring
 
+The platform includes a comprehensive observability framework with structured logging, distributed tracing, and metrics collection for production-grade monitoring and troubleshooting.
+
+### Features
+
+- **Structured JSON Logging**: Rich context with trace IDs, tenant/agent info, and request metadata
+- **Distributed Tracing**: W3C Trace Context propagation across services and OpenAI API calls
+- **Prometheus Metrics**: 30+ metrics for API, OpenAI, agents, jobs, tokens, and system health
+- **Pre-configured Dashboards**: Grafana dashboards for service overview and performance
+- **Automated Alerting**: 15+ alert rules for errors, latency, queue health, and SLO breaches
+- **Log Aggregation**: Loki integration for centralized log search and analysis
+- **One-Command Deployment**: Docker Compose stack with Prometheus, Grafana, Loki, and AlertManager
+
+### Quick Start
+
+```bash
+# Start observability stack
+cd observability/docker
+docker-compose up -d
+
+# Access services
+# Grafana: http://localhost:3000 (admin/admin)
+# Prometheus: http://localhost:9090
+# Loki: http://localhost:3100
+```
+
 ### Metrics Endpoint
 
 The application exposes Prometheus-compatible metrics at `/metrics.php`:
 
 ```bash
-curl -H "Authorization: Bearer YOUR_API_KEY" \
-  http://localhost/metrics.php
+curl http://localhost/metrics.php
 ```
 
 **Available Metrics:**
+- **API Metrics**: Request rate, error rate, latency (P95/P99)
+- **OpenAI Metrics**: API calls, failures, latency by model
+- **Agent Metrics**: Requests and performance by agent
+- **Token Usage**: Prompt, completion, and total tokens for billing
 - **Job Metrics**: Queue depth, processed/failed jobs, job types
-- **System Metrics**: Total agents, prompts, vector stores, users by role
-- **Worker Metrics**: Last job timestamp, worker health status
-- **Database Metrics**: Database size (SQLite)
-- **API Metrics**: Admin API requests by resource
-- **Webhook Metrics**: Processed vs pending events
+- **System Metrics**: Agents, prompts, vector stores, users, database size
+- **Worker Metrics**: Health status, last job timestamp
+
+### Structured Logging
+
+All logs are output as JSON with trace IDs and rich context:
+
+```json
+{
+  "timestamp": "2024-11-06T18:00:00.000Z",
+  "level": "INFO",
+  "message": "API request completed",
+  "trace_id": "a1b2c3d4e5f6g7h8",
+  "context": {
+    "endpoint": "/chat-unified.php",
+    "method": "POST",
+    "duration_ms": 1234.56,
+    "status_code": 200,
+    "tenant_id": "tenant-123",
+    "agent_id": "agent-456"
+  }
+}
+```
+
+### Distributed Tracing
+
+Trace IDs are automatically:
+- Generated for each request
+- Propagated to OpenAI API calls
+- Included in all logs and metrics
+- Compatible with W3C Trace Context standard
+
+### Alerting
+
+Pre-configured alerts for critical conditions:
+- High error rate (>5%)
+- OpenAI API failures
+- High latency (P95 > 5s)
+- Job queue backlog (>100 jobs)
+- Worker unhealthy (>5 min inactive)
+- Token usage spikes
+- Database size warnings
+
+Configure notifications in `observability/docker/alertmanager.yml` for:
+- Slack
+- Email
+- PagerDuty
+- Custom webhooks
+
+### Documentation
+
+- 📖 **[Full Observability Guide](docs/OBSERVABILITY.md)** - Architecture, configuration, integration
+- 🚀 **[Quick Start Guide](observability/QUICKSTART.md)** - Get up and running in minutes
+- 📊 **[Observability Stack](observability/README.md)** - Infrastructure details
+- 🚨 **[Alert Rules](observability/alerts/chatbot-alerts.yml)** - Alert definitions and thresholds
 
 ### Health Checks
 
@@ -1047,16 +1125,6 @@ Returns detailed status for:
 - Worker process health
 - Job queue depth
 - Failed jobs in last 24 hours
-
-### Alerting
-
-Configure Prometheus alerts using the provided rules in `docs/ops/monitoring/alerts.yml`:
-- High job failure rate (10%+ warning, 50%+ critical)
-- Queue depth warnings (100+ jobs)
-- Worker down detection (5+ minutes inactive)
-- OpenAI API error rate monitoring
-- Database growth tracking
-- SSL certificate expiration warnings
 
 ## 📝 License
 

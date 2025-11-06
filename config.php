@@ -291,9 +291,24 @@ $config = [
     // Logging Configuration
     'logging' => [
         'level' => $_ENV['LOG_LEVEL'] ?? getenv('LOG_LEVEL') ?: 'info',
-        'file' => $_ENV['LOG_FILE'] ?? getenv('LOG_FILE') ?: 'logs/chatbot.log',
+        'file' => $_ENV['LOG_FILE'] ?? getenv('LOG_FILE') ?: 'php://stderr',
         'max_size' => (int)($_ENV['LOG_MAX_SIZE'] ?? getenv('LOG_MAX_SIZE') ?: 10485760), // 10MB
         'max_files' => (int)($_ENV['LOG_MAX_FILES'] ?? getenv('LOG_MAX_FILES') ?: 5),
+        'format' => $_ENV['LOG_FORMAT'] ?? getenv('LOG_FORMAT') ?: 'json', // json or text
+    ],
+    
+    // Observability Configuration
+    'observability' => [
+        'enabled' => filter_var($_ENV['OBSERVABILITY_ENABLED'] ?? getenv('OBSERVABILITY_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'tracing' => [
+            'enabled' => filter_var($_ENV['TRACING_ENABLED'] ?? getenv('TRACING_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+            'export' => filter_var($_ENV['TRACING_EXPORT'] ?? getenv('TRACING_EXPORT') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+            'sample_rate' => (float)($_ENV['TRACING_SAMPLE_RATE'] ?? getenv('TRACING_SAMPLE_RATE') ?: 1.0),
+        ],
+        'metrics' => [
+            'enabled' => filter_var($_ENV['METRICS_ENABLED'] ?? getenv('METRICS_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+            'storage_path' => $_ENV['METRICS_STORAGE_PATH'] ?? getenv('METRICS_STORAGE_PATH') ?: sys_get_temp_dir() . '/chatbot_metrics',
+        ],
     ],
 
     // Performance Configuration

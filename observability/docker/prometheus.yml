@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'chatbot-platform'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Load alerting rules
+rule_files:
+  - '/etc/prometheus/alerts/*.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Chatbot application metrics
+  - job_name: 'chatbot'
+    static_configs:
+      - targets:
+          - 'host.docker.internal:80'  # Adjust to your chatbot host
+    metrics_path: '/metrics.php'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+          - 'localhost:9090'
+
+  # Node exporter (if installed for system metrics)
+  - job_name: 'node'
+    static_configs:
+      - targets:
+          - 'host.docker.internal:9100'  # Adjust if node_exporter is running

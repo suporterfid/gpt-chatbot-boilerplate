@@ -1,0 +1,161 @@
+groups:
+  - name: chatbot_alerts
+    interval: 30s
+    rules:
+      # High Error Rate
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(chatbot_api_errors_total[5m])) 
+            / 
+            sum(rate(chatbot_api_requests_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+          
+      # OpenAI API Failures
+      - alert: OpenAIAPIFailures
+        expr: rate(chatbot_openai_errors_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: critical
+          component: openai
+        annotations:
+          summary: "OpenAI API failures detected"
+          description: "OpenAI API error rate: {{ $value }} errors/second"
+          
+      # High Latency
+      - alert: HighAPILatency
+        expr: |
+          histogram_quantile(0.95, 
+            rate(chatbot_api_request_duration_seconds_bucket[5m])
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API latency detected"
+          description: "P95 latency is {{ $value }}s (threshold: 5s)"
+          
+      # Job Queue Backlog
+      - alert: JobQueueBacklog
+        expr: chatbot_jobs_queue_depth > 100
+        for: 10m
+        labels:
+          severity: warning
+          component: workers
+        annotations:
+          summary: "Job queue backlog detected"
+          description: "{{ $value }} jobs pending in queue"
+          
+      # Worker Unhealthy
+      - alert: WorkerUnhealthy
+        expr: chatbot_worker_healthy == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: workers
+        annotations:
+          summary: "Worker is unhealthy"
+          description: "Worker has not processed jobs for more than 5 minutes"
+          
+      # High Failed Job Rate
+      - alert: HighFailedJobRate
+        expr: |
+          (
+            sum(rate(chatbot_jobs_failed_total[10m]))
+            /
+            sum(rate(chatbot_jobs_processed_total[10m]))
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: workers
+        annotations:
+          summary: "High job failure rate"
+          description: "Job failure rate: {{ $value | humanizePercentage }}"
+          
+      # Rate Limit Hits
+      - alert: HighRateLimitHits
+        expr: rate(chatbot_rate_limit_hits_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High rate limit hits"
+          description: "{{ $value }} rate limit hits per second"
+          
+      # Database Size Warning
+      - alert: DatabaseSizeWarning
+        expr: chatbot_database_size_bytes > 1e9
+        for: 1h
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database size is large"
+          description: "Database size: {{ $value | humanize }}B (threshold: 1GB)"
+          
+      # Token Usage Spike
+      - alert: TokenUsageSpike
+        expr: |
+          rate(chatbot_tokens_total[5m]) 
+          > 
+          1.5 * rate(chatbot_tokens_total[1h] offset 1h)
+        for: 10m
+        labels:
+          severity: warning
+          component: billing
+        annotations:
+          summary: "Token usage spike detected"
+          description: "Token usage is 50% higher than usual"
+          
+      # Webhook Processing Lag
+      - alert: WebhookProcessingLag
+        expr: |
+          (
+            chatbot_webhook_events_total{status="pending"}
+            /
+            (chatbot_webhook_events_total{status="pending"} + chatbot_webhook_events_total{status="processed"})
+          ) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+          component: webhooks
+        annotations:
+          summary: "Webhook processing lag detected"
+          description: "{{ $value | humanizePercentage }} of webhooks are pending"
+          
+      # Service Down
+      - alert: ServiceDown
+        expr: up{job="chatbot"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Chatbot service is down"
+          description: "Service has been down for more than 1 minute"
+          
+      # Memory Usage High
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            process_resident_memory_bytes{job="chatbot"}
+            /
+            node_memory_MemTotal_bytes
+          ) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage: {{ $value | humanizePercentage }}"

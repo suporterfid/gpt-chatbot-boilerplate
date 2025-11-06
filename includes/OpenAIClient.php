@@ -8,26 +8,48 @@ class OpenAIClient {
     private $organization;
     private $baseUrl;
     private $auditService;
+    private $observability;
 
-    public function __construct($config, $auditService = null) {
+    public function __construct($config, $auditService = null, $observability = null) {
         $this->apiKey = $config['api_key'];
         $this->organization = $config['organization'] ?? '';
         $this->baseUrl = $config['base_url'];
         $this->auditService = $auditService;
+        $this->observability = $observability;
     }
 
     // Chat Completions API Methods
     public function streamChatCompletion($payload, $callback) {
+        $startTime = microtime(true);
+        $spanId = null;
+        
+        if ($this->observability) {
+            $spanId = $this->observability->createSpan('openai.chat_completion', [
+                'api.type' => 'chat_completions',
+                'model' => $payload['model'] ?? 'unknown',
+                'stream' => true,
+            ]);
+        }
+        
         $this->logRequestPayload('POST', '/chat/completions', $payload);
 
         $ch = curl_init();
+        
+        // Add trace propagation headers
+        $extraHeaders = ['Accept: text/event-stream'];
+        if ($this->observability) {
+            $traceHeaders = $this->observability->getTracePropagationHeaders();
+            foreach ($traceHeaders as $key => $value) {
+                $extraHeaders[] = "$key: $value";
+            }
+        }
 
         curl_setopt_array($ch, [
             CURLOPT_URL => $this->baseUrl . '/chat/completions',
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_HTTPHEADER => $this->getHeaders(['Accept: text/event-stream']),
+            CURLOPT_HTTPHEADER => $this->getHeaders($extraHeaders),
             CURLOPT_WRITEFUNCTION => function($ch, $data) use ($callback) {
                 static $buffer = '';
 
@@ -59,33 +81,73 @@ class OpenAIClient {
             CURLOPT_TIMEOUT => 60,
         ]);
 
-        $result = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
+        $success = false;
+        try {
+            $result = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
 
-        if ($result === false) {
-            throw new Exception('cURL error: ' . $error);
-        }
+            if ($result === false) {
+                throw new Exception('cURL error: ' . $error);
+            }
 
-        if ($httpCode !== 200) {
-            throw new Exception('OpenAI API error: HTTP ' . $httpCode);
+            if ($httpCode !== 200) {
+                throw new Exception('OpenAI API error: HTTP ' . $httpCode);
+            }
+            
+            $success = true;
+        } finally {
+            $duration = microtime(true) - $startTime;
+            
+            if ($this->observability) {
+                $this->observability->endSpan($spanId, [
+                    'http.status_code' => $httpCode ?? 0,
+                    'success' => $success,
+                ]);
+                
+                $this->observability->trackOpenAICall(
+                    'chat_completions',
+                    $payload['model'] ?? 'unknown',
+                    $duration,
+                    $success
+                );
+            }
         }
     }
 
     public function streamResponse(array $payload, callable $callback) {
+        $startTime = microtime(true);
+        $spanId = null;
+        
+        if ($this->observability) {
+            $spanId = $this->observability->createSpan('openai.responses', [
+                'api.type' => 'responses',
+                'model' => $payload['model'] ?? 'unknown',
+                'stream' => true,
+            ]);
+        }
+        
         $payload['stream'] = true;
-
         $this->logRequestPayload('POST', '/responses', $payload);
 
         $ch = curl_init();
+        
+        // Add trace propagation headers
+        $extraHeaders = ['Accept: text/event-stream'];
+        if ($this->observability) {
+            $traceHeaders = $this->observability->getTracePropagationHeaders();
+            foreach ($traceHeaders as $key => $value) {
+                $extraHeaders[] = "$key: $value";
+            }
+        }
 
         curl_setopt_array($ch, [
             CURLOPT_URL => $this->baseUrl . '/responses',
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_HTTPHEADER => $this->getHeaders(['Accept: text/event-stream']),
+            CURLOPT_HTTPHEADER => $this->getHeaders($extraHeaders),
             CURLOPT_WRITEFUNCTION => function($ch, $data) use ($callback) {
                 static $buffer = '';
 
@@ -119,28 +181,50 @@ class OpenAIClient {
             CURLOPT_TIMEOUT => 120,
         ]);
 
-        $result = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
+        $success = false;
+        $httpCode = null;
+        try {
+            $result = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
 
-        if ($result === false) {
-            throw new Exception('cURL error: ' . $error);
-        }
+            if ($result === false) {
+                throw new Exception('cURL error: ' . $error);
+            }
 
-        if ($httpCode !== 200) {
-            // Attempt to retrieve detailed error by reissuing a non-streaming request
-            try {
-                $retryPayload = $payload;
-                $retryPayload['stream'] = false;
-                // Make a direct request to capture error body
-                $response = $this->makeRequest('POST', '/responses', $retryPayload);
+            if ($httpCode !== 200) {
+                // Attempt to retrieve detailed error by reissuing a non-streaming request
+                try {
+                    $retryPayload = $payload;
+                    $retryPayload['stream'] = false;
+                    // Make a direct request to capture error body
+                    $response = $this->makeRequest('POST', '/responses', $retryPayload);
                 // If API returned 2xx unexpectedly, treat as error-less
                 // but still signal upstream with a generic message
                 throw new Exception('OpenAI API error: HTTP ' . $httpCode);
             } catch (Exception $e) {
                 // Enrich message with detailed context
                 throw new Exception('OpenAI API error: HTTP ' . $httpCode . ' - ' . $e->getMessage());
+            }
+            }
+            
+            $success = true;
+        } finally {
+            $duration = microtime(true) - $startTime;
+            
+            if ($this->observability) {
+                $this->observability->endSpan($spanId, [
+                    'http.status_code' => $httpCode ?? 0,
+                    'success' => $success,
+                ]);
+                
+                $this->observability->trackOpenAICall(
+                    'responses',
+                    $payload['model'] ?? 'unknown',
+                    $duration,
+                    $success
+                );
             }
         }
     }
