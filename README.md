@@ -111,14 +111,51 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 
 ## 📋 Requirements
 
-- PHP 8.0+ with cURL and JSON extensions
+- PHP 8.0+ with cURL, JSON, and PDO extensions
 - Apache or Nginx web server
 - OpenAI API key
 - Composer (for dependency management)
+- Database: SQLite (included) or MySQL 8.0+
 - Optional: Docker for containerized deployment
 - Optional: Node.js and npm (for frontend development and linting)
 
 ## 🚀 Quick Start
+
+### Option 0: Web-Based Installation (Recommended for First-Time Users)
+
+The easiest way to get started is using our web-based installation wizard:
+
+1. Clone and start the application:
+```bash
+git clone https://github.com/suporterfid/gpt-chatbot-boilerplate.git
+cd gpt-chatbot-boilerplate
+
+# Start with Docker (includes MySQL)
+docker-compose up -d
+
+# Or start with PHP built-in server
+php -S localhost:8000
+```
+
+2. Open the installation wizard in your browser:
+```
+http://localhost:8088/setup/install.php
+# or http://localhost:8000/setup/install.php (if using PHP built-in server)
+```
+
+3. Follow the step-by-step wizard to:
+   - Verify system requirements
+   - Configure OpenAI API settings
+   - Choose database type (SQLite or MySQL)
+   - Set up admin credentials
+   - Enable optional features
+   - Initialize the database
+
+4. After installation, access:
+   - **Admin Panel**: `http://localhost:8088/public/admin/`
+   - **Chatbot**: `http://localhost:8088/`
+
+The installation wizard will generate a `.env` file with all your settings and create a `.install.lock` file to prevent accidental re-installation.
 
 ### Option 1: Chat Completions API (Simple)
 
@@ -165,7 +202,46 @@ MAX_FILE_SIZE=10485760
 ALLOWED_FILE_TYPES=txt,pdf,doc,docx,jpg,png
 ```
 
-### Option 3: Admin API & Agent Management (Phase 1)
+### Option 3: MySQL Database Deployment
+
+For production environments or when you need a robust database, use MySQL:
+
+1. Configure MySQL in `.env`:
+```bash
+# Database Configuration
+DATABASE_URL=mysql:host=mysql;port=3306;dbname=chatbot;charset=utf8mb4
+DB_HOST=mysql
+DB_PORT=3306
+DB_NAME=chatbot
+DB_USER=chatbot
+DB_PASSWORD=your_secure_password
+MYSQL_ROOT_PASSWORD=your_root_password
+
+# Leave DATABASE_PATH empty when using MySQL
+DATABASE_PATH=
+```
+
+2. Start with Docker (includes MySQL service):
+```bash
+docker-compose up -d
+```
+
+The docker-compose.yml includes:
+- **MySQL 8.0** service with persistent storage
+- Automatic database initialization
+- Health checks for both services
+- Volume mounting for data persistence
+
+3. Access MySQL directly (optional):
+```bash
+# Connect to MySQL container
+docker-compose exec mysql mysql -u chatbot -p
+
+# Or from host (if port 3306 is exposed)
+mysql -h 127.0.0.1 -P 3306 -u chatbot -p chatbot
+```
+
+### Option 4: Admin API & Agent Management (Phase 1)
 
 1. Enable admin features in `.env`:
 ```bash
@@ -216,7 +292,7 @@ curl -X POST "http://localhost/chat-unified.php" \
 
 For complete Admin API documentation, see [docs/PHASE1_DB_AGENT.md](docs/PHASE1_DB_AGENT.md).
 
-### Option 4: Hybrid Guardrails for Structured Outputs
+### Option 5: Hybrid Guardrails for Structured Outputs
 
 1. Create an agent with JSON schema response format:
 ```bash
@@ -272,7 +348,7 @@ curl -X POST "http://localhost/chat-unified.php" \
 
 For complete Hybrid Guardrails documentation and examples, see [docs/HYBRID_GUARDRAILS.md](docs/HYBRID_GUARDRAILS.md).
 
-### Option 5: Admin UI for Visual Management (Phase 2)
+### Option 6: Admin UI for Visual Management (Phase 2)
 
 1. Complete Phase 1 setup (database and admin token).
 
@@ -297,7 +373,7 @@ http://localhost/public/admin/
 
 For complete Admin UI documentation, see [docs/PHASE2_ADMIN_UI.md](docs/PHASE2_ADMIN_UI.md).
 
-### Option 6: Background Workers, Webhooks & RBAC (Phase 3)
+### Option 7: Background Workers, Webhooks & RBAC (Phase 3)
 
 1. Complete Phase 1 and Phase 2 setup.
 

@@ -1,0 +1,17 @@
+# Allow access to setup directory
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /setup/
+    
+    # Allow direct access to install.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ install.php [L,QSA]
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
