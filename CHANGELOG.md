@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Web-Based Installation & MySQL Support (November 6, 2025)
+
+#### Added
+- **Web Installation Wizard**: User-friendly setup interface at `/setup/install.php`
+  - Step-by-step configuration wizard (4 steps)
+  - System requirements validation (PHP version, extensions, permissions)
+  - Interactive configuration forms with collapsible sections
+  - Automatic `.env` file generation
+  - Database initialization and migration execution
+  - Installation lock mechanism (`.install.lock`) to prevent re-installation
+  - Beautiful gradient UI with responsive design
+  - Support for both SQLite and MySQL configuration
+  
+- **MySQL Database Support**: Production-ready database option
+  - Added MySQL service to `docker-compose.yml` with health checks
+  - MySQL 8.0 image with persistent volume storage
+  - PDO MySQL extension in Dockerfile
+  - Comprehensive MySQL configuration in `.env.example`
+  - Database connection string generation in installation wizard
+  - Automatic database and user creation via Docker environment variables
+  
+- **Enhanced Documentation**
+  - Created `docs/INSTALLATION_WIZARD.md` - Complete installation guide
+  - Updated `docs/deployment.md` - MySQL deployment section with backup/restore procedures
+  - Updated `docs/GUIA_CRIACAO_AGENTES.md` - Portuguese guide with installation wizard instructions
+  - Added `setup/README.md` - Setup directory documentation
+  - Updated `README.md` - Quick start with installation wizard (Option 0)
+  
+- **Docker Enhancements**
+  - Added `depends_on` for MySQL service
+  - Volume mounting for persistent data (`./data`)
+  - MySQL environment variables in docker-compose
+  - Network configuration for service communication
+  - Health checks for both chatbot and MySQL services
+
+#### Changed
+- **README.md**: Reorganized quick start options, added web installation as Option 0
+- **Dockerfile**: Now installs PDO and PDO MySQL extensions by default
+- **docker-compose.yml**: Enhanced with MySQL service and proper dependency management
+- **.env.example**: Added comprehensive MySQL configuration examples
+
+#### Screenshots
+- Installation Wizard Step 1: System requirements validation
+- Installation Wizard Step 2: Configuration settings with collapsible sections
+
 ### Phase 4 Enhancements (November 4, 2025)
 
 #### Added

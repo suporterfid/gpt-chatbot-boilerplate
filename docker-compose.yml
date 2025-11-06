@@ -70,6 +70,12 @@ services:
       - ADMIN_ENABLED=${ADMIN_ENABLED:-true}
       - ADMIN_TOKEN=${ADMIN_TOKEN}
       - DATABASE_PATH=${DATABASE_PATH:-./data/chatbot.db}
+      - DATABASE_URL=${DATABASE_URL}
+      - DB_HOST=${DB_HOST:-mysql}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME:-chatbot}
+      - DB_USER=${DB_USER:-chatbot}
+      - DB_PASSWORD=${DB_PASSWORD:-chatbot}
       - JOBS_ENABLED=${JOBS_ENABLED:-true}
       - ADMIN_RATE_LIMIT_REQUESTS=${ADMIN_RATE_LIMIT_REQUESTS:-300}
       - ADMIN_RATE_LIMIT_WINDOW=${ADMIN_RATE_LIMIT_WINDOW:-60}
