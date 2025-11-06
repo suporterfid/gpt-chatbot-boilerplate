@@ -51,7 +51,7 @@ class AdminAuth {
         // Check API keys
         $keyHash = hash('sha256', $token);
         
-        $sql = "SELECT ak.*, au.email, au.role, au.is_active 
+        $sql = "SELECT ak.*, au.email, au.role, au.is_active, au.tenant_id 
                 FROM admin_api_keys ak
                 JOIN admin_users au ON ak.user_id = au.id
                 WHERE ak.key_hash = ? 
@@ -74,6 +74,7 @@ class AdminAuth {
             'email' => $result['email'],
             'role' => $result['role'],
             'is_active' => (bool)$result['is_active'],
+            'tenant_id' => $result['tenant_id'],
             'api_key_id' => $result['id'],
             'auth_method' => 'api_key'
         ];
@@ -116,9 +117,10 @@ class AdminAuth {
      * @param string $email User email
      * @param string $password Password (will be hashed)
      * @param string $role User role
+     * @param string|null $tenantId Tenant ID (null for super-admin)
      * @return array Created user
      */
-    public function createUser($email, $password, $role = self::ROLE_ADMIN) {
+    public function createUser($email, $password, $role = self::ROLE_ADMIN, $tenantId = null) {
         // Validate role
         if (!in_array($role, [self::ROLE_VIEWER, self::ROLE_ADMIN, self::ROLE_SUPER_ADMIN], true)) {
             throw new Exception("Invalid role: $role");
@@ -129,16 +131,26 @@ class AdminAuth {
             throw new Exception("Invalid email address");
         }
         
+        // Super-admins should not be tied to a specific tenant
+        if ($role === self::ROLE_SUPER_ADMIN && $tenantId !== null) {
+            throw new Exception("Super-admins cannot be assigned to a specific tenant", 400);
+        }
+        
+        // Regular admins and viewers must have a tenant_id
+        if ($role !== self::ROLE_SUPER_ADMIN && $tenantId === null) {
+            throw new Exception("Non-super-admin users must be assigned to a tenant", 400);
+        }
+        
         $id = $this->generateUUID();
         $passwordHash = password_hash($password, PASSWORD_BCRYPT);
         $now = date('Y-m-d H:i:s');
         
         $sql = "INSERT INTO admin_users (
-            id, email, password_hash, role, is_active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 1, ?, ?)";
+            id, email, password_hash, role, tenant_id, is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)";
         
         try {
-            $this->db->insert($sql, [$id, $email, $passwordHash, $role, $now, $now]);
+            $this->db->insert($sql, [$id, $email, $passwordHash, $role, $tenantId, $now, $now]);
             
             return $this->getUser($id);
         } catch (Exception $e) {
@@ -156,7 +168,7 @@ class AdminAuth {
      * @return array|null User data
      */
     public function getUser($userId) {
-        $sql = "SELECT id, email, role, is_active, created_at, updated_at 
+        $sql = "SELECT id, email, role, tenant_id, is_active, created_at, updated_at 
                 FROM admin_users WHERE id = ?";
         
         return $this->db->queryOne($sql, [$userId]);
