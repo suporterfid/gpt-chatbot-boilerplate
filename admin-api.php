@@ -1996,6 +1996,161 @@ try {
                 'rationale' => $scoreResult['rationale']
             ]);
             break;
+        
+        // ==================== Prompt Builder Endpoints ====================
+        
+        case 'prompt_builder_generate':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'create', $adminAuth);
+            
+            require_once __DIR__ . '/includes/PromptBuilder/AdminPromptBuilderController.php';
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            if (empty($agentId)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $data = getRequestBody();
+            $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
+            $userId = $authenticatedUser['id'] ?? $authenticatedUser['email'] ?? null;
+            
+            $result = $controller->route('POST', [$agentId, 'prompt-builder', 'generate'], $data, $userId);
+            sendResponse($result);
+            break;
+        
+        case 'prompt_builder_list':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            require_once __DIR__ . '/includes/PromptBuilder/AdminPromptBuilderController.php';
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            if (empty($agentId)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
+            $result = $controller->route('GET', [$agentId, 'prompts'], [], null);
+            sendResponse($result);
+            break;
+        
+        case 'prompt_builder_get':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            require_once __DIR__ . '/includes/PromptBuilder/AdminPromptBuilderController.php';
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            $version = $_GET['version'] ?? '';
+            if (empty($agentId) || empty($version)) {
+                sendError('Agent ID and version required', 400);
+            }
+            
+            $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
+            $result = $controller->route('GET', [$agentId, 'prompts', $version], [], null);
+            sendResponse($result);
+            break;
+        
+        case 'prompt_builder_activate':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            require_once __DIR__ . '/includes/PromptBuilder/AdminPromptBuilderController.php';
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            $version = $_GET['version'] ?? '';
+            if (empty($agentId) || empty($version)) {
+                sendError('Agent ID and version required', 400);
+            }
+            
+            $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
+            $userId = $authenticatedUser['id'] ?? $authenticatedUser['email'] ?? null;
+            
+            $result = $controller->route('POST', [$agentId, 'prompts', $version, 'activate'], [], $userId);
+            sendResponse($result);
+            break;
+        
+        case 'prompt_builder_deactivate':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            require_once __DIR__ . '/includes/PromptBuilder/AdminPromptBuilderController.php';
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            if (empty($agentId)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
+            $userId = $authenticatedUser['id'] ?? $authenticatedUser['email'] ?? null;
+            
+            $result = $controller->route('POST', [$agentId, 'prompts', 'deactivate'], [], $userId);
+            sendResponse($result);
+            break;
+        
+        case 'prompt_builder_save_manual':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'create', $adminAuth);
+            
+            require_once __DIR__ . '/includes/PromptBuilder/AdminPromptBuilderController.php';
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            if (empty($agentId)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $data = getRequestBody();
+            $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
+            $userId = $authenticatedUser['id'] ?? $authenticatedUser['email'] ?? null;
+            
+            $result = $controller->route('POST', [$agentId, 'prompts', 'manual'], $data, $userId);
+            sendResponse($result);
+            break;
+        
+        case 'prompt_builder_delete':
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
+            require_once __DIR__ . '/includes/PromptBuilder/AdminPromptBuilderController.php';
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            $version = $_GET['version'] ?? '';
+            if (empty($agentId) || empty($version)) {
+                sendError('Agent ID and version required', 400);
+            }
+            
+            $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
+            $result = $controller->route('DELETE', [$agentId, 'prompts', $version], [], null);
+            sendResponse($result);
+            break;
+        
+        case 'prompt_builder_catalog':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            require_once __DIR__ . '/includes/PromptBuilder/AdminPromptBuilderController.php';
+            
+            // Note: catalog doesn't need agent_id but we use a dummy for routing
+            $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
+            $result = $controller->route('GET', ['dummy', 'prompt-builder', 'catalog'], [], null);
+            sendResponse($result);
+            break;
             
         default:
             sendError('Unknown action: ' . $action, 400);
