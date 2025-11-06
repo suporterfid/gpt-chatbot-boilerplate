@@ -28,9 +28,43 @@ Os **Agentes** são configurações persistentes de IA que permitem criar múlti
 
 ## Pré-requisitos
 
-### 1. Configuração Inicial
+### 1. Instalação e Configuração Inicial
 
-Certifique-se de que o Admin está habilitado no arquivo `.env`:
+#### Opção A: Instalação via Interface Web (Recomendado)
+
+A maneira mais fácil de começar é usar o assistente de instalação web:
+
+1. Inicie a aplicação:
+```bash
+git clone https://github.com/suporterfid/gpt-chatbot-boilerplate.git
+cd gpt-chatbot-boilerplate
+
+# Com Docker (recomendado, inclui MySQL)
+docker-compose up -d
+
+# Ou com servidor PHP
+php -S localhost:8000
+```
+
+2. Acesse o assistente de instalação:
+```
+http://localhost:8088/setup/install.php
+# ou http://localhost:8000/setup/install.php
+```
+
+3. Siga os passos do assistente:
+   - ✅ Verificar requisitos do sistema
+   - ⚙️ Configurar OpenAI API e parâmetros
+   - 🗄️ Escolher e configurar banco de dados (SQLite ou MySQL)
+   - 🔐 Configurar credenciais de administrador
+   - 🎯 Habilitar recursos opcionais
+   - 🚀 Inicializar banco de dados
+
+4. Guarde o **Admin Token** gerado - você precisará dele para acessar o painel administrativo.
+
+#### Opção B: Configuração Manual
+
+Se preferir configurar manualmente, edite o arquivo `.env`:
 
 ```bash
 # Habilitar Admin API
@@ -42,7 +76,12 @@ ADMIN_TOKEN=seu_token_admin_seguro_com_no_minimo_32_caracteres
 # Configuração do banco de dados
 DATABASE_PATH=./data/chatbot.db
 # Ou MySQL:
-# DATABASE_URL=mysql://usuario:senha@localhost/chatbot_db
+# DATABASE_URL=mysql:host=mysql;port=3306;dbname=chatbot;charset=utf8mb4
+# DB_HOST=mysql
+# DB_PORT=3306
+# DB_NAME=chatbot
+# DB_USER=chatbot
+# DB_PASSWORD=senha_segura
 
 # Chave da API OpenAI
 OPENAI_API_KEY=sk-sua-chave-aqui
@@ -50,7 +89,10 @@ OPENAI_API_KEY=sk-sua-chave-aqui
 
 ### 2. Executar Migrações
 
-As migrações são executadas automaticamente na primeira requisição ao Admin API. Para executar manualmente:
+As migrações são executadas automaticamente:
+- Pelo assistente de instalação web
+- Na primeira requisição ao Admin API
+- Ou manualmente via comando:
 
 ```bash
 php -r "require 'includes/DB.php'; \$db = new DB(['database_path' => './data/chatbot.db']); echo \$db->runMigrations('./db/migrations') . ' migrations executadas';"
