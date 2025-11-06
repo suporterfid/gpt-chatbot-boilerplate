@@ -273,8 +273,8 @@ try {
     // Initialize services with tenant context
     $tenantId = $authenticatedUser['tenant_id'] ?? null;
     $agentService = new AgentService($db, $tenantId);
-    $promptService = new PromptService($db, $openaiClient);
-    $vectorStoreService = new VectorStoreService($db, $openaiClient);
+    $promptService = new PromptService($db, $openaiClient, $tenantId);
+    $vectorStoreService = new VectorStoreService($db, $openaiClient, $tenantId);
     $jobQueue = new JobQueue($db);
     $tenantService = null;
     
