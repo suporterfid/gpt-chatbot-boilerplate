@@ -10,14 +10,30 @@ require_once __DIR__ . '/../DB.php';
 class LeadRepository {
     private $db;
     private $config;
+    private $tenantId;
     
-    public function __construct($config = []) {
+    public function __construct($config = [], $tenantId = null) {
         $this->config = $config;
+        $this->tenantId = $tenantId;
         $dbConfig = [
             'database_url' => $config['database_url'] ?? null,
             'database_path' => $config['database_path'] ?? __DIR__ . '/../../data/chatbot.db'
         ];
         $this->db = new DB($dbConfig);
+    }
+    
+    /**
+     * Set tenant context for tenant-scoped queries
+     */
+    public function setTenantId($tenantId) {
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Get current tenant ID
+     */
+    public function getTenantId() {
+        return $this->tenantId;
     }
     
     /**
@@ -54,11 +70,11 @@ class LeadRepository {
         $sql = "INSERT INTO leads (
             id, agent_id, conversation_id, name, company, role, 
             email, phone, industry, company_size, interest, 
-            intent_level, score, qualified, status, source_channel, extras_json
+            intent_level, score, qualified, status, source_channel, tenant_id, extras_json
         ) VALUES (
             :id, :agent_id, :conversation_id, :name, :company, :role,
             :email, :phone, :industry, :company_size, :interest,
-            :intent_level, :score, :qualified, :status, :source_channel, :extras_json
+            :intent_level, :score, :qualified, :status, :source_channel, :tenant_id, :extras_json
         )";
         
         $this->db->execute($sql, [
@@ -78,6 +94,7 @@ class LeadRepository {
             'qualified' => $leadData['qualified'] ? 1 : 0,
             'status' => $leadData['status'] ?? 'new',
             'source_channel' => $leadData['source_channel'] ?? 'web',
+            'tenant_id' => $leadData['tenant_id'] ?? $this->tenantId,
             'extras_json' => isset($leadData['extras']) ? json_encode($leadData['extras']) : null
         ]);
         
@@ -170,6 +187,12 @@ class LeadRepository {
     public function list($filters = []) {
         $sql = "SELECT * FROM leads WHERE 1=1";
         $params = [];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = :tenant_id";
+            $params['tenant_id'] = $this->tenantId;
+        }
         
         if (isset($filters['agent_id'])) {
             $sql .= " AND agent_id = :agent_id";
