@@ -227,3 +227,108 @@ groups:
       - record: chatbot_job_duration_avg
         expr: |
           avg(chatbot_job_duration_seconds)
+
+  - name: chatbot_backup_alerts
+    interval: 60s
+    rules:
+      # No recent backup
+      - alert: BackupMissing
+        expr: |
+          (time() - chatbot_last_backup_timestamp_seconds) > 86400
+        for: 1h
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: "No backup in last 24 hours"
+          description: "Last successful backup was {{ $value | humanizeDuration }} ago. Backups should run daily."
+
+      # Backup failure
+      - alert: BackupFailed
+        expr: chatbot_backup_status == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: "Backup job failed"
+          description: "The most recent backup attempt failed. Check backup logs immediately."
+
+      # Backup size anomaly (too small)
+      - alert: BackupSizeTooSmall
+        expr: |
+          (
+            chatbot_last_backup_size_bytes < 
+            avg_over_time(chatbot_last_backup_size_bytes[7d]) * 0.5
+          )
+        for: 30m
+        labels:
+          severity: warning
+          component: backup
+        annotations:
+          summary: "Backup size is suspiciously small"
+          description: "Latest backup is {{ $value | humanize }}B, which is less than 50% of the 7-day average. This may indicate incomplete backup."
+
+      # Low backup retention
+      - alert: LowBackupCount
+        expr: chatbot_backup_count < 3
+        for: 1h
+        labels:
+          severity: warning
+          component: backup
+        annotations:
+          summary: "Insufficient backup copies"
+          description: "Only {{ $value }} backup(s) found. Minimum recommended is 3 for redundancy."
+
+      # Backup storage space low
+      - alert: BackupStorageLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/data/backups"} /
+            node_filesystem_size_bytes{mountpoint="/data/backups"}
+          ) < 0.15
+        for: 10m
+        labels:
+          severity: warning
+          component: backup
+        annotations:
+          summary: "Backup storage space running low"
+          description: "Only {{ $value | humanizePercentage }} of backup storage remaining. Clean up old backups or expand storage."
+
+      # Backup storage critical
+      - alert: BackupStorageCritical
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/data/backups"} /
+            node_filesystem_size_bytes{mountpoint="/data/backups"}
+          ) < 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: "Backup storage critically low"
+          description: "Only {{ $value | humanizePercentage }} of backup storage remaining. Backups may fail. Immediate action required."
+
+      # Off-site backup sync failure
+      - alert: OffsiteBackupFailed
+        expr: chatbot_offsite_backup_status == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: backup
+        annotations:
+          summary: "Off-site backup synchronization failed"
+          description: "Failed to sync backups to off-site location. Disaster recovery capability is at risk."
+
+      # Backup age monitoring
+      - alert: BackupTooOld
+        expr: |
+          (time() - chatbot_last_backup_timestamp_seconds) > 172800
+        for: 30m
+        labels:
+          severity: warning
+          component: backup
+        annotations:
+          summary: "Backup is older than 48 hours"
+          description: "Last successful backup was {{ $value | humanizeDuration }} ago. Check backup schedule and system health."

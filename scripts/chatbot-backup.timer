@@ -1,0 +1,13 @@
+[Unit]
+Description=GPT Chatbot Daily Backup Timer
+
+[Timer]
+# Run daily at 2:00 AM
+OnCalendar=daily
+OnCalendar=02:00
+Persistent=true
+# If the system was off, run backup as soon as possible
+OnBootSec=10min
+
+[Install]
+WantedBy=timers.target

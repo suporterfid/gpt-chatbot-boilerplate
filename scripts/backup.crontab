@@ -1,0 +1,31 @@
+# Cron Configuration for Automated Backups
+# 
+# Add these entries to your crontab (crontab -e)
+# Adjust paths and schedules as needed for your environment
+
+# Daily full backup at 2:00 AM (7 day retention)
+0 2 * * * cd /var/www/chatbot && ./scripts/backup_all.sh --retention-days 7 >> /var/log/chatbot/backup.log 2>&1
+
+# Weekly backup on Sundays at 3:00 AM (30 day retention) with off-site copy
+0 3 * * 0 cd /var/www/chatbot && ./scripts/backup_all.sh --retention-days 30 --offsite >> /var/log/chatbot/backup-weekly.log 2>&1
+
+# Database-only backup every 6 hours (for more frequent recovery points)
+0 */6 * * * cd /var/www/chatbot && ./scripts/db_backup.sh --retention-days 2 >> /var/log/chatbot/backup-db.log 2>&1
+
+# Backup monitoring check every hour
+0 * * * * cd /var/www/chatbot && ./scripts/monitor_backups.sh >> /var/log/chatbot/backup-monitor.log 2>&1
+
+# Monthly backup on the 1st of each month at 4:00 AM (365 day retention)
+0 4 1 * * cd /var/www/chatbot && ./scripts/backup_all.sh --retention-days 365 --offsite >> /var/log/chatbot/backup-monthly.log 2>&1
+
+# Example off-site backup sync (if you want separate off-site schedule)
+# 30 2 * * * rsync -avz /data/backups/ backup-server:/backups/chatbot/ >> /var/log/chatbot/offsite-sync.log 2>&1
+
+# Alternative: Sync to AWS S3 (requires aws-cli configured)
+# 30 2 * * * aws s3 sync /data/backups/ s3://my-bucket/chatbot-backups/ >> /var/log/chatbot/s3-sync.log 2>&1
+
+# Recommended: Different retention tiers
+# - Hourly (database only): 48 hours
+# - Daily (full): 7 days  
+# - Weekly (full): 30 days
+# - Monthly (full): 365 days
