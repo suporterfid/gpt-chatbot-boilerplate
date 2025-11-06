@@ -382,6 +382,121 @@ try {
             sendResponse(['success' => true, 'message' => 'Default agent set']);
             break;
         
+        // ==================== Whitelabel Publishing Endpoints ====================
+        
+        case 'enable_whitelabel':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $data = getRequestBody();
+            $agent = $agentService->enableWhitelabel($id, $data);
+            log_admin('Whitelabel enabled for agent: ' . $id);
+            sendResponse($agent);
+            break;
+            
+        case 'disable_whitelabel':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $agent = $agentService->disableWhitelabel($id);
+            log_admin('Whitelabel disabled for agent: ' . $id);
+            sendResponse($agent);
+            break;
+            
+        case 'rotate_whitelabel_secret':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $agent = $agentService->rotateHmacSecret($id);
+            log_admin('Whitelabel secret rotated for agent: ' . $id);
+            sendResponse($agent);
+            break;
+            
+        case 'update_whitelabel_config':
+            if ($method !== 'POST' && $method !== 'PUT') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $data = getRequestBody();
+            $agent = $agentService->updateWhitelabelConfig($id, $data);
+            log_admin('Whitelabel config updated for agent: ' . $id);
+            sendResponse($agent);
+            break;
+            
+        case 'get_whitelabel_url':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $agent = $agentService->getAgent($id);
+            if (!$agent) {
+                sendError('Agent not found', 404);
+            }
+            
+            if (!$agent['whitelabel_enabled'] || !$agent['agent_public_id']) {
+                sendError('Whitelabel not enabled for this agent', 400);
+            }
+            
+            // Build the whitelabel URL
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'];
+            $baseUrl = $protocol . '://' . $host;
+            
+            $url = $baseUrl . '/public/whitelabel.php?id=' . urlencode($agent['agent_public_id']);
+            
+            if (!empty($agent['vanity_path'])) {
+                $vanityUrl = $baseUrl . '/public/whitelabel.php?path=' . urlencode($agent['vanity_path']);
+            } else {
+                $vanityUrl = null;
+            }
+            
+            if (!empty($agent['custom_domain'])) {
+                $customUrl = 'https://' . $agent['custom_domain'];
+            } else {
+                $customUrl = null;
+            }
+            
+            sendResponse([
+                'url' => $url,
+                'vanity_url' => $vanityUrl,
+                'custom_domain_url' => $customUrl,
+                'agent_public_id' => $agent['agent_public_id']
+            ]);
+            break;
+        
         // ==================== Agent Channels Endpoints ====================
         
         case 'list_agent_channels':

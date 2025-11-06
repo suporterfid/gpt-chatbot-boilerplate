@@ -411,13 +411,37 @@ class AgentService {
             $agent['response_format'] = null;
         }
         
-        // Convert is_default to boolean
+        // Parse whitelabel JSON fields
+        if (isset($agent['allowed_origins_json']) && $agent['allowed_origins_json']) {
+            $agent['allowed_origins'] = json_decode($agent['allowed_origins_json'], true);
+        } else {
+            $agent['allowed_origins'] = null;
+        }
+        
+        if (isset($agent['wl_theme_json']) && $agent['wl_theme_json']) {
+            $agent['wl_theme'] = json_decode($agent['wl_theme_json'], true);
+        } else {
+            $agent['wl_theme'] = null;
+        }
+        
+        // Convert boolean fields
         $agent['is_default'] = (bool)$agent['is_default'];
+        if (isset($agent['whitelabel_enabled'])) {
+            $agent['whitelabel_enabled'] = (bool)$agent['whitelabel_enabled'];
+        }
+        if (isset($agent['wl_require_signed_requests'])) {
+            $agent['wl_require_signed_requests'] = (bool)$agent['wl_require_signed_requests'];
+        }
+        if (isset($agent['wl_enable_file_upload'])) {
+            $agent['wl_enable_file_upload'] = (bool)$agent['wl_enable_file_upload'];
+        }
         
         // Remove JSON fields from response
         unset($agent['tools_json']);
         unset($agent['vector_store_ids_json']);
         unset($agent['response_format_json']);
+        unset($agent['allowed_origins_json']);
+        unset($agent['wl_theme_json']);
         
         return $agent;
     }
@@ -600,6 +624,282 @@ class AgentService {
             'config' => $config,
             'created_at' => $channel['created_at'],
             'updated_at' => $channel['updated_at']
+        ];
+    }
+    
+    // ============================================================
+    // Whitelabel Publishing Methods
+    // ============================================================
+    
+    /**
+     * Get agent by public ID
+     * 
+     * @param string $publicId Agent public ID
+     * @return array|null Agent data or null if not found
+     */
+    public function getAgentByPublicId($publicId) {
+        $sql = "SELECT * FROM agents WHERE agent_public_id = ? AND whitelabel_enabled = 1";
+        $agent = $this->db->getOne($sql, [$publicId]);
+        
+        if ($agent) {
+            return $this->normalizeAgent($agent);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Get agent by vanity path
+     * 
+     * @param string $vanityPath Vanity path
+     * @return array|null Agent data or null if not found
+     */
+    public function getAgentByVanityPath($vanityPath) {
+        $sql = "SELECT * FROM agents WHERE vanity_path = ? AND whitelabel_enabled = 1";
+        $agent = $this->db->getOne($sql, [$vanityPath]);
+        
+        if ($agent) {
+            return $this->normalizeAgent($agent);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Get agent by custom domain
+     * 
+     * @param string $customDomain Custom domain
+     * @return array|null Agent data or null if not found
+     */
+    public function getAgentByCustomDomain($customDomain) {
+        $sql = "SELECT * FROM agents WHERE custom_domain = ? AND whitelabel_enabled = 1";
+        $agent = $this->db->getOne($sql, [$customDomain]);
+        
+        if ($agent) {
+            return $this->normalizeAgent($agent);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Enable whitelabel for an agent
+     * 
+     * @param string $id Agent ID
+     * @param array $whitelabelConfig Whitelabel configuration
+     * @return array Updated agent
+     */
+    public function enableWhitelabel($id, $whitelabelConfig = []) {
+        require_once __DIR__ . '/WhitelabelTokenService.php';
+        
+        $agent = $this->getAgent($id);
+        if (!$agent) {
+            throw new Exception('Agent not found', 404);
+        }
+        
+        // Generate public ID if not provided
+        $publicId = $whitelabelConfig['agent_public_id'] ?? WhitelabelTokenService::generatePublicId();
+        
+        // Generate HMAC secret if not provided
+        $hmacSecret = $whitelabelConfig['wl_hmac_secret'] ?? WhitelabelTokenService::generateHmacSecret();
+        
+        // Build update array
+        $updates = ['whitelabel_enabled = 1'];
+        $params = [];
+        
+        if (!$agent['agent_public_id']) {
+            $updates[] = 'agent_public_id = ?';
+            $params[] = $publicId;
+        }
+        
+        if (!$agent['wl_hmac_secret']) {
+            $updates[] = 'wl_hmac_secret = ?';
+            $params[] = $hmacSecret;
+        }
+        
+        // Apply other whitelabel config
+        if (isset($whitelabelConfig['wl_title'])) {
+            $updates[] = 'wl_title = ?';
+            $params[] = $whitelabelConfig['wl_title'];
+        }
+        
+        if (isset($whitelabelConfig['wl_logo_url'])) {
+            $updates[] = 'wl_logo_url = ?';
+            $params[] = $whitelabelConfig['wl_logo_url'];
+        }
+        
+        if (isset($whitelabelConfig['wl_theme'])) {
+            $updates[] = 'wl_theme_json = ?';
+            $params[] = json_encode($whitelabelConfig['wl_theme']);
+        }
+        
+        if (isset($whitelabelConfig['wl_welcome_message'])) {
+            $updates[] = 'wl_welcome_message = ?';
+            $params[] = $whitelabelConfig['wl_welcome_message'];
+        }
+        
+        if (isset($whitelabelConfig['wl_placeholder'])) {
+            $updates[] = 'wl_placeholder = ?';
+            $params[] = $whitelabelConfig['wl_placeholder'];
+        }
+        
+        if (isset($whitelabelConfig['wl_enable_file_upload'])) {
+            $updates[] = 'wl_enable_file_upload = ?';
+            $params[] = (int)(bool)$whitelabelConfig['wl_enable_file_upload'];
+        }
+        
+        $updates[] = 'updated_at = ?';
+        $params[] = date('c');
+        $params[] = $id;
+        
+        $sql = "UPDATE agents SET " . implode(', ', $updates) . " WHERE id = ?";
+        $this->db->execute($sql, $params);
+        
+        return $this->getAgent($id);
+    }
+    
+    /**
+     * Disable whitelabel for an agent
+     * 
+     * @param string $id Agent ID
+     * @return array Updated agent
+     */
+    public function disableWhitelabel($id) {
+        $agent = $this->getAgent($id);
+        if (!$agent) {
+            throw new Exception('Agent not found', 404);
+        }
+        
+        $sql = "UPDATE agents SET whitelabel_enabled = 0, updated_at = ? WHERE id = ?";
+        $this->db->execute($sql, [date('c'), $id]);
+        
+        return $this->getAgent($id);
+    }
+    
+    /**
+     * Rotate HMAC secret for an agent
+     * 
+     * @param string $id Agent ID
+     * @return array Updated agent with new secret
+     */
+    public function rotateHmacSecret($id) {
+        require_once __DIR__ . '/WhitelabelTokenService.php';
+        
+        $agent = $this->getAgent($id);
+        if (!$agent) {
+            throw new Exception('Agent not found', 404);
+        }
+        
+        $newSecret = WhitelabelTokenService::generateHmacSecret();
+        
+        $sql = "UPDATE agents SET wl_hmac_secret = ?, updated_at = ? WHERE id = ?";
+        $this->db->execute($sql, [$newSecret, date('c'), $id]);
+        
+        return $this->getAgent($id);
+    }
+    
+    /**
+     * Update whitelabel configuration
+     * 
+     * @param string $id Agent ID
+     * @param array $config Whitelabel configuration
+     * @return array Updated agent
+     */
+    public function updateWhitelabelConfig($id, $config) {
+        $agent = $this->getAgent($id);
+        if (!$agent) {
+            throw new Exception('Agent not found', 404);
+        }
+        
+        $updates = [];
+        $params = [];
+        
+        // Whitelabel branding fields
+        $stringFields = [
+            'wl_title', 'wl_logo_url', 'wl_welcome_message', 'wl_placeholder',
+            'wl_legal_disclaimer_md', 'wl_footer_brand_md', 'vanity_path', 'custom_domain'
+        ];
+        
+        foreach ($stringFields as $field) {
+            if (array_key_exists($field, $config)) {
+                $updates[] = "$field = ?";
+                $params[] = $config[$field];
+            }
+        }
+        
+        // Boolean fields
+        $boolFields = [
+            'wl_require_signed_requests', 'wl_enable_file_upload'
+        ];
+        
+        foreach ($boolFields as $field) {
+            if (isset($config[$field])) {
+                $updates[] = "$field = ?";
+                $params[] = (int)(bool)$config[$field];
+            }
+        }
+        
+        // Integer fields
+        $intFields = [
+            'wl_token_ttl_seconds', 'wl_rate_limit_requests', 'wl_rate_limit_window_seconds'
+        ];
+        
+        foreach ($intFields as $field) {
+            if (isset($config[$field])) {
+                $updates[] = "$field = ?";
+                $params[] = (int)$config[$field];
+            }
+        }
+        
+        // JSON fields
+        if (isset($config['wl_theme'])) {
+            $updates[] = 'wl_theme_json = ?';
+            $params[] = json_encode($config['wl_theme']);
+        }
+        
+        if (isset($config['allowed_origins'])) {
+            $updates[] = 'allowed_origins_json = ?';
+            $params[] = json_encode($config['allowed_origins']);
+        }
+        
+        if (empty($updates)) {
+            return $agent;
+        }
+        
+        $updates[] = 'updated_at = ?';
+        $params[] = date('c');
+        $params[] = $id;
+        
+        $sql = "UPDATE agents SET " . implode(', ', $updates) . " WHERE id = ?";
+        $this->db->execute($sql, $params);
+        
+        return $this->getAgent($id);
+    }
+    
+    /**
+     * Get sanitized public configuration for whitelabel page
+     * Never returns secrets or internal IDs
+     * 
+     * @param string $publicId Agent public ID
+     * @return array|null Public configuration or null if not found
+     */
+    public function getPublicWhitelabelConfig($publicId) {
+        $agent = $this->getAgentByPublicId($publicId);
+        
+        if (!$agent) {
+            return null;
+        }
+        
+        return [
+            'title' => $agent['wl_title'] ?? $agent['name'],
+            'logo_url' => $agent['wl_logo_url'] ?? null,
+            'theme' => $agent['wl_theme'] ?? [],
+            'welcome_message' => $agent['wl_welcome_message'] ?? 'Hello! How can I help you today?',
+            'placeholder' => $agent['wl_placeholder'] ?? 'Type your message...',
+            'enable_file_upload' => $agent['wl_enable_file_upload'] ?? false,
+            'legal_disclaimer_md' => $agent['wl_legal_disclaimer_md'] ?? null,
+            'footer_brand_md' => $agent['wl_footer_brand_md'] ?? null,
+            'api_type' => $agent['api_type'] ?? 'responses'
         ];
     }
 }
