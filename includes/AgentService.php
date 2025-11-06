@@ -7,9 +7,25 @@ require_once __DIR__ . '/DB.php';
 
 class AgentService {
     private $db;
+    private $tenantId;
     
-    public function __construct($db) {
+    public function __construct($db, $tenantId = null) {
         $this->db = $db;
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Set tenant context for tenant-scoped queries
+     */
+    public function setTenantId($tenantId) {
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Get current tenant ID
+     */
+    public function getTenantId() {
+        return $this->tenantId;
     }
     
     /**
@@ -29,8 +45,8 @@ class AgentService {
             id, name, description, api_type, prompt_id, prompt_version,
             system_message, model, temperature, top_p, max_output_tokens,
             tools_json, vector_store_ids_json, max_num_results, response_format_json, is_default,
-            created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            tenant_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $params = [
             $id,
@@ -49,6 +65,7 @@ class AgentService {
             isset($data['max_num_results']) ? (int)$data['max_num_results'] : null,
             isset($data['response_format']) ? json_encode($data['response_format']) : null,
             isset($data['is_default']) ? (int)(bool)$data['is_default'] : 0,
+            $data['tenant_id'] ?? $this->tenantId,
             $now,
             $now
         ];
@@ -56,9 +73,11 @@ class AgentService {
         try {
             $this->db->beginTransaction();
             
-            // If this agent is marked as default, unset previous defaults
+            // If this agent is marked as default, unset previous defaults for this tenant
             if (!empty($data['is_default'])) {
-                $this->db->execute("UPDATE agents SET is_default = 0");
+                $tenantFilter = $this->tenantId ? " WHERE tenant_id = ?" : " WHERE tenant_id IS NULL";
+                $updateParams = $this->tenantId ? [$this->tenantId] : [];
+                $this->db->execute("UPDATE agents SET is_default = 0" . $tenantFilter, $updateParams);
             }
             
             $this->db->insert($sql, $params);
@@ -162,8 +181,10 @@ class AgentService {
             // Handle is_default separately to ensure atomicity
             if (isset($data['is_default'])) {
                 if ($data['is_default']) {
-                    // Unset all defaults first
-                    $this->db->execute("UPDATE agents SET is_default = 0");
+                    // Unset all defaults first for this tenant
+                    $tenantFilter = $this->tenantId ? " WHERE tenant_id = ?" : " WHERE tenant_id IS NULL";
+                    $updateParams = $this->tenantId ? [$this->tenantId] : [];
+                    $this->db->execute("UPDATE agents SET is_default = 0" . $tenantFilter, $updateParams);
                     $updates[] = 'is_default = 1';
                 } else {
                     $updates[] = 'is_default = 0';
@@ -187,7 +208,15 @@ class AgentService {
      */
     public function getAgent($id) {
         $sql = "SELECT * FROM agents WHERE id = ?";
-        $agent = $this->db->getOne($sql, [$id]);
+        $params = [$id];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $agent = $this->db->getOne($sql, $params);
         
         if ($agent) {
             return $this->normalizeAgent($agent);
@@ -203,6 +232,12 @@ class AgentService {
         $sql = "SELECT * FROM agents";
         $params = [];
         $conditions = [];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $conditions[] = "tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
         
         if (!empty($filters['name'])) {
             $conditions[] = "name LIKE ?";
@@ -234,8 +269,18 @@ class AgentService {
      * Get the default agent
      */
     public function getDefaultAgent() {
-        $sql = "SELECT * FROM agents WHERE is_default = 1 LIMIT 1";
-        $agent = $this->db->getOne($sql);
+        $sql = "SELECT * FROM agents WHERE is_default = 1";
+        $params = [];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $sql .= " LIMIT 1";
+        
+        $agent = $this->db->getOne($sql, $params);
         
         if ($agent) {
             return $this->normalizeAgent($agent);
@@ -257,8 +302,10 @@ class AgentService {
         try {
             $this->db->beginTransaction();
             
-            // Unset all defaults
-            $this->db->execute("UPDATE agents SET is_default = 0");
+            // Unset all defaults for this tenant
+            $tenantFilter = $this->tenantId ? " WHERE tenant_id = ?" : " WHERE tenant_id IS NULL";
+            $updateParams = $this->tenantId ? [$this->tenantId] : [];
+            $this->db->execute("UPDATE agents SET is_default = 0" . $tenantFilter, $updateParams);
             
             // Set this one as default
             $this->db->execute("UPDATE agents SET is_default = 1, updated_at = ? WHERE id = ?", [

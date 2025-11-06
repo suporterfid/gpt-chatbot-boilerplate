@@ -270,11 +270,19 @@ try {
         $openaiClient = new OpenAIAdminClient($config['openai']);
     }
 
-    // Initialize services
-    $agentService = new AgentService($db);
-    $promptService = new PromptService($db, $openaiClient);
-    $vectorStoreService = new VectorStoreService($db, $openaiClient);
+    // Initialize services with tenant context
+    $tenantId = $authenticatedUser['tenant_id'] ?? null;
+    $agentService = new AgentService($db, $tenantId);
+    $promptService = new PromptService($db, $openaiClient, $tenantId);
+    $vectorStoreService = new VectorStoreService($db, $openaiClient, $tenantId);
     $jobQueue = new JobQueue($db);
+    $tenantService = null;
+    
+    // Only initialize TenantService if user is super-admin
+    if ($authenticatedUser && $authenticatedUser['role'] === 'super-admin') {
+        require_once __DIR__ . '/includes/TenantService.php';
+        $tenantService = new TenantService($db);
+    }
     
     // Initialize Audit Service
     $auditService = null;
@@ -2265,6 +2273,216 @@ try {
             $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
             $result = $controller->route('GET', ['dummy', 'prompt-builder', 'catalog'], [], null);
             sendResponse($result);
+            break;
+        
+        // ============================================================
+        // Tenant Management Actions (Super-Admin Only)
+        // ============================================================
+        
+        case 'list_tenants':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            if (!$tenantService) {
+                sendError('Tenant management requires super-admin privileges', 403);
+            }
+            
+            $filters = [];
+            if (isset($_GET['status'])) {
+                $filters['status'] = $_GET['status'];
+            }
+            if (isset($_GET['search'])) {
+                $filters['search'] = $_GET['search'];
+            }
+            
+            $tenants = $tenantService->listTenants($filters);
+            sendResponse($tenants);
+            break;
+        
+        case 'get_tenant':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            if (!$tenantService) {
+                sendError('Tenant management requires super-admin privileges', 403);
+            }
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Tenant ID required', 400);
+            }
+            
+            $tenant = $tenantService->getTenant($id);
+            if (!$tenant) {
+                sendError('Tenant not found', 404);
+            }
+            
+            sendResponse($tenant);
+            break;
+        
+        case 'create_tenant':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            if (!$tenantService) {
+                sendError('Tenant management requires super-admin privileges', 403);
+            }
+            
+            $body = getRequestBody();
+            
+            try {
+                $tenant = $tenantService->createTenant($body);
+                sendResponse($tenant, 201);
+            } catch (Exception $e) {
+                $statusCode = $e->getCode();
+                if (!is_int($statusCode) || $statusCode < 400) {
+                    $statusCode = 400;
+                }
+                sendError($e->getMessage(), $statusCode);
+            }
+            break;
+        
+        case 'update_tenant':
+            if ($method !== 'PUT' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            if (!$tenantService) {
+                sendError('Tenant management requires super-admin privileges', 403);
+            }
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Tenant ID required', 400);
+            }
+            
+            $body = getRequestBody();
+            
+            try {
+                $tenant = $tenantService->updateTenant($id, $body);
+                sendResponse($tenant);
+            } catch (Exception $e) {
+                $statusCode = $e->getCode();
+                if (!is_int($statusCode) || $statusCode < 400) {
+                    $statusCode = 400;
+                }
+                sendError($e->getMessage(), $statusCode);
+            }
+            break;
+        
+        case 'delete_tenant':
+            if ($method !== 'DELETE' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            if (!$tenantService) {
+                sendError('Tenant management requires super-admin privileges', 403);
+            }
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Tenant ID required', 400);
+            }
+            
+            try {
+                $tenantService->deleteTenant($id);
+                sendResponse(['success' => true, 'message' => 'Tenant deleted']);
+            } catch (Exception $e) {
+                $statusCode = $e->getCode();
+                if (!is_int($statusCode) || $statusCode < 400) {
+                    $statusCode = 400;
+                }
+                sendError($e->getMessage(), $statusCode);
+            }
+            break;
+        
+        case 'suspend_tenant':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            if (!$tenantService) {
+                sendError('Tenant management requires super-admin privileges', 403);
+            }
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Tenant ID required', 400);
+            }
+            
+            try {
+                $tenant = $tenantService->suspendTenant($id);
+                sendResponse($tenant);
+            } catch (Exception $e) {
+                $statusCode = $e->getCode();
+                if (!is_int($statusCode) || $statusCode < 400) {
+                    $statusCode = 400;
+                }
+                sendError($e->getMessage(), $statusCode);
+            }
+            break;
+        
+        case 'activate_tenant':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            if (!$tenantService) {
+                sendError('Tenant management requires super-admin privileges', 403);
+            }
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Tenant ID required', 400);
+            }
+            
+            try {
+                $tenant = $tenantService->activateTenant($id);
+                sendResponse($tenant);
+            } catch (Exception $e) {
+                $statusCode = $e->getCode();
+                if (!is_int($statusCode) || $statusCode < 400) {
+                    $statusCode = 400;
+                }
+                sendError($e->getMessage(), $statusCode);
+            }
+            break;
+        
+        case 'get_tenant_stats':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_users', $adminAuth);
+            
+            if (!$tenantService) {
+                sendError('Tenant management requires super-admin privileges', 403);
+            }
+            
+            $id = $_GET['id'] ?? '';
+            if (empty($id)) {
+                sendError('Tenant ID required', 400);
+            }
+            
+            try {
+                $stats = $tenantService->getTenantStats($id);
+                sendResponse($stats);
+            } catch (Exception $e) {
+                $statusCode = $e->getCode();
+                if (!is_int($statusCode) || $statusCode < 400) {
+                    $statusCode = 400;
+                }
+                sendError($e->getMessage(), $statusCode);
+            }
             break;
             
         default:

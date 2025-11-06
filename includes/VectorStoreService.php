@@ -9,10 +9,26 @@ require_once __DIR__ . '/OpenAIAdminClient.php';
 class VectorStoreService {
     private $db;
     private $openaiClient;
+    private $tenantId;
     
-    public function __construct($db, $openaiClient = null) {
+    public function __construct($db, $openaiClient = null, $tenantId = null) {
         $this->db = $db;
         $this->openaiClient = $openaiClient;
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Set tenant context for tenant-scoped queries
+     */
+    public function setTenantId($tenantId) {
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Get current tenant ID
+     */
+    public function getTenantId() {
+        return $this->tenantId;
     }
     
     /**
@@ -59,8 +75,8 @@ class VectorStoreService {
             }
         }
         
-        $sql = "INSERT INTO vector_stores (id, name, openai_store_id, status, meta_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO vector_stores (id, name, openai_store_id, status, meta_json, tenant_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         
         $metaJson = null;
         if (isset($data['metadata'])) {
@@ -73,6 +89,7 @@ class VectorStoreService {
             $openaiStoreId,
             'ready',
             $metaJson,
+            $data['tenant_id'] ?? $this->tenantId,
             $now,
             $now
         ];
@@ -87,7 +104,15 @@ class VectorStoreService {
      */
     public function getVectorStore($id) {
         $sql = "SELECT * FROM vector_stores WHERE id = ?";
-        $result = $this->db->query($sql, [$id]);
+        $params = [$id];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $result = $this->db->query($sql, $params);
         
         if (empty($result)) {
             return null;
@@ -101,7 +126,15 @@ class VectorStoreService {
      */
     public function getVectorStoreByOpenAIId($openaiId) {
         $sql = "SELECT * FROM vector_stores WHERE openai_store_id = ?";
-        $result = $this->db->query($sql, [$openaiId]);
+        $params = [$openaiId];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $result = $this->db->query($sql, $params);
         
         if (empty($result)) {
             return null;
@@ -117,6 +150,12 @@ class VectorStoreService {
         $sql = "SELECT * FROM vector_stores";
         $params = [];
         $where = [];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $where[] = "tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
         
         if (!empty($filters['name'])) {
             $where[] = "name LIKE ?";

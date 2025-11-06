@@ -10,10 +10,26 @@ require_once __DIR__ . '/OpenAIAdminClient.php';
 class PromptService {
     private $db;
     private $openaiClient;
+    private $tenantId;
     
-    public function __construct($db, $openaiClient = null) {
+    public function __construct($db, $openaiClient = null, $tenantId = null) {
         $this->db = $db;
         $this->openaiClient = $openaiClient;
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Set tenant context for tenant-scoped queries
+     */
+    public function setTenantId($tenantId) {
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Get current tenant ID
+     */
+    public function getTenantId() {
+        return $this->tenantId;
     }
     
     /**
@@ -65,8 +81,8 @@ class PromptService {
             }
         }
         
-        $sql = "INSERT INTO prompts (id, name, openai_prompt_id, description, meta_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO prompts (id, name, openai_prompt_id, description, meta_json, tenant_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         
         $metaJson = null;
         if (isset($data['content'])) {
@@ -79,6 +95,7 @@ class PromptService {
             $openaiPromptId,
             $data['description'] ?? null,
             $metaJson,
+            $data['tenant_id'] ?? $this->tenantId,
             $now,
             $now
         ];
@@ -93,7 +110,15 @@ class PromptService {
      */
     public function getPrompt($id) {
         $sql = "SELECT * FROM prompts WHERE id = ?";
-        $result = $this->db->query($sql, [$id]);
+        $params = [$id];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $result = $this->db->query($sql, $params);
         
         if (empty($result)) {
             return null;
@@ -107,7 +132,15 @@ class PromptService {
      */
     public function getPromptByOpenAIId($openaiId) {
         $sql = "SELECT * FROM prompts WHERE openai_prompt_id = ?";
-        $result = $this->db->query($sql, [$openaiId]);
+        $params = [$openaiId];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $result = $this->db->query($sql, $params);
         
         if (empty($result)) {
             return null;
@@ -123,6 +156,12 @@ class PromptService {
         $sql = "SELECT * FROM prompts";
         $params = [];
         $where = [];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $where[] = "tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
         
         if (!empty($filters['name'])) {
             $where[] = "name LIKE ?";
