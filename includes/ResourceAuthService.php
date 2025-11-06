@@ -60,7 +60,7 @@ class ResourceAuthService {
         }
         
         // Check resource ownership/permission
-        return $this->checkResourceOwnership($user, $resourceType, $resourceId);
+        return $this->checkResourceOwnership($user, $resourceType, $resourceId, $action);
     }
     
     /**
@@ -89,11 +89,12 @@ class ResourceAuthService {
      * @param array $user Authenticated user data
      * @param string $resourceType Resource type
      * @param string $resourceId Resource ID
+     * @param string $action Action being attempted
      * @return bool True if user has access
      */
-    private function checkResourceOwnership($user, $resourceType, $resourceId) {
+    private function checkResourceOwnership($user, $resourceType, $resourceId, $action) {
         // First check for explicit resource permissions
-        if ($this->hasExplicitPermission($user, $resourceType, $resourceId)) {
+        if ($this->hasExplicitPermission($user, $resourceType, $resourceId, $action)) {
             return true;
         }
         
@@ -143,10 +144,11 @@ class ResourceAuthService {
      * @param array $user Authenticated user data
      * @param string $resourceType Resource type
      * @param string $resourceId Resource ID
-     * @return bool True if explicit permission exists
+     * @param string $action Action being attempted
+     * @return bool True if explicit permission exists for this action
      */
-    private function hasExplicitPermission($user, $resourceType, $resourceId) {
-        $sql = "SELECT id FROM resource_permissions 
+    private function hasExplicitPermission($user, $resourceType, $resourceId, $action) {
+        $sql = "SELECT permissions_json FROM resource_permissions 
                 WHERE user_id = ? 
                 AND resource_type = ? 
                 AND resource_id = ? 
@@ -154,7 +156,13 @@ class ResourceAuthService {
         
         $result = $this->db->queryOne($sql, [$user['id'], $resourceType, $resourceId]);
         
-        return $result !== null;
+        if (!$result) {
+            return false;
+        }
+        
+        // Check if the specific action is in the granted permissions
+        $permissions = json_decode($result['permissions_json'], true);
+        return in_array($action, $permissions, true);
     }
     
     /**
