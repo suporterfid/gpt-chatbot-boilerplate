@@ -8,10 +8,27 @@ require_once 'includes/OpenAIClient.php';
 require_once 'includes/ChatHandler.php';
 require_once 'includes/AuditService.php';
 
-// Logging helper
+// Initialize observability if enabled
+$observability = null;
+if ($config['observability']['enabled'] ?? true) {
+    require_once 'includes/ObservabilityMiddleware.php';
+    $observability = new ObservabilityMiddleware($config);
+}
+
+// Logging helper - now uses observability if available
 $__CFG = $config; // capture for closures
+$__OBS = $observability; // capture for closures
 function log_debug($message, $level = 'info') {
-    global $__CFG;
+    global $__CFG, $__OBS;
+    
+    // Use observability logger if available
+    if ($__OBS) {
+        $logger = $__OBS->getLogger();
+        $logger->$level($message);
+        return;
+    }
+    
+    // Fallback to file logging
     $logFile = $__CFG['logging']['file'] ?? __DIR__ . '/logs/chatbot.log';
     $dir = dirname($logFile);
     if (!is_dir($dir)) {
@@ -188,8 +205,16 @@ try {
         }
     }
     
-    // Use configuration loaded above
-    $chatHandler = new ChatHandler($config, $agentService, $auditService);
+    // Initialize ChatHandler with observability
+    $chatHandler = new ChatHandler($config, $agentService, $auditService, $observability);
+    
+    // Start request span if observability is enabled
+    $requestSpanId = null;
+    if ($observability) {
+        $requestSpanId = $observability->handleRequestStart('/chat-unified.php', [
+            'api_type' => $config['api_type'],
+        ]);
+    }
 
     // Get request data
     $message = '';
@@ -479,6 +504,11 @@ try {
     error_log('Chat Error: ' . $e->getMessage());
     log_debug('Chat Error: ' . $e->getMessage(), 'error');
     
+    // Record error in observability
+    if ($observability && isset($requestSpanId)) {
+        $observability->handleError($requestSpanId, $e);
+    }
+    
     // Audit error event
     if (isset($auditService) && $auditService && $auditService->isEnabled() && isset($conversationId)) {
         $auditService->recordEvent($conversationId, 'error', [
@@ -515,7 +545,17 @@ try {
             ]
         ]);
     }
+    
+    // End request span with error status
+    if ($observability && isset($requestSpanId)) {
+        $observability->handleRequestEnd($requestSpanId, '/chat-unified.php', $statusCode ?? 500);
+    }
 } finally {
+    // End successful request span if not already ended
+    if ($observability && isset($requestSpanId) && !isset($statusCode)) {
+        $observability->handleRequestEnd($requestSpanId, '/chat-unified.php', 200);
+    }
+    
     if ($shouldStream) {
         sendSSEEvent('close', null);
     }

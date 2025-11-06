@@ -9,10 +9,12 @@ class ChatHandler {
     private $agentService;
     private $auditService;
     private $leadSenseService;
+    private $observability;
 
-    public function __construct($config, $agentService = null, $auditService = null) {
+    public function __construct($config, $agentService = null, $auditService = null, $observability = null) {
         $this->config = $config;
-        $this->openAIClient = new OpenAIClient($config['openai'], $auditService);
+        $this->observability = $observability;
+        $this->openAIClient = new OpenAIClient($config['openai'], $auditService, $observability);
         $this->agentService = $agentService;
         $this->auditService = $auditService;
         
