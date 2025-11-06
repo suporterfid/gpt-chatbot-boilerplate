@@ -83,6 +83,15 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Hybrid Configuration**: Combine OpenAI stored prompts (`prompt_id`) with local system messages and response format guardrails.
 - **Three Format Types**: Text (default), JSON Object (flexible), and JSON Schema (strict validation).
 - **Configuration Precedence**: Request > Agent > Config > Defaults for maximum flexibility.
+
+### 📊 **Private Audit Trails**
+- **Comprehensive Tracking**: Capture every user-assistant interaction with metadata for analysis and compliance.
+- **Security & Privacy**: PII redaction, AES-256-GCM encryption at rest, content hashing, and RBAC access control.
+- **Hallucination Detection**: Track fallbacks, errors, tool consistency, and retrieval coverage for quality monitoring.
+- **Admin Query API**: Filter, search, and export audit data; decrypt content with elevated permissions.
+- **Automated Retention**: Configurable retention periods with automated cleanup and legal hold support.
+- **Event Tracking**: Captures request lifecycle, streaming events, tool calls, fallbacks, and errors.
+- See [docs/AUDIT_TRAILS.md](docs/AUDIT_TRAILS.md) for complete documentation.
 - **Database Storage**: Store response_format configurations in agent records for reusability.
 - **Practical Examples**: Bedtime story generator, research assistant with citations, data extraction, and more.
 - See [docs/HYBRID_GUARDRAILS.md](docs/HYBRID_GUARDRAILS.md) for detailed guide and examples.

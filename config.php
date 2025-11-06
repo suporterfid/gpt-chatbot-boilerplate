@@ -325,6 +325,19 @@ $config = [
             'default_allow_media' => filter_var($_ENV['WHATSAPP_ALLOW_MEDIA'] ?? getenv('WHATSAPP_ALLOW_MEDIA') ?: 'true', FILTER_VALIDATE_BOOLEAN),
             'default_max_media_size' => (int)($_ENV['WHATSAPP_MAX_MEDIA_SIZE'] ?? getenv('WHATSAPP_MAX_MEDIA_SIZE') ?: 10485760), // 10MB
         ]
+    ],
+    
+    // Auditing Configuration
+    'auditing' => [
+        'enabled' => filter_var($_ENV['AUDIT_ENABLED'] ?? getenv('AUDIT_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'encrypt_at_rest' => filter_var($_ENV['AUDIT_ENCRYPT'] ?? getenv('AUDIT_ENCRYPT') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'encryption_key' => $_ENV['AUDIT_ENC_KEY'] ?? getenv('AUDIT_ENC_KEY') ?: '',
+        'retention_days' => (int)($_ENV['AUDIT_RETENTION_DAYS'] ?? getenv('AUDIT_RETENTION_DAYS') ?: 90),
+        'pii_redaction_patterns' => $_ENV['AUDIT_PII_PATTERNS'] ?? getenv('AUDIT_PII_PATTERNS') ?: '',
+        'sample_rate' => (float)($_ENV['AUDIT_SAMPLE_RATE'] ?? getenv('AUDIT_SAMPLE_RATE') ?: 1.0),
+        'evaluate_async' => filter_var($_ENV['AUDIT_EVAL_ASYNC'] ?? getenv('AUDIT_EVAL_ASYNC') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+        'database_url' => $_ENV['DATABASE_URL'] ?? getenv('DATABASE_URL') ?: '',
+        'database_path' => $_ENV['DATABASE_PATH'] ?? getenv('DATABASE_PATH') ?: __DIR__ . '/data/chatbot.db',
     ]
 ];
 

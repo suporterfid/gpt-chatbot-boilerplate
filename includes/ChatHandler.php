@@ -7,11 +7,13 @@ class ChatHandler {
     private $config;
     private $openAIClient;
     private $agentService;
+    private $auditService;
 
-    public function __construct($config, $agentService = null) {
+    public function __construct($config, $agentService = null, $auditService = null) {
         $this->config = $config;
-        $this->openAIClient = new OpenAIClient($config['openai']);
+        $this->openAIClient = new OpenAIClient($config['openai'], $auditService);
         $this->agentService = $agentService;
+        $this->auditService = $auditService;
     }
     
     /**
@@ -149,6 +151,24 @@ class ChatHandler {
             'role' => 'user',
             'content' => $message
         ];
+        
+        // Audit: Record user message
+        if ($this->auditService && $this->auditService->isEnabled()) {
+            $this->auditService->appendMessage($conversationId, [
+                'role' => 'user',
+                'content' => $message,
+                'request_meta' => [
+                    'model' => $agentOverrides['model'] ?? $this->config['chat']['model'],
+                    'temperature' => $agentOverrides['temperature'] ?? $this->config['chat']['temperature'],
+                    'agent_id' => $agentId
+                ]
+            ]);
+            
+            $this->auditService->recordEvent($conversationId, 'request_start', [
+                'api_type' => 'chat',
+                'streaming' => true
+            ]);
+        }
 
         // Stream response from OpenAI with agent overrides applied
         $this->streamChatCompletion($messages, $conversationId, $agentOverrides);
@@ -173,6 +193,25 @@ class ChatHandler {
             'role' => 'user',
             'content' => $message
         ];
+        
+        // Audit: Record user message
+        $startTime = microtime(true);
+        if ($this->auditService && $this->auditService->isEnabled()) {
+            $this->auditService->appendMessage($conversationId, [
+                'role' => 'user',
+                'content' => $message,
+                'request_meta' => [
+                    'model' => $agentOverrides['model'] ?? $this->config['chat']['model'],
+                    'temperature' => $agentOverrides['temperature'] ?? $this->config['chat']['temperature'],
+                    'agent_id' => $agentId
+                ]
+            ]);
+            
+            $this->auditService->recordEvent($conversationId, 'request_start', [
+                'api_type' => 'chat',
+                'streaming' => false
+            ]);
+        }
 
         $payload = [
             'model' => $agentOverrides['model'] ?? $this->config['chat']['model'],
@@ -193,6 +232,26 @@ class ChatHandler {
             'role' => 'assistant',
             'content' => $assistantMessage
         ];
+        
+        // Audit: Record assistant message
+        if ($this->auditService && $this->auditService->isEnabled()) {
+            $latencyMs = round((microtime(true) - $startTime) * 1000);
+            
+            $assistantMessageId = $this->auditService->appendMessage($conversationId, [
+                'role' => 'assistant',
+                'content' => $assistantMessage
+            ]);
+            
+            $this->auditService->finalizeMessage($assistantMessageId, [
+                'finish_reason' => $response['choices'][0]['finish_reason'] ?? 'stop',
+                'latency_ms' => $latencyMs,
+                'http_status' => 200
+            ]);
+            
+            $this->auditService->recordEvent($conversationId, 'request_end', [
+                'latency_ms' => $latencyMs
+            ], $assistantMessageId);
+        }
 
         $this->saveConversationHistory($conversationId, $messages);
 
@@ -255,6 +314,30 @@ class ChatHandler {
         }
 
         $messages[] = $userMessage;
+        
+        // Audit: Record user message
+        $userMessageId = null;
+        $startTime = microtime(true);
+        if ($this->auditService && $this->auditService->isEnabled()) {
+            $userMessageId = $this->auditService->appendMessage($conversationId, [
+                'role' => 'user',
+                'content' => $message,
+                'attachments' => !empty($fileIds) ? ['file_ids' => $fileIds] : null,
+                'request_meta' => [
+                    'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
+                    'prompt_id' => $effectivePromptId,
+                    'prompt_version' => $effectivePromptVersion,
+                    'temperature' => $agentOverrides['temperature'] ?? $responsesConfig['temperature'],
+                    'agent_id' => $agentId
+                ]
+            ]);
+            
+            // Record request start event
+            $this->auditService->recordEvent($conversationId, 'request_start', [
+                'api_type' => 'responses',
+                'streaming' => true
+            ], $userMessageId);
+        }
 
         $payload = [
             'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
@@ -320,9 +403,11 @@ class ChatHandler {
         $fullResponse = '';
         $responseId = null;
         $toolCalls = [];
+        $assistantMessageId = null;
+        $auditService = $this->auditService;
 
-        $streamFn = function($p) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls) {
-            $this->openAIClient->streamResponse($p, function($event) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls) {
+        $streamFn = function($p) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls, &$assistantMessageId, $auditService, $startTime) {
+            $this->openAIClient->streamResponse($p, function($event) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls, &$assistantMessageId, $auditService, $startTime) {
             if (!isset($event['type'])) {
                 return;
             }
@@ -337,6 +422,13 @@ class ChatHandler {
                         'response_id' => $responseId
                     ]);
                     $messageStarted = true;
+                    
+                    // Audit: Stream start event
+                    if ($auditService && $auditService->isEnabled()) {
+                        $auditService->recordEvent($conversationId, 'stream_start', [
+                            'response_id' => $responseId
+                        ]);
+                    }
                 }
                 return;
             }
@@ -395,6 +487,15 @@ class ChatHandler {
                         'arguments' => $toolCalls[$callId]['arguments'],
                         'call_id' => $callId
                     ]);
+                    
+                    // Audit: Tool call event
+                    if ($auditService && $auditService->isEnabled() && $assistantMessageId) {
+                        $auditService->recordEvent($conversationId, 'tool_call', [
+                            'tool_name' => $toolCalls[$callId]['tool_name'],
+                            'arguments' => $toolCalls[$callId]['arguments'],
+                            'call_id' => $callId
+                        ], $assistantMessageId);
+                    }
                 }
                 return;
             }
@@ -442,6 +543,31 @@ class ChatHandler {
                         'role' => 'assistant',
                         'content' => $fullResponse
                     ];
+                    
+                    // Audit: Record assistant message
+                    if ($auditService && $auditService->isEnabled()) {
+                        $latencyMs = round((microtime(true) - $startTime) * 1000);
+                        
+                        $assistantMessageId = $auditService->appendMessage($conversationId, [
+                            'role' => 'assistant',
+                            'content' => $fullResponse
+                        ]);
+                        
+                        // Finalize with response metadata
+                        $auditService->finalizeMessage($assistantMessageId, [
+                            'response_id' => $responseId,
+                            'finish_reason' => $finishReason,
+                            'latency_ms' => $latencyMs,
+                            'http_status' => 200
+                        ]);
+                        
+                        // Record stream end event
+                        $auditService->recordEvent($conversationId, 'stream_end', [
+                            'response_id' => $responseId,
+                            'finish_reason' => $finishReason,
+                            'latency_ms' => $latencyMs
+                        ], $assistantMessageId);
+                    }
                 }
 
                 $this->saveConversationHistory($conversationId, $messages);
@@ -457,6 +583,7 @@ class ChatHandler {
                 $fullResponse = '';
                 $responseId = null;
                 $toolCalls = [];
+                $assistantMessageId = null;
                 return;
             }
 
@@ -481,6 +608,15 @@ class ChatHandler {
             // Retry without prompt if prompt reference likely invalid
             if ($hasPrompt && $clientErr) {
                 sendSSEEvent('message', [ 'type' => 'notice', 'message' => 'Prompt unavailable. Retrying without prompt.' ]);
+                
+                // Audit: Fallback event
+                if ($this->auditService && $this->auditService->isEnabled()) {
+                    $this->auditService->recordEvent($conversationId, 'fallback_applied', [
+                        'reason' => 'prompt_removed',
+                        'original_error' => $err
+                    ]);
+                }
+                
                 unset($payload['prompt']);
                 try {
                     $streamFn($payload);
@@ -495,6 +631,17 @@ class ChatHandler {
             // Retry with a safe model if model might be invalid
             if ($clientErr && isset($payload['model']) && $payload['model'] !== 'gpt-4o-mini') {
                 sendSSEEvent('message', [ 'type' => 'notice', 'message' => 'Model unsupported. Falling back to gpt-4o-mini.' ]);
+                
+                // Audit: Fallback event
+                if ($this->auditService && $this->auditService->isEnabled()) {
+                    $this->auditService->recordEvent($conversationId, 'fallback_applied', [
+                        'reason' => 'model_downgraded',
+                        'original_model' => $payload['model'],
+                        'fallback_model' => 'gpt-4o-mini',
+                        'original_error' => $err
+                    ]);
+                }
+                
                 $payload['model'] = 'gpt-4o-mini';
                 $streamFn($payload);
                 return;
@@ -560,6 +707,28 @@ class ChatHandler {
         }
 
         $messages[] = $userMessage;
+        
+        // Audit: Record user message
+        $startTime = microtime(true);
+        if ($this->auditService && $this->auditService->isEnabled()) {
+            $this->auditService->appendMessage($conversationId, [
+                'role' => 'user',
+                'content' => $message,
+                'attachments' => !empty($fileIds) ? ['file_ids' => $fileIds] : null,
+                'request_meta' => [
+                    'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
+                    'prompt_id' => $effectivePromptId,
+                    'prompt_version' => $effectivePromptVersion,
+                    'temperature' => $agentOverrides['temperature'] ?? $responsesConfig['temperature'],
+                    'agent_id' => $agentId
+                ]
+            ]);
+            
+            $this->auditService->recordEvent($conversationId, 'request_start', [
+                'api_type' => 'responses',
+                'streaming' => false
+            ]);
+        }
 
         $payload = [
             'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
@@ -621,7 +790,7 @@ class ChatHandler {
             $payload['response_format'] = $effectiveResponseFormat;
         }
 
-        $execute = function(array $payload) use (&$messages, $conversationId) {
+        $execute = function(array $payload) use (&$messages, $conversationId, $startTime) {
             $response = $this->openAIClient->createResponse($payload);
 
             $assistantMessage = $this->extractResponseOutputText($response);
@@ -631,6 +800,28 @@ class ChatHandler {
                     'role' => 'assistant',
                     'content' => $assistantMessage
                 ];
+                
+                // Audit: Record assistant message
+                if ($this->auditService && $this->auditService->isEnabled()) {
+                    $latencyMs = round((microtime(true) - $startTime) * 1000);
+                    
+                    $assistantMessageId = $this->auditService->appendMessage($conversationId, [
+                        'role' => 'assistant',
+                        'content' => $assistantMessage
+                    ]);
+                    
+                    $this->auditService->finalizeMessage($assistantMessageId, [
+                        'response_id' => $response['id'] ?? null,
+                        'finish_reason' => $response['status'] ?? 'completed',
+                        'latency_ms' => $latencyMs,
+                        'http_status' => 200
+                    ]);
+                    
+                    $this->auditService->recordEvent($conversationId, 'request_end', [
+                        'response_id' => $response['id'] ?? null,
+                        'latency_ms' => $latencyMs
+                    ], $assistantMessageId);
+                }
             }
 
             $this->saveConversationHistory($conversationId, $messages);
@@ -649,6 +840,14 @@ class ChatHandler {
             $clientErr = (strpos($err, 'HTTP 400') !== false) || (strpos($err, 'HTTP 404') !== false) || (strpos($err, 'HTTP 422') !== false);
 
             if ($hasPrompt && $clientErr) {
+                // Audit: Fallback event
+                if ($this->auditService && $this->auditService->isEnabled()) {
+                    $this->auditService->recordEvent($conversationId, 'fallback_applied', [
+                        'reason' => 'prompt_removed',
+                        'original_error' => $err
+                    ]);
+                }
+                
                 unset($payload['prompt']);
                 try {
                     return $execute($payload);
@@ -659,6 +858,16 @@ class ChatHandler {
             }
 
             if ($clientErr && isset($payload['model']) && $payload['model'] !== 'gpt-4o-mini') {
+                // Audit: Fallback event
+                if ($this->auditService && $this->auditService->isEnabled()) {
+                    $this->auditService->recordEvent($conversationId, 'fallback_applied', [
+                        'reason' => 'model_downgraded',
+                        'original_model' => $payload['model'],
+                        'fallback_model' => 'gpt-4o-mini',
+                        'original_error' => $err
+                    ]);
+                }
+                
                 $payload['model'] = 'gpt-4o-mini';
                 return $execute($payload);
             }
@@ -681,14 +890,21 @@ class ChatHandler {
 
         $messageStarted = false;
         $fullResponse = '';
+        $startTime = microtime(true);
+        $auditService = $this->auditService;
 
-        $this->openAIClient->streamChatCompletion($payload, function($chunk) use (&$messageStarted, &$fullResponse, $conversationId, $messages) {
+        $this->openAIClient->streamChatCompletion($payload, function($chunk) use (&$messageStarted, &$fullResponse, $conversationId, $messages, $startTime, $auditService) {
             $messagesCopy = $messages;
 
             if (isset($chunk['choices'][0]['delta']['content'])) {
                 if (!$messageStarted) {
                     sendSSEEvent('message', ['type' => 'start']);
                     $messageStarted = true;
+                    
+                    // Audit: Stream start event
+                    if ($auditService && $auditService->isEnabled()) {
+                        $auditService->recordEvent($conversationId, 'stream_start', []);
+                    }
                 }
 
                 $content = $chunk['choices'][0]['delta']['content'];
@@ -705,6 +921,28 @@ class ChatHandler {
                     'role' => 'assistant',
                     'content' => $fullResponse
                 ];
+                
+                // Audit: Record assistant message
+                if ($auditService && $auditService->isEnabled()) {
+                    $latencyMs = round((microtime(true) - $startTime) * 1000);
+                    
+                    $assistantMessageId = $auditService->appendMessage($conversationId, [
+                        'role' => 'assistant',
+                        'content' => $fullResponse
+                    ]);
+                    
+                    $auditService->finalizeMessage($assistantMessageId, [
+                        'finish_reason' => $chunk['choices'][0]['finish_reason'],
+                        'latency_ms' => $latencyMs,
+                        'http_status' => 200
+                    ]);
+                    
+                    $auditService->recordEvent($conversationId, 'stream_end', [
+                        'finish_reason' => $chunk['choices'][0]['finish_reason'],
+                        'latency_ms' => $latencyMs
+                    ], $assistantMessageId);
+                }
+                
                 $this->saveConversationHistory($conversationId, $messagesCopy);
 
                 sendSSEEvent('message', [

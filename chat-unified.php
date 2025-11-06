@@ -6,6 +6,7 @@
 require_once 'config.php';
 require_once 'includes/OpenAIClient.php';
 require_once 'includes/ChatHandler.php';
+require_once 'includes/AuditService.php';
 
 // Logging helper
 $__CFG = $config; // capture for closures
@@ -177,8 +178,18 @@ try {
         }
     }
     
+    // Initialize Audit Service
+    $auditService = null;
+    if ($config['auditing']['enabled']) {
+        try {
+            $auditService = new AuditService($config['auditing']);
+        } catch (Exception $e) {
+            log_debug('Failed to initialize AuditService: ' . $e->getMessage(), 'warn');
+        }
+    }
+    
     // Use configuration loaded above
-    $chatHandler = new ChatHandler($config, $agentService);
+    $chatHandler = new ChatHandler($config, $agentService, $auditService);
 
     // Get request data
     $message = '';
@@ -230,9 +241,22 @@ try {
     }
 
     log_debug("Incoming request method=$method apiType=$apiType conv=$conversationId agentId=$agentId msgLen=" . strlen($message));
+    
+    // Generate correlation ID for audit trail
+    $correlationId = uniqid('req_', true);
 
     if (empty($message)) {
         log_debug('Validation failed: Message is required', 'warn');
+        
+        // Audit validation error
+        if ($auditService && $auditService->isEnabled() && !empty($conversationId)) {
+            $auditService->recordEvent($conversationId, 'validation_error', [
+                'correlation_id' => $correlationId,
+                'error' => 'Message is required',
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
+        }
+        
         throw new Exception('Message is required');
     }
 
@@ -244,9 +268,37 @@ try {
         log_debug('Legacy API type "assistants" detected. Falling back to responses.', 'warn');
         $apiType = 'responses';
     }
+    
+    // Start audit conversation if enabled
+    if ($auditService && $auditService->isEnabled()) {
+        $userFingerprint = hash('sha256', $_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        $auditService->startConversation(
+            $agentId ?: 'default',
+            'web',
+            $conversationId,
+            $userFingerprint,
+            [
+                'correlation_id' => $correlationId,
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+                'api_type' => $apiType
+            ]
+        );
+    }
 
     // Validate and sanitize input
-    $chatHandler->validateRequest($message, $conversationId, $fileData);
+    try {
+        $chatHandler->validateRequest($message, $conversationId, $fileData);
+    } catch (Exception $e) {
+        // Audit validation error
+        if ($auditService && $auditService->isEnabled()) {
+            $auditService->recordEvent($conversationId, 'validation_error', [
+                'correlation_id' => $correlationId,
+                'error' => $e->getMessage(),
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
+        }
+        throw $e;
+    }
 
     if ($shouldStream) {
         // Send start event
@@ -281,6 +333,17 @@ try {
 } catch (Exception $e) {
     error_log('Chat Error: ' . $e->getMessage());
     log_debug('Chat Error: ' . $e->getMessage(), 'error');
+    
+    // Audit error event
+    if (isset($auditService) && $auditService && $auditService->isEnabled() && isset($conversationId)) {
+        $auditService->recordEvent($conversationId, 'error', [
+            'correlation_id' => $correlationId ?? 'unknown',
+            'error' => $e->getMessage(),
+            'code' => $e->getCode(),
+            'http_status' => $shouldStream ? null : ($e->getCode() ?: 500),
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+        ]);
+    }
 
     if ($shouldStream) {
         $errorCode = $e->getCode();

@@ -14,6 +14,7 @@ require_once 'includes/OpenAIClient.php';
 require_once 'includes/ChatHandler.php';
 require_once 'includes/JobQueue.php';
 require_once 'includes/AdminAuth.php';
+require_once 'includes/AuditService.php';
 
 // CORS headers
 header('Access-Control-Allow-Origin: *');
@@ -274,6 +275,16 @@ try {
     $promptService = new PromptService($db, $openaiClient);
     $vectorStoreService = new VectorStoreService($db, $openaiClient);
     $jobQueue = new JobQueue($db);
+    
+    // Initialize Audit Service
+    $auditService = null;
+    if ($config['auditing']['enabled']) {
+        try {
+            $auditService = new AuditService($config['auditing']);
+        } catch (Exception $e) {
+            log_admin('Failed to initialize AuditService: ' . $e->getMessage(), 'warn');
+        }
+    }
 
     $logUser = $authenticatedUser['email'] ?? 'anonymous';
     log_admin("$method /admin-api.php?action=$action [user: $logUser]");
@@ -1560,6 +1571,189 @@ try {
                 sendResponse($logs);
             } catch (Exception $e) {
                 sendError('Failed to list audit logs: ' . $e->getMessage(), 500);
+            }
+            break;
+        
+        // ==================== Audit Trails (Conversations) ====================
+        
+        case 'list_audit_conversations':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            if (!$auditService || !$auditService->isEnabled()) {
+                sendError('Audit service is not enabled', 503);
+            }
+            
+            $filters = [];
+            if (isset($_GET['agent_id'])) {
+                $filters['agent_id'] = $_GET['agent_id'];
+            }
+            if (isset($_GET['channel'])) {
+                $filters['channel'] = $_GET['channel'];
+            }
+            if (isset($_GET['from'])) {
+                $filters['from'] = $_GET['from'];
+            }
+            if (isset($_GET['to'])) {
+                $filters['to'] = $_GET['to'];
+            }
+            
+            $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
+            $limit = min($limit, 500); // Cap at 500
+            $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0;
+            
+            $conversations = $auditService->listConversations($filters, $limit, $offset);
+            sendResponse(['conversations' => $conversations]);
+            break;
+        
+        case 'get_audit_conversation':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            if (!$auditService || !$auditService->isEnabled()) {
+                sendError('Audit service is not enabled', 503);
+            }
+            
+            $conversationId = $_GET['conversation_id'] ?? '';
+            if (empty($conversationId)) {
+                sendError('conversation_id required', 400);
+            }
+            
+            $conversation = $auditService->getConversation($conversationId);
+            if (!$conversation) {
+                sendError('Conversation not found', 404);
+            }
+            
+            $decryptContent = isset($_GET['decrypt']) && $_GET['decrypt'] === 'true';
+            if ($decryptContent) {
+                requirePermission($authenticatedUser, 'read_sensitive_audit', $adminAuth);
+            }
+            
+            $messages = $auditService->getMessages($conversationId, $decryptContent);
+            $events = $auditService->getEvents($conversationId);
+            
+            sendResponse([
+                'conversation' => $conversation,
+                'messages' => $messages,
+                'events' => $events
+            ]);
+            break;
+        
+        case 'get_audit_message':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            if (!$auditService || !$auditService->isEnabled()) {
+                sendError('Audit service is not enabled', 503);
+            }
+            
+            $messageId = $_GET['message_id'] ?? '';
+            if (empty($messageId)) {
+                sendError('message_id required', 400);
+            }
+            
+            $decryptContent = isset($_GET['decrypt']) && $_GET['decrypt'] === 'true';
+            if ($decryptContent) {
+                requirePermission($authenticatedUser, 'read_sensitive_audit', $adminAuth);
+            }
+            
+            $sql = "SELECT * FROM audit_messages WHERE id = ?";
+            $result = $db->query($sql, [$messageId]);
+            
+            if (empty($result)) {
+                sendError('Message not found', 404);
+            }
+            
+            $message = $result[0];
+            
+            // Decrypt content if requested
+            if ($decryptContent && !empty($message['content_enc'])) {
+                $message['content'] = $auditService->decryptContent($message['content_enc']);
+            } else {
+                $message['content'] = '[ENCRYPTED]';
+            }
+            
+            sendResponse(['message' => $message]);
+            break;
+        
+        case 'export_audit_data':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            if (!$auditService || !$auditService->isEnabled()) {
+                sendError('Audit service is not enabled', 503);
+            }
+            
+            $filters = [];
+            if (isset($_GET['agent_id'])) {
+                $filters['agent_id'] = $_GET['agent_id'];
+            }
+            if (isset($_GET['from'])) {
+                $filters['from'] = $_GET['from'];
+            }
+            if (isset($_GET['to'])) {
+                $filters['to'] = $_GET['to'];
+            }
+            
+            $conversations = $auditService->listConversations($filters, 10000, 0);
+            
+            // Build CSV
+            header('Content-Type: text/csv');
+            header('Content-Disposition: attachment; filename="audit_export_' . date('Y-m-d_H-i-s') . '.csv"');
+            
+            $output = fopen('php://output', 'w');
+            fputcsv($output, ['Conversation ID', 'Agent ID', 'Channel', 'Started At', 'Last Activity', 'User Fingerprint']);
+            
+            foreach ($conversations as $conv) {
+                fputcsv($output, [
+                    $conv['conversation_id'],
+                    $conv['agent_id'],
+                    $conv['channel'],
+                    $conv['started_at'],
+                    $conv['last_activity_at'],
+                    $conv['user_fingerprint']
+                ]);
+            }
+            
+            fclose($output);
+            exit();
+            break;
+        
+        case 'delete_audit_data':
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
+            if (!$auditService || !$auditService->isEnabled()) {
+                sendError('Audit service is not enabled', 503);
+            }
+            
+            $data = getRequestBody();
+            $conversationId = $data['conversation_id'] ?? null;
+            $retentionDays = $data['retention_days'] ?? null;
+            
+            if ($conversationId) {
+                // Delete specific conversation
+                $sql = "DELETE FROM audit_conversations WHERE conversation_id = ?";
+                $deleted = $db->execute($sql, [$conversationId]);
+                log_admin("Deleted audit conversation: $conversationId");
+                sendResponse(['deleted' => $deleted]);
+            } elseif ($retentionDays !== null) {
+                // Delete by retention period
+                $deleted = $auditService->deleteExpired((int)$retentionDays);
+                log_admin("Deleted $deleted expired audit conversations");
+                sendResponse(['deleted' => $deleted]);
+            } else {
+                sendError('conversation_id or retention_days required', 400);
             }
             break;
             

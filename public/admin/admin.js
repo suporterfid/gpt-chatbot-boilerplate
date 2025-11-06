@@ -404,6 +404,7 @@ function navigateTo(page) {
         'vector-stores': 'Vector Stores',
         'jobs': 'Background Jobs',
         'audit': 'Audit Log',
+        'audit-conversations': 'Audit Trails',
         'settings': 'Settings'
     };
     document.getElementById('page-title').textContent = titles[page] || page;
@@ -421,6 +422,7 @@ function loadCurrentPage() {
         'vector-stores': loadVectorStoresPage,
         'jobs': loadJobsPage,
         'audit': loadAuditPage,
+        'audit-conversations': loadAuditConversationsPage,
         'settings': loadSettingsPage
     };
     
@@ -2099,3 +2101,206 @@ document.addEventListener('DOMContentLoaded', function() {
         testConnection();
     }
 });
+
+// ========== Audit Conversations API Methods ==========
+
+// Extend API class (already instantiated as 'api')
+api.listAuditConversations = function(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request('list_audit_conversations', { params: query ? '&' + query : '' });
+};
+
+api.getAuditConversation = function(conversationId, decrypt = false) {
+    return this.request('get_audit_conversation', { 
+        params: `&conversation_id=${encodeURIComponent(conversationId)}&decrypt=${decrypt}` 
+    });
+};
+
+api.exportAuditData = function(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    const url = `${this.baseUrl}?action=export_audit_data${query ? '&' + query : ''}`;
+    window.open(url, '_blank');
+};
+
+// ========== Audit Conversations Page ==========
+
+async function loadAuditConversationsPage() {
+    const content = document.getElementById('content');
+    
+    try {
+        const data = await api.listAuditConversations({ limit: 50 });
+        const conversations = data.conversations || [];
+        
+        let html = `
+            <div class="card">
+                <div class="card-header">
+                    <h3>Conversation Audit Trails</h3>
+                    <div class="card-actions">
+                        <button class="btn btn-small btn-secondary" onclick="exportAuditConversations()">Export CSV</button>
+                        <button class="btn btn-small btn-secondary" onclick="loadAuditConversationsPage()">Refresh</button>
+                    </div>
+                </div>
+                <div class="card-body">
+        `;
+        
+        if (!conversations || conversations.length === 0) {
+            html += `<p style="color: #6b7280; text-align: center; padding: 2rem;">No audit conversations yet</p>`;
+        } else {
+            html += `
+                <div style="overflow-x: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Conversation ID</th>
+                                <th>Agent</th>
+                                <th>Channel</th>
+                                <th>Started</th>
+                                <th>Last Activity</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${conversations.map(conv => `
+                                <tr>
+                                    <td><code>${escapeHtml(conv.conversation_id)}</code></td>
+                                    <td>${escapeHtml(conv.agent_id || 'N/A')}</td>
+                                    <td>${escapeHtml(conv.channel)}</td>
+                                    <td>${formatDate(conv.started_at)}</td>
+                                    <td>${formatDate(conv.last_activity_at)}</td>
+                                    <td>
+                                        <button class="btn btn-small btn-secondary" onclick="viewAuditConversation('${escapeHtml(conv.conversation_id)}')">View</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        html += `
+                </div>
+            </div>
+        `;
+        
+        content.innerHTML = html;
+    } catch (error) {
+        console.error('Error loading audit conversations:', error);
+        content.innerHTML = `<div class="card"><div class="card-body">Error loading audit conversations: ${error.message}</div></div>`;
+        showToast('Failed to load audit conversations: ' + error.message, 'error');
+    }
+}
+
+async function viewAuditConversation(conversationId) {
+    try {
+        const data = await api.getAuditConversation(conversationId, false);
+        
+        let modalContent = `
+            <div style="max-height: 70vh; overflow-y: auto;">
+                <h4>Conversation Details</h4>
+                <div style="margin-bottom: 1rem;">
+                    <strong>Conversation ID:</strong> <code>${escapeHtml(conversationId)}</code><br>
+                    <strong>Agent ID:</strong> ${escapeHtml(data.conversation.agent_id || 'N/A')}<br>
+                    <strong>Channel:</strong> ${escapeHtml(data.conversation.channel)}<br>
+                    <strong>Started:</strong> ${formatDate(data.conversation.started_at)}<br>
+                </div>
+                
+                <h4>Messages</h4>
+                <div style="margin-bottom: 1rem;">
+        `;
+        
+        if (data.messages && data.messages.length > 0) {
+            data.messages.forEach(msg => {
+                const bgColor = msg.role === 'user' ? '#f3f4f6' : '#e0f2fe';
+                modalContent += `
+                    <div style="padding: 0.75rem; margin-bottom: 0.5rem; background: ${bgColor}; border-radius: 4px;">
+                        <strong>${escapeHtml(msg.role)}:</strong><br>
+                        <div style="margin-top: 0.25rem; font-family: monospace; font-size: 0.875rem;">
+                            ${msg.content ? escapeHtml(msg.content) : '[ENCRYPTED - request decryption for full content]'}<br>
+                            <small style="color: #6b7280;">Hash: ${msg.content_hash ? msg.content_hash.substring(0, 16) + '...' : 'N/A'}</small>
+                        </div>
+                        ${msg.response_meta_json ? `
+                            <details style="margin-top: 0.5rem;">
+                                <summary style="cursor: pointer; color: #3b82f6;">Response Metadata</summary>
+                                <pre style="margin-top: 0.5rem; font-size: 0.75rem; overflow-x: auto;">${escapeHtml(JSON.stringify(JSON.parse(msg.response_meta_json), null, 2))}</pre>
+                            </details>
+                        ` : ''}
+                    </div>
+                `;
+            });
+        } else {
+            modalContent += `<p>No messages found.</p>`;
+        }
+        
+        modalContent += `
+                </div>
+                
+                <h4>Events</h4>
+                <div>
+        `;
+        
+        if (data.events && data.events.length > 0) {
+            modalContent += `
+                <table style="width: 100%; font-size: 0.875rem;">
+                    <thead>
+                        <tr style="background: #f3f4f6;">
+                            <th style="padding: 0.5rem; text-align: left;">Type</th>
+                            <th style="padding: 0.5rem; text-align: left;">Time</th>
+                            <th style="padding: 0.5rem; text-align: left;">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            data.events.forEach(evt => {
+                modalContent += `
+                    <tr>
+                        <td style="padding: 0.5rem;"><code>${escapeHtml(evt.type)}</code></td>
+                        <td style="padding: 0.5rem;">${formatDate(evt.created_at)}</td>
+                        <td style="padding: 0.5rem;">
+                            ${evt.payload_json ? `<details><summary style="cursor: pointer;">View</summary><pre style="font-size: 0.75rem; max-width: 400px; overflow-x: auto;">${escapeHtml(JSON.stringify(JSON.parse(evt.payload_json), null, 2))}</pre></details>` : 'N/A'}
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            modalContent += `
+                    </tbody>
+                </table>
+            `;
+        } else {
+            modalContent += `<p>No events found.</p>`;
+        }
+        
+        modalContent += `
+                </div>
+            </div>
+        `;
+        
+        showModal('Conversation Audit Trail', modalContent);
+    } catch (error) {
+        console.error('Error viewing audit conversation:', error);
+        showToast('Failed to load conversation details: ' + error.message, 'error');
+    }
+}
+
+function exportAuditConversations() {
+    try {
+        api.exportAuditData();
+        showToast('Export started', 'success');
+    } catch (error) {
+        console.error('Error exporting audit data:', error);
+        showToast('Failed to export audit data: ' + error.message, 'error');
+    }
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) return 'N/A';
+    try {
+        const date = new Date(dateStr);
+        return date.toLocaleString();
+    } catch {
+        return dateStr;
+    }
+}
+
