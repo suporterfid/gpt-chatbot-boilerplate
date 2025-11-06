@@ -407,6 +407,33 @@ $config = [
         'rate_limit_per_min' => (int)($_ENV['PROMPT_BUILDER_RATE_LIMIT'] ?? getenv('PROMPT_BUILDER_RATE_LIMIT') ?: 10),
         'audit_enabled' => filter_var($_ENV['PROMPT_BUILDER_AUDIT'] ?? getenv('PROMPT_BUILDER_AUDIT') ?: 'true', FILTER_VALIDATE_BOOLEAN),
         'templates_path' => __DIR__ . '/includes/PromptBuilder/templates/guardrails',
+    ],
+    
+    // Observability & Monitoring Configuration
+    'observability' => [
+        'enabled' => filter_var($_ENV['OBSERVABILITY_ENABLED'] ?? getenv('OBSERVABILITY_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'structured_logging' => filter_var($_ENV['STRUCTURED_LOGGING_ENABLED'] ?? getenv('STRUCTURED_LOGGING_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'distributed_tracing' => filter_var($_ENV['DISTRIBUTED_TRACING_ENABLED'] ?? getenv('DISTRIBUTED_TRACING_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+    ],
+    
+    // Tracing Configuration
+    'tracing' => [
+        'enabled' => filter_var($_ENV['TRACING_ENABLED'] ?? getenv('TRACING_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+        'export_file' => $_ENV['TRACING_EXPORT_FILE'] ?? getenv('TRACING_EXPORT_FILE') ?: '/var/log/chatbot/traces.log',
+        'sample_rate' => (float)($_ENV['TRACING_SAMPLE_RATE'] ?? getenv('TRACING_SAMPLE_RATE') ?: 0.1),
+        'jaeger_endpoint' => $_ENV['JAEGER_ENDPOINT'] ?? getenv('JAEGER_ENDPOINT') ?: '',
+    ],
+    
+    // Alerting Configuration
+    'alerting' => [
+        'enabled' => filter_var($_ENV['ALERTING_ENABLED'] ?? getenv('ALERTING_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+        'slack_webhook_url' => $_ENV['ALERT_SLACK_WEBHOOK_URL'] ?? getenv('ALERT_SLACK_WEBHOOK_URL') ?: '',
+        'webhook_url' => $_ENV['ALERT_WEBHOOK_URL'] ?? getenv('ALERT_WEBHOOK_URL') ?: '',
+        'webhook_secret' => $_ENV['ALERT_WEBHOOK_SECRET'] ?? getenv('ALERT_WEBHOOK_SECRET') ?: '',
+        'email_to' => $_ENV['ALERT_EMAIL_TO'] ?? getenv('ALERT_EMAIL_TO') ?: '',
+        'email_from' => $_ENV['ALERT_EMAIL_FROM'] ?? getenv('ALERT_EMAIL_FROM') ?: 'alerts@chatbot.local',
+        'email_all_severities' => filter_var($_ENV['ALERT_EMAIL_ALL_SEVERITIES'] ?? getenv('ALERT_EMAIL_ALL_SEVERITIES') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+        'pagerduty_routing_key' => $_ENV['PAGERDUTY_ROUTING_KEY'] ?? getenv('PAGERDUTY_ROUTING_KEY') ?: '',
     ]
 ];
 

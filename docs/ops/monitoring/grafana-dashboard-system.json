@@ -1,0 +1,273 @@
+{
+  "dashboard": {
+    "title": "GPT Chatbot - System Overview",
+    "tags": ["chatbot", "observability"],
+    "timezone": "utc",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(chatbot_admin_api_requests_total[5m])",
+            "legendFormat": "{{ resource }}"
+          }
+        ],
+        "yaxes": [
+          {"format": "reqps", "label": "Requests/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Job Queue Depth",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "chatbot_jobs_queue_depth",
+            "legendFormat": "Pending Jobs"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Jobs"},
+          {"format": "short"}
+        ],
+        "alert": {
+          "name": "High Queue Depth",
+          "conditions": [
+            {
+              "evaluator": {"params": [100], "type": "gt"},
+              "operator": {"type": "and"},
+              "query": {"params": ["A", "5m", "now"]},
+              "reducer": {"params": [], "type": "avg"},
+              "type": "query"
+            }
+          ]
+        }
+      },
+      {
+        "id": 3,
+        "title": "Job Success Rate",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "(rate(chatbot_jobs_total{status=\"completed\"}[5m]) / rate(chatbot_jobs_processed_total[5m])) * 100",
+            "legendFormat": "Success Rate"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "auto",
+          "colorMode": "value",
+          "justifyMode": "auto"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 90, "color": "yellow"},
+                {"value": 95, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Worker Health",
+        "type": "stat",
+        "gridPos": {"x": 6, "y": 8, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "chatbot_worker_healthy",
+            "legendFormat": "Healthy"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "orientation": "auto",
+          "textMode": "value_and_name",
+          "colorMode": "background"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {"type": "value", "value": "0", "text": "DOWN", "color": "red"},
+              {"type": "value", "value": "1", "text": "UP", "color": "green"}
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 1, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Active Agents",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 8, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "chatbot_agents_total",
+            "legendFormat": "Total Agents"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "value"
+        }
+      },
+      {
+        "id": 6,
+        "title": "Database Size",
+        "type": "stat",
+        "gridPos": {"x": 18, "y": 8, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "chatbot_database_size_bytes",
+            "legendFormat": "DB Size"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bytes"
+          }
+        },
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value"
+        }
+      },
+      {
+        "id": 7,
+        "title": "Job Processing Duration",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(chatbot_job_duration_seconds_bucket[5m]))",
+            "legendFormat": "p50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(chatbot_job_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(chatbot_job_duration_seconds_bucket[5m]))",
+            "legendFormat": "p99"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Error Rate by Component",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(chatbot_errors_total[5m])",
+            "legendFormat": "{{ component }}"
+          }
+        ],
+        "yaxes": [
+          {"format": "errps", "label": "Errors/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Response Time (Avg 5m)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "chatbot_response_time_ms_avg",
+            "legendFormat": "Avg Response Time"
+          },
+          {
+            "expr": "chatbot_response_time_ms_max",
+            "legendFormat": "Max Response Time"
+          }
+        ],
+        "yaxes": [
+          {"format": "ms", "label": "Response Time"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Webhook Processing",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "chatbot_webhook_events_total{status=\"processed\"}",
+            "legendFormat": "Processed"
+          },
+          {
+            "expr": "chatbot_webhook_events_total{status=\"pending\"}",
+            "legendFormat": "Pending"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Events"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Jobs by Type",
+        "type": "piechart",
+        "gridPos": {"x": 0, "y": 28, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by (type) (chatbot_jobs_by_type)",
+            "legendFormat": "{{ type }}"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "System Health Summary",
+        "type": "table",
+        "gridPos": {"x": 12, "y": 28, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "chatbot_info",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true, "Value": true},
+              "indexByName": {},
+              "renameByName": {}
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

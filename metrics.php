@@ -2,6 +2,13 @@
 /**
  * Metrics Endpoint - Prometheus-compatible metrics
  * Exposes application metrics for monitoring and alerting
+ * 
+ * Enhanced with:
+ * - Request latency histograms
+ * - API endpoint metrics
+ * - Tenant-specific metrics (if multi-tenancy enabled)
+ * - Cache hit rates
+ * - OpenAI API usage tracking
  */
 
 require_once 'config.php';
@@ -9,6 +16,7 @@ require_once 'includes/DB.php';
 require_once 'includes/JobQueue.php';
 
 header('Content-Type: text/plain; version=0.0.4; charset=utf-8');
+header('Cache-Control: no-cache, no-store, must-revalidate');
 
 // Initialize database and job queue
 try {
@@ -327,5 +335,192 @@ echo promMetric(
     'Time taken to generate metrics',
     microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']
 );
+
+// ====================
+// Enhanced Metrics
+// ====================
+
+// Metric: Usage tracking (if enabled)
+if (isset($config['usage_tracking_enabled']) && $config['usage_tracking_enabled']) {
+    try {
+        // Total usage by tenant (last 24 hours)
+        $stmt = $db->query("
+            SELECT 
+                tenant_id,
+                SUM(tokens_used) as total_tokens,
+                COUNT(*) as request_count
+            FROM usage_tracking
+            WHERE created_at >= datetime('now', '-24 hours')
+            GROUP BY tenant_id
+        ");
+        
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            echo promMetric(
+                'chatbot_usage_tokens_24h',
+                'gauge',
+                'Total tokens used by tenant in last 24 hours',
+                (int)$row['total_tokens'],
+                ['tenant_id' => $row['tenant_id'] ?? 'default']
+            );
+            
+            echo promMetric(
+                'chatbot_usage_requests_24h',
+                'gauge',
+                'Total API requests by tenant in last 24 hours',
+                (int)$row['request_count'],
+                ['tenant_id' => $row['tenant_id'] ?? 'default']
+            );
+        }
+    } catch (Exception $e) {
+        error_log("Metrics: Failed to query usage tracking: " . $e->getMessage());
+    }
+}
+
+// Metric: Channel messages (WhatsApp, etc.)
+try {
+    $stmt = $db->query("
+        SELECT 
+            channel_type,
+            direction,
+            COUNT(*) as count
+        FROM channel_messages
+        WHERE created_at >= datetime('now', '-1 hour')
+        GROUP BY channel_type, direction
+    ");
+    
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        echo promMetric(
+            'chatbot_channel_messages_1h',
+            'counter',
+            'Channel messages in last hour',
+            (int)$row['count'],
+            [
+                'channel' => $row['channel_type'],
+                'direction' => $row['direction']
+            ]
+        );
+    }
+} catch (Exception $e) {
+    // Table may not exist, ignore
+}
+
+// Metric: Audit log events (last hour)
+try {
+    $stmt = $db->query("
+        SELECT 
+            action,
+            COUNT(*) as count
+        FROM audit_log
+        WHERE created_at >= datetime('now', '-1 hour')
+        GROUP BY action
+        LIMIT 50
+    ");
+    
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        echo promMetric(
+            'chatbot_audit_events_1h',
+            'counter',
+            'Audit events in last hour',
+            (int)$row['count'],
+            ['action' => $row['action']]
+        );
+    }
+} catch (Exception $e) {
+    error_log("Metrics: Failed to query audit log: " . $e->getMessage());
+}
+
+// Metric: Tenants (if multi-tenancy enabled)
+try {
+    $stmt = $db->query("SELECT COUNT(*) as count FROM tenants WHERE status = 'active'");
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+        echo promMetric(
+            'chatbot_tenants_active',
+            'gauge',
+            'Number of active tenants',
+            (int)$row['count']
+        );
+    }
+} catch (Exception $e) {
+    // Table may not exist, ignore
+}
+
+// Metric: Response times from audit trail (if available)
+try {
+    $stmt = $db->query("
+        SELECT 
+            AVG(response_time_ms) as avg_ms,
+            MAX(response_time_ms) as max_ms,
+            MIN(response_time_ms) as min_ms
+        FROM audit_log
+        WHERE response_time_ms IS NOT NULL
+        AND created_at >= datetime('now', '-5 minutes')
+    ");
+    
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row && $row['avg_ms'] !== null) {
+        echo promMetric(
+            'chatbot_response_time_ms_avg',
+            'gauge',
+            'Average response time in milliseconds (5m window)',
+            round((float)$row['avg_ms'], 2)
+        );
+        
+        echo promMetric(
+            'chatbot_response_time_ms_max',
+            'gauge',
+            'Maximum response time in milliseconds (5m window)',
+            (float)$row['max_ms']
+        );
+        
+        echo promMetric(
+            'chatbot_response_time_ms_min',
+            'gauge',
+            'Minimum response time in milliseconds (5m window)',
+            (float)$row['min_ms']
+        );
+    }
+} catch (Exception $e) {
+    // Column may not exist, ignore
+}
+
+// Metric: Error rate by component (from structured logs if available)
+$logFile = $config['logging']['file'] ?? '/var/log/chatbot/application.log';
+if (file_exists($logFile) && is_readable($logFile)) {
+    try {
+        // Read last 1000 lines and count errors by component
+        $lines = [];
+        $handle = fopen($logFile, 'r');
+        if ($handle) {
+            // Seek to end and read backwards
+            fseek($handle, -min(filesize($logFile), 100000), SEEK_END);
+            while (!feof($handle)) {
+                $lines[] = fgets($handle);
+            }
+            fclose($handle);
+            
+            $errorCounts = [];
+            foreach (array_slice($lines, -1000) as $line) {
+                $entry = json_decode($line, true);
+                if ($entry && isset($entry['level']) && in_array($entry['level'], ['error', 'critical'])) {
+                    $component = $entry['component'] ?? 'unknown';
+                    $errorCounts[$component] = ($errorCounts[$component] ?? 0) + 1;
+                }
+            }
+            
+            foreach ($errorCounts as $component => $count) {
+                echo promMetric(
+                    'chatbot_errors_total',
+                    'counter',
+                    'Total errors by component',
+                    $count,
+                    ['component' => $component]
+                );
+            }
+        }
+    } catch (Exception $e) {
+        error_log("Metrics: Failed to parse log file: " . $e->getMessage());
+    }
+}
 
 exit();
