@@ -271,6 +271,13 @@ try {
         $openaiClient = new OpenAIAdminClient($config['openai']);
     }
 
+    // Initialize TenantContext singleton
+    require_once __DIR__ . '/includes/TenantContext.php';
+    $tenantContext = TenantContext::getInstance();
+    if ($authenticatedUser) {
+        $tenantContext->setFromUser($authenticatedUser);
+    }
+    
     // Initialize services with tenant context
     $tenantId = $authenticatedUser['tenant_id'] ?? null;
     $agentService = new AgentService($db, $tenantId);
@@ -285,11 +292,11 @@ try {
         $tenantService = new TenantService($db);
     }
     
-    // Initialize Audit Service
+    // Initialize Audit Service with tenant context
     $auditService = null;
     if ($config['auditing']['enabled']) {
         try {
-            $auditService = new AuditService($config['auditing']);
+            $auditService = new AuditService($config['auditing'], $tenantId);
         } catch (Exception $e) {
             log_admin('Failed to initialize AuditService: ' . $e->getMessage(), 'warn');
         }

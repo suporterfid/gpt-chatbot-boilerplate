@@ -62,6 +62,16 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Enhanced Security**: Comprehensive error handling, audit logging, and permission checks.
 - **Production Ready**: Full test coverage (14 tests in phase 4, 155 total at completion), static analysis (PHPStan), documented configuration, backward compatible.
 
+### 🏢 **Multi-Tenancy Architecture**
+- **Complete Tenant Isolation**: Full multi-tenant architecture with tenant-scoped queries across all services.
+- **Tenant Management**: Create, update, suspend, and delete tenants via Admin API.
+- **Tenant-Aware Services**: All core services (AgentService, PromptService, VectorStoreService, AuditService, ChannelSessionService, ChannelMessageService) support tenant scoping.
+- **Admin User Mapping**: Admin users can be assigned to specific tenants or have super-admin access across all tenants.
+- **Resource Statistics**: Get resource counts and usage statistics per tenant.
+- **Data Migration**: Migration script to convert single-tenant deployments to multi-tenant.
+- **Comprehensive Testing**: 48 tests validating tenant isolation and cross-tenant security.
+- See [docs/MULTI_TENANCY.md](docs/MULTI_TENANCY.md) for complete documentation.
+
 ### 🎯 **Phase 5: Agent Integration & Testing**
 - **Agent Integration**: Full agent support in chat interface with configuration merging.
 - **Widget Integration**: JavaScript widget supports agent selection.
