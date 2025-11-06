@@ -489,6 +489,7 @@ async function loadAgentsPage() {
                         <td>${formatDate(agent.updated_at)}</td>
                         <td class="table-actions">
                             <button class="btn btn-small btn-secondary" onclick="editAgent('${agent.id}')">Edit</button>
+                            <button class="btn btn-small btn-purple" onclick="showPromptBuilderModal('${agent.id}', '${agent.name}')">✨ Prompt Builder</button>
                             <button class="btn btn-small btn-info" onclick="manageChannels('${agent.id}', '${agent.name}')">Channels</button>
                             <button class="btn btn-small btn-primary" onclick="testAgent('${agent.id}')">Test</button>
                             ${!agent.is_default ? `<button class="btn btn-small btn-success" onclick="makeDefaultAgent('${agent.id}')">Make Default</button>` : ''}

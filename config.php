@@ -394,6 +394,19 @@ $config = [
         // Rate limiting
         'debounce_window' => (int)($_ENV['LEADSENSE_DEBOUNCE_WINDOW'] ?? getenv('LEADSENSE_DEBOUNCE_WINDOW') ?: 300), // 5 minutes
         'max_daily_notifications' => (int)($_ENV['LEADSENSE_MAX_DAILY_NOTIFICATIONS'] ?? getenv('LEADSENSE_MAX_DAILY_NOTIFICATIONS') ?: 100),
+    ],
+    
+    // Prompt Builder Configuration - AI Agent Specification Generator
+    'prompt_builder' => [
+        'enabled' => filter_var($_ENV['PROMPT_BUILDER_ENABLED'] ?? getenv('PROMPT_BUILDER_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'model' => $_ENV['PROMPT_BUILDER_MODEL'] ?? getenv('PROMPT_BUILDER_MODEL') ?: ($_ENV['RESPONSES_MODEL'] ?? getenv('RESPONSES_MODEL') ?: 'gpt-4o-mini'),
+        'timeout_ms' => (int)($_ENV['PROMPT_BUILDER_TIMEOUT_MS'] ?? getenv('PROMPT_BUILDER_TIMEOUT_MS') ?: 20000),
+        'default_guardrails' => explode(',', $_ENV['PROMPT_BUILDER_DEFAULT_GUARDRAILS'] ?? getenv('PROMPT_BUILDER_DEFAULT_GUARDRAILS') ?: 'hallucination_prevention,scope_restriction'),
+        'encryption_at_rest' => filter_var($_ENV['PROMPT_BUILDER_ENCRYPTION'] ?? getenv('PROMPT_BUILDER_ENCRYPTION') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+        'encryption_key' => $_ENV['PROMPT_BUILDER_ENC_KEY'] ?? getenv('PROMPT_BUILDER_ENC_KEY') ?: ($_ENV['AUDIT_ENC_KEY'] ?? getenv('AUDIT_ENC_KEY') ?: ''),
+        'rate_limit_per_min' => (int)($_ENV['PROMPT_BUILDER_RATE_LIMIT'] ?? getenv('PROMPT_BUILDER_RATE_LIMIT') ?: 10),
+        'audit_enabled' => filter_var($_ENV['PROMPT_BUILDER_AUDIT'] ?? getenv('PROMPT_BUILDER_AUDIT') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'templates_path' => __DIR__ . '/includes/PromptBuilder/templates/guardrails',
     ]
 ];
 

@@ -97,10 +97,58 @@ class ChatHandler {
                 $overrides['response_format'] = $agent['response_format'];
             }
             
+            // Load active Prompt Builder specification if available
+            if (isset($agent['active_prompt_version']) && $agent['active_prompt_version'] !== null) {
+                $generatedPrompt = $this->loadActivePromptSpec($agent['id'], $agent['active_prompt_version']);
+                if ($generatedPrompt !== null) {
+                    // Inject generated prompt as system_message (overrides manual system_message)
+                    $overrides['system_message'] = $generatedPrompt;
+                    $overrides['_prompt_builder_active'] = true;
+                    error_log("Using Prompt Builder specification v{$agent['active_prompt_version']} for agent {$agent['id']}");
+                }
+            }
+            
             return $overrides;
         } catch (Exception $e) {
             error_log("Error resolving agent $agentId: " . $e->getMessage());
             return [];
+        }
+    }
+    
+    /**
+     * Load active Prompt Builder specification for an agent
+     * 
+     * @param string $agentId Agent ID
+     * @param int $version Version number
+     * @return string|null Generated prompt content or null if not found
+     */
+    private function loadActivePromptSpec($agentId, $version) {
+        try {
+            require_once __DIR__ . '/PromptBuilder/PromptSpecRepository.php';
+            require_once __DIR__ . '/DB.php';
+            
+            // Get database connection
+            $dbConfig = [
+                'database_url' => $this->config['admin']['database_url'] ?? null,
+                'database_path' => $this->config['admin']['database_path'] ?? __DIR__ . '/../data/chatbot.db'
+            ];
+            $db = new DB($dbConfig);
+            
+            // Load repository
+            $repo = new PromptSpecRepository($db->getPdo(), $this->config['prompt_builder'] ?? []);
+            
+            // Get the version
+            $promptData = $repo->getVersion($agentId, $version);
+            
+            if ($promptData === null) {
+                error_log("Prompt Builder version {$version} not found for agent {$agentId}");
+                return null;
+            }
+            
+            return $promptData['prompt_md'];
+        } catch (Exception $e) {
+            error_log("Failed to load Prompt Builder spec for agent {$agentId} v{$version}: " . $e->getMessage());
+            return null;
         }
     }
 

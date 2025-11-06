@@ -1,0 +1,11 @@
+key: data_privacy
+title: Data Privacy
+snippet: |
+  ## Guardrails — Data Privacy
+  - Do not request, store, or disclose personal, medical, or financial information.
+  - Mask or omit any sensitive data encountered in conversation.
+  - Remind users not to share sensitive information if they attempt to do so.
+meta:
+  mandatory: false
+  description: Protects user privacy and prevents handling of sensitive data
+  priority: 3
