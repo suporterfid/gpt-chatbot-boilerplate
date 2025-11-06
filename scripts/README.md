@@ -1,8 +1,132 @@
 # Scripts Directory
 
-This directory contains operational scripts for the GPT Chatbot Boilerplate application.
+This directory contains operational scripts for the GPT Chatbot Boilerplate application, including comprehensive backup, restore, monitoring, and disaster recovery tools.
+
+## Quick Reference
+
+```bash
+# Backup Operations
+./scripts/backup_all.sh              # Full system backup
+./scripts/db_backup.sh               # Database-only backup
+./scripts/backup_all.sh --offsite    # Backup with off-site sync
+
+# Restore Operations
+./scripts/restore_all.sh <backup>    # Full system restore
+./scripts/db_restore.sh <backup>     # Database-only restore
+
+# Monitoring & Testing
+./scripts/monitor_backups.sh         # Check backup health
+./scripts/test_restore.sh            # Validate backup integrity
+```
 
 ## Available Scripts
+
+### Backup & Disaster Recovery
+
+#### `backup_all.sh` ⭐ NEW
+**Purpose**: Comprehensive backup of all persistent data
+
+**Usage**:
+```bash
+# Full system backup (database, files, config, data)
+./scripts/backup_all.sh
+
+# With custom retention
+./scripts/backup_all.sh --retention-days 30
+
+# With off-site synchronization
+./scripts/backup_all.sh --offsite
+```
+
+**Features**:
+- Backs up database, uploaded files, configuration, and application data
+- Creates compressed tar archive with manifest
+- Supports off-site sync (rsync, S3, Azure, GCS)
+- Automatic rotation
+- Error tracking and reporting
+
+**Backup Contents**:
+- Database (SQLite or PostgreSQL)
+- Uploaded files
+- Configuration files (.env, config.php, etc.)
+- Application data directory
+- Backup manifest with metadata
+
+---
+
+#### `restore_all.sh` ⭐ NEW
+**Purpose**: Complete system restoration from backup
+
+**Usage**:
+```bash
+# Restore from full backup
+./scripts/restore_all.sh /data/backups/full_backup_20251104_120000.tar.gz
+```
+
+**Features**:
+- Interactive confirmation
+- Pre-restore safety backups
+- Validates archive integrity
+- Restores all components
+- Verification steps
+
+---
+
+#### `monitor_backups.sh` ⭐ NEW
+**Purpose**: Automated backup health monitoring with alerting
+
+**Usage**:
+```bash
+# Run monitoring check
+./scripts/monitor_backups.sh
+
+# With alerts configured
+export ALERT_EMAIL="ops@example.com"
+export ALERT_SLACK_WEBHOOK="https://hooks.slack.com/..."
+./scripts/monitor_backups.sh
+```
+
+**Checks**:
+- Backup directory exists
+- Latest backup age (< 25 hours)
+- Backup size anomalies
+- Archive integrity
+- Backup count (≥ 3 recommended)
+- Disk space
+- Script permissions
+
+**Exit Codes**:
+- `0` - All checks passed
+- `1` - Warnings detected
+- `2` - Critical issues
+
+---
+
+#### `test_restore.sh` ⭐ NEW
+**Purpose**: Validate backup integrity and restore capability
+
+**Usage**:
+```bash
+# Test latest backup
+./scripts/test_restore.sh
+
+# Test specific backup
+./scripts/test_restore.sh --backup-file /data/backups/full_backup_latest.tar.gz
+
+# Test with staging server restore
+./scripts/test_restore.sh --staging-server user@staging.example.com
+```
+
+**Tests**:
+- Archive integrity
+- Backup extraction
+- Manifest validation
+- Database integrity
+- Configuration files
+- File archives
+- (Optional) Staging restore
+
+---
 
 ### Production Operations
 
@@ -152,6 +276,62 @@ php scripts/worker.php --daemon
 
 **Before Deployment**:
 Always run smoke tests before deploying to production to ensure all features are functional.
+
+---
+
+## Automation Templates
+
+### `backup.crontab` ⭐ NEW
+**Purpose**: Cron schedule examples for automated backups
+
+**Contains**:
+- Daily full backups (7-day retention)
+- Weekly backups with off-site sync (30-day retention)
+- Database-only backups every 6 hours (2-day retention)
+- Hourly backup monitoring
+- Monthly long-term backups (365-day retention)
+
+**Installation**:
+```bash
+# Add to your crontab
+crontab -e
+# Then copy relevant lines from backup.crontab
+```
+
+---
+
+### Systemd Service Files ⭐ NEW
+
+**Files**:
+- `chatbot-backup.service` - Backup execution service
+- `chatbot-backup.timer` - Daily backup schedule
+- `chatbot-backup-monitor.service` - Monitoring execution service
+- `chatbot-backup-monitor.timer` - Hourly monitoring schedule
+
+**Installation**:
+```bash
+# Copy service files
+sudo cp scripts/chatbot-backup.service /etc/systemd/system/
+sudo cp scripts/chatbot-backup.timer /etc/systemd/system/
+sudo cp scripts/chatbot-backup-monitor.service /etc/systemd/system/
+sudo cp scripts/chatbot-backup-monitor.timer /etc/systemd/system/
+
+# Enable and start
+sudo systemctl daemon-reload
+sudo systemctl enable chatbot-backup.timer
+sudo systemctl enable chatbot-backup-monitor.timer
+sudo systemctl start chatbot-backup.timer
+sudo systemctl start chatbot-backup-monitor.timer
+
+# Check status
+sudo systemctl list-timers chatbot-*
+```
+
+**View Logs**:
+```bash
+sudo journalctl -u chatbot-backup.service -f
+sudo journalctl -u chatbot-backup-monitor.service -f
+```
 
 ---
 

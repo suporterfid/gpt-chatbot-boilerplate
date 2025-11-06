@@ -71,13 +71,19 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 
 ### 🚀 **Phase 10: Production Readiness & Operations**
 - **CI/CD Pipeline**: Automated testing (183 tests), static analysis (PHPStan), and linting (ESLint).
-- **Backup & Restore**: Automated database backup scripts with rotation and disaster recovery procedures.
+- **Backup & Disaster Recovery**: 
+  - Comprehensive backup system for all persistent data (database, files, config, application data)
+  - Automated multi-tier backup strategy (hourly DB, daily full, weekly off-site, monthly long-term)
+  - Off-site backup support (rsync, AWS S3, Azure Blob, Google Cloud Storage)
+  - Complete disaster recovery runbook with RPO/RTO definitions and tested procedures
+  - Automated backup monitoring with email/Slack/webhook alerts
+  - Quarterly DR drill procedures and backup integrity testing
 - **Observability**: Prometheus metrics endpoint (`/metrics.php`) and enhanced health checks.
 - **Dead Letter Queue**: Failed job management with retry and requeue capabilities.
 - **Secrets Management**: Admin token rotation and comprehensive secrets documentation.
 - **Security Hardening**: Production-ready Nginx configuration with security headers and rate limiting.
 - **Load Testing**: K6 scripts for capacity testing and performance validation.
-- **Operational Docs**: Complete runbooks for incident response, monitoring, and log aggregation.
+- **Operational Docs**: Complete runbooks for incident response, monitoring, log aggregation, and disaster recovery.
 
 ### 🛡️ **Hybrid Guardrails Integration**
 - **Response Format Support**: Enforce structured outputs using JSON schemas with the Responses API.
