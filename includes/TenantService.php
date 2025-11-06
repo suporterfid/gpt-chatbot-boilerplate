@@ -215,14 +215,7 @@ class TenantService {
             throw new Exception('Tenant not found', 404);
         }
         
-        // Get counts of related resources for safety
-        $stats = $this->getTenantStats($id);
-        
-        if ($stats['total_resources'] > 0) {
-            // For safety, require explicit confirmation in the request
-            // This is handled at the API level
-        }
-        
+        // Delete tenant (cascades to related resources via foreign key constraints)
         $sql = "DELETE FROM tenants WHERE id = ?";
         $this->db->execute($sql, [$id]);
         
@@ -283,7 +276,9 @@ class TenantService {
             $stats['leads'] = (int)$result['count'];
         }
         
-        $stats['total_resources'] = array_sum(array_values($stats)) - $stats['total_resources'];
+        // Calculate total (exclude total_resources key itself)
+        $stats['total_resources'] = $stats['agents'] + $stats['prompts'] + $stats['vector_stores'] 
+                                   + $stats['users'] + $stats['conversations'] + $stats['leads'];
         
         return $stats;
     }

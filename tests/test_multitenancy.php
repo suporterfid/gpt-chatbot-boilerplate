@@ -33,11 +33,17 @@ function test($name, $condition, $errorMsg = '') {
 }
 
 try {
-    // Initialize database
+    // Initialize database - force test database path
     $dbConfig = [
-        'database_url' => $config['admin']['database_url'] ?? null,
-        'database_path' => $config['admin']['database_path'] ?? __DIR__ . '/../data/chatbot_test.db'
+        'database_url' => null,  // Don't use database_url from config
+        'database_path' => __DIR__ . '/../data/chatbot_test.db'
     ];
+    
+    // Safety check: ensure we're using a test database
+    if (strpos($dbConfig['database_path'], '_test.db') === false) {
+        echo "ERROR: Database path must contain '_test.db' for safety. Got: {$dbConfig['database_path']}\n";
+        exit(1);
+    }
     
     // Clean up test database if it exists
     if (file_exists($dbConfig['database_path'])) {

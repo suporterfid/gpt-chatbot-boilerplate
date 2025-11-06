@@ -401,6 +401,20 @@ async function testConnection() {
         document.getElementById('status-indicator').classList.remove('error');
         document.getElementById('status-text').textContent = 'Connected';
         showToast('Successfully connected to admin API', 'success');
+        
+        // Hide super-admin only features for non-super-admins
+        // Try to access tenant list - if it fails with 403, user is not super-admin
+        try {
+            await api.listTenants();
+            // User is super-admin, show all features
+        } catch (error) {
+            if (error.message.includes('403') || error.message.includes('super-admin')) {
+                // Hide super-admin only navigation items
+                const superAdminLinks = document.querySelectorAll('[data-super-admin-only="true"]');
+                superAdminLinks.forEach(link => link.style.display = 'none');
+            }
+        }
+        
         loadCurrentPage();
     } catch (error) {
         document.getElementById('status-indicator').classList.add('error');
