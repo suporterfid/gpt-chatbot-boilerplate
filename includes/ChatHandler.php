@@ -1807,6 +1807,7 @@ class ChatHandler {
                 error_log("LeadSense: Lead detected - ID: {$result['lead_id']}, Score: {$result['score']}, Qualified: " . ($result['qualified'] ? 'yes' : 'no'));
             }
         } catch (Exception $e) {
+            // Log error without exposing sensitive details
             error_log("LeadSense error in ChatHandler: " . $e->getMessage());
         }
     }
