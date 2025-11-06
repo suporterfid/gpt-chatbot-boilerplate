@@ -15,6 +15,7 @@ require_once 'includes/ChatHandler.php';
 require_once 'includes/JobQueue.php';
 require_once 'includes/AdminAuth.php';
 require_once 'includes/AuditService.php';
+require_once 'includes/ResourceAuthService.php';
 
 // CORS headers
 header('Access-Control-Allow-Origin: *');
@@ -293,6 +294,9 @@ try {
             log_admin('Failed to initialize AuditService: ' . $e->getMessage(), 'warn');
         }
     }
+    
+    // Initialize Resource Authorization Service
+    $resourceAuth = new ResourceAuthService($db, $adminAuth, $auditService);
 
     $logUser = $authenticatedUser['email'] ?? 'anonymous';
     log_admin("$method /admin-api.php?action=$action [user: $logUser]");
@@ -327,6 +331,15 @@ try {
             if (empty($id)) {
                 sendError('Agent ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $id, 
+                ResourceAuthService::ACTION_READ
+            );
+            
             $agent = $agentService->getAgent($id);
             if (!$agent) {
                 sendError('Agent not found', 404);
@@ -356,6 +369,15 @@ try {
             if (empty($id)) {
                 sendError('Agent ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $data = getRequestBody();
             $agent = $agentService->updateAgent($id, $data);
             log_admin('Agent updated: ' . $id);
@@ -372,6 +394,15 @@ try {
             if (empty($id)) {
                 sendError('Agent ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $id, 
+                ResourceAuthService::ACTION_DELETE
+            );
+            
             $agentService->deleteAgent($id);
             log_admin('Agent deleted: ' . $id);
             sendResponse(['success' => true, 'message' => 'Agent deleted']);
@@ -665,10 +696,21 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Prompt ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_PROMPT, 
+                $id, 
+                ResourceAuthService::ACTION_READ
+            );
+            
             $prompt = $promptService->getPrompt($id);
             if (!$prompt) {
                 sendError('Prompt not found', 404);
@@ -690,10 +732,21 @@ try {
             if ($method !== 'POST' && $method !== 'PUT') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Prompt ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_PROMPT, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $data = getRequestBody();
             $prompt = $promptService->updatePrompt($id, $data);
             log_admin('Prompt updated: ' . $id);
@@ -704,10 +757,21 @@ try {
             if ($method !== 'POST' && $method !== 'DELETE') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Prompt ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_PROMPT, 
+                $id, 
+                ResourceAuthService::ACTION_DELETE
+            );
+            
             $promptService->deletePrompt($id);
             log_admin('Prompt deleted: ' . $id);
             sendResponse(['success' => true, 'message' => 'Prompt deleted']);
@@ -776,10 +840,21 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Vector store ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_VECTOR_STORE, 
+                $id, 
+                ResourceAuthService::ACTION_READ
+            );
+            
             $store = $vectorStoreService->getVectorStore($id);
             if (!$store) {
                 sendError('Vector store not found', 404);
@@ -801,10 +876,21 @@ try {
             if ($method !== 'POST' && $method !== 'PUT') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Vector store ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_VECTOR_STORE, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $data = getRequestBody();
             $store = $vectorStoreService->updateVectorStore($id, $data);
             log_admin('Vector store updated: ' . $id);
@@ -815,10 +901,21 @@ try {
             if ($method !== 'POST' && $method !== 'DELETE') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Vector store ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_VECTOR_STORE, 
+                $id, 
+                ResourceAuthService::ACTION_DELETE
+            );
+            
             $vectorStoreService->deleteVectorStore($id);
             log_admin('Vector store deleted: ' . $id);
             sendResponse(['success' => true, 'message' => 'Vector store deleted']);
@@ -1000,6 +1097,91 @@ try {
                 log_admin('Failed to list models: ' . $e->getMessage(), 'error');
                 sendError('Failed to list models: ' . $e->getMessage(), 500);
             }
+            break;
+        
+        // ==================== Resource Permission Endpoints ====================
+        
+        case 'grant_resource_permission':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            // Note: Granting permissions requires 'update' permission on the resource
+            // This ensures only resource admins can manage who else has access
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $data = getRequestBody();
+            if (empty($data['user_id'])) {
+                sendError('user_id is required', 400);
+            }
+            if (empty($data['resource_type'])) {
+                sendError('resource_type is required', 400);
+            }
+            if (empty($data['resource_id'])) {
+                sendError('resource_id is required', 400);
+            }
+            if (empty($data['permissions']) || !is_array($data['permissions'])) {
+                sendError('permissions array is required', 400);
+            }
+            
+            // Verify resource exists and user can access it
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser,
+                $data['resource_type'],
+                $data['resource_id'],
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
+            $permission = $resourceAuth->grantResourcePermission(
+                $data['user_id'],
+                $data['resource_type'],
+                $data['resource_id'],
+                $data['permissions'],
+                $authenticatedUser['id']
+            );
+            
+            log_admin("Resource permission granted to {$data['user_id']} for {$data['resource_type']} {$data['resource_id']}");
+            sendResponse($permission, 201);
+            break;
+            
+        case 'revoke_resource_permission':
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $permissionId = $_GET['permission_id'] ?? '';
+            if (empty($permissionId)) {
+                sendError('permission_id is required', 400);
+            }
+            
+            $resourceAuth->revokeResourcePermission($permissionId);
+            log_admin("Resource permission revoked: {$permissionId}");
+            sendResponse(['success' => true, 'message' => 'Permission revoked']);
+            break;
+            
+        case 'list_resource_permissions':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $resourceType = $_GET['resource_type'] ?? '';
+            $resourceId = $_GET['resource_id'] ?? '';
+            
+            if (empty($resourceType) || empty($resourceId)) {
+                sendError('resource_type and resource_id are required', 400);
+            }
+            
+            // Verify user can access the resource
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser,
+                $resourceType,
+                $resourceId,
+                ResourceAuthService::ACTION_READ
+            );
+            
+            $permissions = $resourceAuth->listResourcePermissions($resourceType, $resourceId);
+            sendResponse($permissions);
             break;
         
         // ==================== Health & Utility Endpoints ====================

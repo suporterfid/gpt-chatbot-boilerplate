@@ -52,7 +52,8 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Production Observability**: Health checks, Prometheus metrics, enhanced audit logging.
 - **Worker Architecture**: Scalable CLI worker with exponential backoff and retry logic.
 - **Job Management**: Monitor, retry, and cancel background jobs via Admin API.
-- See [docs/PHASE3_WORKERS_WEBHOOKS.md](docs/PHASE3_WORKERS_WEBHOOKS.md) for details.
+- **Resource-Level Authorization**: Per-resource access control with tenant isolation and explicit permission grants.
+- See [docs/PHASE3_WORKERS_WEBHOOKS.md](docs/PHASE3_WORKERS_WEBHOOKS.md) and [docs/RESOURCE_AUTHORIZATION.md](docs/RESOURCE_AUTHORIZATION.md) for details.
 
 ### 🛡️ **Phase 4: Admin API Completion & Security**
 - **Rate Limiting**: IP-based rate limiting for admin endpoints (300 req/min default).
