@@ -1756,6 +1756,246 @@ try {
                 sendError('conversation_id or retention_days required', 400);
             }
             break;
+        
+        // LeadSense - Lead Management Endpoints
+        case 'list_leads':
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            // Check if LeadSense is enabled
+            if (!isset($config['leadsense']) || !($config['leadsense']['enabled'] ?? false)) {
+                sendError('LeadSense is not enabled', 503);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/LeadRepository.php';
+            require_once __DIR__ . '/includes/LeadSense/Redactor.php';
+            
+            $leadRepo = new LeadRepository($config['leadsense']);
+            $redactor = new Redactor($config['leadsense']);
+            
+            // Build filters from query parameters
+            $filters = [];
+            if (isset($_GET['agent_id'])) $filters['agent_id'] = $_GET['agent_id'];
+            if (isset($_GET['status'])) $filters['status'] = $_GET['status'];
+            if (isset($_GET['qualified'])) $filters['qualified'] = filter_var($_GET['qualified'], FILTER_VALIDATE_BOOLEAN);
+            if (isset($_GET['min_score'])) $filters['min_score'] = (int)$_GET['min_score'];
+            if (isset($_GET['from'])) $filters['from_date'] = $_GET['from'];
+            if (isset($_GET['to'])) $filters['to_date'] = $_GET['to'];
+            if (isset($_GET['q'])) $filters['q'] = $_GET['q'];
+            if (isset($_GET['limit'])) $filters['limit'] = (int)$_GET['limit'];
+            if (isset($_GET['offset'])) $filters['offset'] = (int)$_GET['offset'];
+            
+            $leads = $leadRepo->list($filters);
+            
+            // Redact PII in list view
+            $redactedLeads = array_map(function($lead) use ($redactor) {
+                return $redactor->redactLead($lead);
+            }, $leads);
+            
+            log_admin("Listed leads with filters: " . json_encode($filters));
+            sendResponse([
+                'leads' => $redactedLeads,
+                'count' => count($redactedLeads)
+            ]);
+            break;
+            
+        case 'get_lead':
+            if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            if (!isset($config['leadsense']) || !($config['leadsense']['enabled'] ?? false)) {
+                sendError('LeadSense is not enabled', 503);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/LeadRepository.php';
+            require_once __DIR__ . '/includes/LeadSense/Redactor.php';
+            
+            $leadId = $_GET['id'] ?? null;
+            if (!$leadId) {
+                sendError('Lead ID required', 400);
+            }
+            
+            $leadRepo = new LeadRepository($config['leadsense']);
+            $redactor = new Redactor($config['leadsense']);
+            
+            $lead = $leadRepo->getById($leadId);
+            if (!$lead) {
+                sendError('Lead not found', 404);
+            }
+            
+            // Get events and score history
+            $events = $leadRepo->getEvents($leadId);
+            $scores = $leadRepo->getScoreHistory($leadId);
+            
+            // Don't redact in detail view (admin has full access)
+            log_admin("Retrieved lead: $leadId");
+            sendResponse([
+                'lead' => $lead,
+                'events' => $events,
+                'score_history' => $scores
+            ]);
+            break;
+            
+        case 'update_lead':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST' && $_SERVER['REQUEST_METHOD'] !== 'PATCH') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            if (!isset($config['leadsense']) || !($config['leadsense']['enabled'] ?? false)) {
+                sendError('LeadSense is not enabled', 503);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/LeadRepository.php';
+            
+            $data = getRequestBody();
+            $leadId = $data['id'] ?? ($_GET['id'] ?? null);
+            
+            if (!$leadId) {
+                sendError('Lead ID required', 400);
+            }
+            
+            $leadRepo = new LeadRepository($config['leadsense']);
+            
+            // Verify lead exists
+            $existingLead = $leadRepo->getById($leadId);
+            if (!$existingLead) {
+                sendError('Lead not found', 404);
+            }
+            
+            // Allowed update fields
+            $updateData = ['id' => $leadId];
+            if (isset($data['status'])) $updateData['status'] = $data['status'];
+            if (isset($data['qualified'])) $updateData['qualified'] = $data['qualified'];
+            if (isset($data['name'])) $updateData['name'] = $data['name'];
+            if (isset($data['company'])) $updateData['company'] = $data['company'];
+            if (isset($data['role'])) $updateData['role'] = $data['role'];
+            if (isset($data['email'])) $updateData['email'] = $data['email'];
+            if (isset($data['phone'])) $updateData['phone'] = $data['phone'];
+            
+            $leadRepo->createOrUpdateLead(array_merge(
+                ['conversation_id' => $existingLead['conversation_id']],
+                $updateData
+            ));
+            
+            // Add update event
+            $leadRepo->addEvent($leadId, 'updated', [
+                'updated_by' => 'admin',
+                'changes' => $updateData
+            ]);
+            
+            log_admin("Updated lead: $leadId");
+            sendResponse([
+                'success' => true,
+                'lead_id' => $leadId
+            ]);
+            break;
+            
+        case 'add_lead_note':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            if (!isset($config['leadsense']) || !($config['leadsense']['enabled'] ?? false)) {
+                sendError('LeadSense is not enabled', 503);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/LeadRepository.php';
+            
+            $data = getRequestBody();
+            $leadId = $data['id'] ?? null;
+            $note = $data['note'] ?? null;
+            
+            if (!$leadId || !$note) {
+                sendError('Lead ID and note required', 400);
+            }
+            
+            $leadRepo = new LeadRepository($config['leadsense']);
+            
+            $eventId = $leadRepo->addEvent($leadId, 'note', [
+                'note' => $note,
+                'added_by' => 'admin'
+            ]);
+            
+            log_admin("Added note to lead: $leadId");
+            sendResponse([
+                'success' => true,
+                'event_id' => $eventId
+            ]);
+            break;
+            
+        case 'rescore_lead':
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            if (!isset($config['leadsense']) || !($config['leadsense']['enabled'] ?? false)) {
+                sendError('LeadSense is not enabled', 503);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/LeadRepository.php';
+            require_once __DIR__ . '/includes/LeadSense/LeadScorer.php';
+            require_once __DIR__ . '/includes/LeadSense/IntentDetector.php';
+            
+            $data = getRequestBody();
+            $leadId = $data['id'] ?? null;
+            
+            if (!$leadId) {
+                sendError('Lead ID required', 400);
+            }
+            
+            $leadRepo = new LeadRepository($config['leadsense']);
+            $lead = $leadRepo->getById($leadId);
+            
+            if (!$lead) {
+                sendError('Lead not found', 404);
+            }
+            
+            // Re-score the lead
+            $scorer = new LeadScorer($config['leadsense']);
+            $entities = [
+                'name' => $lead['name'],
+                'company' => $lead['company'],
+                'role' => $lead['role'],
+                'email' => $lead['email'],
+                'phone' => $lead['phone'],
+                'industry' => $lead['industry'],
+                'company_size' => $lead['company_size'],
+                'urgency' => $lead['extras']['urgency'] ?? null
+            ];
+            
+            $intent = [
+                'intent' => $lead['intent_level'],
+                'confidence' => $lead['extras']['intent_confidence'] ?? 0.5
+            ];
+            
+            $scoreResult = $scorer->score($entities, $intent);
+            
+            // Update lead with new score
+            $leadRepo->createOrUpdateLead([
+                'conversation_id' => $lead['conversation_id'],
+                'id' => $leadId,
+                'score' => $scoreResult['score'],
+                'qualified' => $scoreResult['qualified']
+            ]);
+            
+            // Add score snapshot
+            $leadRepo->addScoreSnapshot($leadId, $scoreResult['score'], $scoreResult['rationale']);
+            
+            log_admin("Re-scored lead: $leadId - New score: {$scoreResult['score']}");
+            sendResponse([
+                'success' => true,
+                'score' => $scoreResult['score'],
+                'qualified' => $scoreResult['qualified'],
+                'rationale' => $scoreResult['rationale']
+            ]);
+            break;
             
         default:
             sendError('Unknown action: ' . $action, 400);

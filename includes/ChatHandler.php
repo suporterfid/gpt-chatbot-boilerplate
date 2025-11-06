@@ -8,12 +8,19 @@ class ChatHandler {
     private $openAIClient;
     private $agentService;
     private $auditService;
+    private $leadSenseService;
 
     public function __construct($config, $agentService = null, $auditService = null) {
         $this->config = $config;
         $this->openAIClient = new OpenAIClient($config['openai'], $auditService);
         $this->agentService = $agentService;
         $this->auditService = $auditService;
+        
+        // Initialize LeadSense if enabled
+        if (isset($config['leadsense']) && ($config['leadsense']['enabled'] ?? false)) {
+            require_once __DIR__ . '/LeadSense/LeadSenseService.php';
+            $this->leadSenseService = new LeadSenseService($config['leadsense']);
+        }
     }
     
     /**
@@ -254,6 +261,18 @@ class ChatHandler {
         }
 
         $this->saveConversationHistory($conversationId, $messages);
+        
+        // Process with LeadSense
+        $this->processLeadSenseTurn(
+            $conversationId,
+            $message,
+            $assistantMessage,
+            $agentId,
+            [
+                'model' => $agentOverrides['model'] ?? $this->config['chat']['model'],
+                'api_type' => 'chat'
+            ]
+        );
 
         return [
             'response' => $assistantMessage
@@ -405,9 +424,11 @@ class ChatHandler {
         $toolCalls = [];
         $assistantMessageId = null;
         $auditService = $this->auditService;
+        $leadSenseService = $this->leadSenseService;
+        $chatHandler = $this;
 
-        $streamFn = function($p) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls, &$assistantMessageId, $auditService, $startTime) {
-            $this->openAIClient->streamResponse($p, function($event) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls, &$assistantMessageId, $auditService, $startTime) {
+        $streamFn = function($p) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls, &$assistantMessageId, $auditService, $startTime, $leadSenseService, $chatHandler, $agentId, $message, $agentOverrides, $responsesConfig, $effectivePromptId) {
+            $this->openAIClient->streamResponse($p, function($event) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls, &$assistantMessageId, $auditService, $startTime, $leadSenseService, $chatHandler, $agentId, $message, $agentOverrides, $responsesConfig, $effectivePromptId) {
             if (!isset($event['type'])) {
                 return;
             }
@@ -571,6 +592,22 @@ class ChatHandler {
                 }
 
                 $this->saveConversationHistory($conversationId, $messages);
+                
+                // Process with LeadSense after stream ends
+                if ($leadSenseService && $leadSenseService->isEnabled() && $fullResponse !== '') {
+                    $chatHandler->processLeadSenseTurn(
+                        $conversationId,
+                        $message,
+                        $fullResponse,
+                        $agentId,
+                        [
+                            'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
+                            'prompt_id' => $effectivePromptId,
+                            'api_type' => 'responses',
+                            'response_id' => $responseId
+                        ]
+                    );
+                }
 
                 sendSSEEvent('message', [
                     'type' => 'done',
@@ -825,6 +862,19 @@ class ChatHandler {
             }
 
             $this->saveConversationHistory($conversationId, $messages);
+            
+            // Process with LeadSense
+            $this->processLeadSenseTurn(
+                $conversationId,
+                $message,
+                $assistantMessage,
+                $agentId,
+                [
+                    'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
+                    'prompt_id' => $effectivePromptId,
+                    'api_type' => 'responses'
+                ]
+            );
 
             return [
                 'response' => $assistantMessage,
@@ -892,8 +942,10 @@ class ChatHandler {
         $fullResponse = '';
         $startTime = microtime(true);
         $auditService = $this->auditService;
+        $leadSenseService = $this->leadSenseService;
+        $chatHandler = $this;
 
-        $this->openAIClient->streamChatCompletion($payload, function($chunk) use (&$messageStarted, &$fullResponse, $conversationId, $messages, $startTime, $auditService) {
+        $this->openAIClient->streamChatCompletion($payload, function($chunk) use (&$messageStarted, &$fullResponse, $conversationId, $messages, $startTime, $auditService, $leadSenseService, $chatHandler, $agentOverrides) {
             $messagesCopy = $messages;
 
             if (isset($chunk['choices'][0]['delta']['content'])) {
@@ -944,6 +996,29 @@ class ChatHandler {
                 }
                 
                 $this->saveConversationHistory($conversationId, $messagesCopy);
+                
+                // Process with LeadSense after stream ends
+                if ($leadSenseService && $leadSenseService->isEnabled()) {
+                    // Extract user message (last user message before assistant)
+                    $userMessage = '';
+                    for ($i = count($messagesCopy) - 2; $i >= 0; $i--) {
+                        if (isset($messagesCopy[$i]['role']) && $messagesCopy[$i]['role'] === 'user') {
+                            $userMessage = $messagesCopy[$i]['content'] ?? '';
+                            break;
+                        }
+                    }
+                    
+                    $chatHandler->processLeadSenseTurn(
+                        $conversationId,
+                        $userMessage,
+                        $fullResponse,
+                        null, // agentId not available in this context
+                        [
+                            'model' => $agentOverrides['model'] ?? $chatHandler->config['chat']['model'],
+                            'api_type' => 'chat'
+                        ]
+                    );
+                }
 
                 sendSSEEvent('message', [
                     'type' => 'done',
@@ -1695,6 +1770,45 @@ class ChatHandler {
             'model' => $overrides['model'] ?? ($apiType === 'responses' ? $this->config['responses']['model'] : $this->config['chat']['model']),
             'temperature' => $overrides['temperature'] ?? ($apiType === 'responses' ? $this->config['responses']['temperature'] : $this->config['chat']['temperature']),
         ], $overrides);
+    }
+    
+    /**
+     * Process a conversation turn with LeadSense
+     * 
+     * @param string $conversationId
+     * @param string $userMessage
+     * @param string $assistantMessage
+     * @param string|null $agentId
+     * @param array $additionalContext
+     */
+    private function processLeadSenseTurn($conversationId, $userMessage, $assistantMessage, $agentId = null, $additionalContext = []) {
+        if (!$this->leadSenseService || !$this->leadSenseService->isEnabled()) {
+            return;
+        }
+        
+        try {
+            // Get conversation history
+            $messages = $this->getConversationHistory($conversationId);
+            
+            // Build turn context
+            $turnData = array_merge([
+                'agent_id' => $agentId,
+                'conversation_id' => $conversationId,
+                'user_message' => $userMessage,
+                'assistant_message' => $assistantMessage,
+                'messages' => $messages,
+                'timestamp' => time()
+            ], $additionalContext);
+            
+            // Process the turn
+            $result = $this->leadSenseService->processTurn($turnData);
+            
+            if ($result) {
+                error_log("LeadSense: Lead detected - ID: {$result['lead_id']}, Score: {$result['score']}, Qualified: " . ($result['qualified'] ? 'yes' : 'no'));
+            }
+        } catch (Exception $e) {
+            error_log("LeadSense error in ChatHandler: " . $e->getMessage());
+        }
     }
 }
 ?>
