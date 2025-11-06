@@ -710,3 +710,197 @@ code {
 .channel-sessions .data-table {
     margin-top: 1rem;
 }
+
+/* ==================== Prompt Builder Styles ==================== */
+
+.btn-purple {
+    background-color: #7c3aed;
+    color: white;
+    border: 1px solid #7c3aed;
+}
+
+.btn-purple:hover {
+    background-color: #6d28d9;
+    border-color: #6d28d9;
+}
+
+#prompt-builder-modal .modal-content {
+    max-width: 900px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.guardrails-container {
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 15px;
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: var(--bg-secondary);
+}
+
+.guardrail-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.guardrail-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.checkbox-label input[type="checkbox"] {
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"]:disabled {
+    cursor: not-allowed;
+}
+
+.guardrail-description {
+    margin: 5px 0 0 25px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.badge-required {
+    background-color: var(--danger-color);
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 5px;
+}
+
+.result-metadata {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.result-metadata .badge {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.markdown-editor {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.markdown-preview {
+    margin-top: 20px;
+    padding: 20px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.markdown-content {
+    line-height: 1.8;
+}
+
+.markdown-content h1 {
+    font-size: 24px;
+    margin: 20px 0 10px 0;
+    color: var(--text-primary);
+}
+
+.markdown-content h2 {
+    font-size: 20px;
+    margin: 18px 0 8px 0;
+    color: var(--text-primary);
+}
+
+.markdown-content h3 {
+    font-size: 16px;
+    margin: 15px 0 8px 0;
+    color: var(--text-primary);
+}
+
+.markdown-content ul {
+    margin: 10px 0;
+    padding-left: 25px;
+}
+
+.markdown-content li {
+    margin: 5px 0;
+}
+
+.btn-group {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+}
+
+.active-version {
+    background-color: #f0fdf4;
+}
+
+.active-version td {
+    font-weight: 500;
+}
+
+.badge-success {
+    background-color: var(--success-color);
+    color: white;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+}
+
+.text-muted {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-btn:hover {
+    color: var(--text-primary);
+}
+
+/* Spinner for loading states */
+.spinner {
+    border: 3px solid var(--border-color);
+    border-top: 3px solid var(--primary-color);
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+    margin: 20px auto;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
