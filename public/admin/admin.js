@@ -215,6 +215,42 @@ class AdminAPI {
         if (channel) params += `&channel=${channel}`;
         return this.request('list_channel_sessions', { params });
     }
+    
+    // Tenants
+    listTenants(filters = {}) {
+        let params = '';
+        if (filters.status) params += `&status=${filters.status}`;
+        if (filters.search) params += `&search=${encodeURIComponent(filters.search)}`;
+        return this.request('list_tenants', { params });
+    }
+    
+    getTenant(id) {
+        return this.request('get_tenant', { params: `&id=${id}` });
+    }
+    
+    createTenant(data) {
+        return this.request('create_tenant', { method: 'POST', body: data });
+    }
+    
+    updateTenant(id, data) {
+        return this.request('update_tenant', { method: 'POST', params: `&id=${id}`, body: data });
+    }
+    
+    deleteTenant(id) {
+        return this.request('delete_tenant', { method: 'POST', params: `&id=${id}` });
+    }
+    
+    suspendTenant(id) {
+        return this.request('suspend_tenant', { method: 'POST', params: `&id=${id}` });
+    }
+    
+    activateTenant(id) {
+        return this.request('activate_tenant', { method: 'POST', params: `&id=${id}` });
+    }
+    
+    getTenantStats(id) {
+        return this.request('get_tenant_stats', { params: `&id=${id}` });
+    }
 }
 
 let api = new AdminAPI();
@@ -403,6 +439,7 @@ function navigateTo(page) {
         'prompts': 'Prompts',
         'vector-stores': 'Vector Stores',
         'jobs': 'Background Jobs',
+        'tenants': 'Tenants',
         'audit': 'Audit Log',
         'audit-conversations': 'Audit Trails',
         'settings': 'Settings'
@@ -421,6 +458,7 @@ function loadCurrentPage() {
         'prompts': loadPromptsPage,
         'vector-stores': loadVectorStoresPage,
         'jobs': loadJobsPage,
+        'tenants': loadTenantsPage,
         'audit': loadAuditPage,
         'audit-conversations': loadAuditConversationsPage,
         'settings': loadSettingsPage
@@ -1497,6 +1535,331 @@ async function cancelJobAction(jobId) {
         refreshJobsPage();
     } catch (error) {
         showToast('Failed to cancel job: ' + error.message, 'error');
+    }
+}
+
+// ==================== Tenants Page ====================
+
+async function loadTenantsPage() {
+    const content = document.getElementById('content');
+    content.innerHTML = '<div class="spinner"></div>';
+    
+    try {
+        const tenants = await api.listTenants();
+        
+        content.innerHTML = `
+            <div class="page-header">
+                <h2>Tenants</h2>
+                <button class="btn btn-primary" onclick="showCreateTenantModal()">
+                    + Create Tenant
+                </button>
+            </div>
+            
+            <div class="search-filters">
+                <input type="search" id="tenant-search" placeholder="Search tenants..." 
+                       onkeyup="filterTenants()">
+                <select id="tenant-status-filter" onchange="filterTenants()">
+                    <option value="">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="inactive">Inactive</option>
+                </select>
+            </div>
+            
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Slug</th>
+                            <th>Status</th>
+                            <th>Plan</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tenants-list">
+                        ${tenants.map(tenant => `
+                            <tr data-tenant-id="${tenant.id}" 
+                                data-tenant-slug="${tenant.slug}"
+                                data-tenant-status="${tenant.status}">
+                                <td><strong>${escapeHtml(tenant.name)}</strong></td>
+                                <td><code>${escapeHtml(tenant.slug)}</code></td>
+                                <td><span class="status-badge status-${tenant.status}">${tenant.status}</span></td>
+                                <td>${tenant.plan || '-'}</td>
+                                <td>${formatDate(tenant.created_at)}</td>
+                                <td>
+                                    <button class="btn btn-sm" onclick="viewTenantStats('${tenant.id}')">
+                                        Stats
+                                    </button>
+                                    <button class="btn btn-sm" onclick="editTenant('${tenant.id}')">
+                                        Edit
+                                    </button>
+                                    ${tenant.status === 'active' 
+                                        ? `<button class="btn btn-sm btn-warning" onclick="suspendTenant('${tenant.id}')">Suspend</button>`
+                                        : `<button class="btn btn-sm btn-success" onclick="activateTenant('${tenant.id}')">Activate</button>`
+                                    }
+                                    <button class="btn btn-sm btn-danger" onclick="deleteTenant('${tenant.id}')">
+                                        Delete
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    } catch (error) {
+        content.innerHTML = `
+            <div class="error-message">
+                Failed to load tenants: ${error.message}
+            </div>
+        `;
+    }
+}
+
+function filterTenants() {
+    const search = document.getElementById('tenant-search').value.toLowerCase();
+    const statusFilter = document.getElementById('tenant-status-filter').value;
+    const rows = document.querySelectorAll('#tenants-list tr');
+    
+    rows.forEach(row => {
+        const slug = row.dataset.tenantSlug.toLowerCase();
+        const status = row.dataset.tenantStatus;
+        const name = row.querySelector('td strong').textContent.toLowerCase();
+        
+        const matchesSearch = search === '' || name.includes(search) || slug.includes(search);
+        const matchesStatus = statusFilter === '' || status === statusFilter;
+        
+        row.style.display = matchesSearch && matchesStatus ? '' : 'none';
+    });
+}
+
+function showCreateTenantModal() {
+    showModal('Create Tenant', `
+        <form id="create-tenant-form" onsubmit="createTenant(event)">
+            <div class="form-group">
+                <label for="tenant-name">Name *</label>
+                <input type="text" id="tenant-name" required 
+                       placeholder="Acme Corporation">
+            </div>
+            
+            <div class="form-group">
+                <label for="tenant-slug">Slug *</label>
+                <input type="text" id="tenant-slug" required 
+                       pattern="[a-z0-9-]+" 
+                       placeholder="acme"
+                       title="Lowercase letters, numbers, and hyphens only">
+                <small>URL-safe identifier (lowercase, hyphens allowed)</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="tenant-billing-email">Billing Email</label>
+                <input type="email" id="tenant-billing-email" 
+                       placeholder="billing@acme.com">
+            </div>
+            
+            <div class="form-group">
+                <label for="tenant-plan">Plan</label>
+                <select id="tenant-plan">
+                    <option value="">None</option>
+                    <option value="starter">Starter</option>
+                    <option value="pro">Pro</option>
+                    <option value="enterprise">Enterprise</option>
+                </select>
+            </div>
+            
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">
+                    Cancel
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    Create Tenant
+                </button>
+            </div>
+        </form>
+    `);
+}
+
+async function createTenant(event) {
+    event.preventDefault();
+    
+    const data = {
+        name: document.getElementById('tenant-name').value,
+        slug: document.getElementById('tenant-slug').value,
+        billing_email: document.getElementById('tenant-billing-email').value || null,
+        plan: document.getElementById('tenant-plan').value || null,
+        status: 'active'
+    };
+    
+    try {
+        await api.createTenant(data);
+        closeModal();
+        showToast('Tenant created successfully');
+        loadTenantsPage();
+    } catch (error) {
+        showToast('Failed to create tenant: ' + error.message, 'error');
+    }
+}
+
+async function editTenant(id) {
+    try {
+        const tenant = await api.getTenant(id);
+        
+        showModal('Edit Tenant', `
+            <form id="edit-tenant-form" onsubmit="updateTenant(event, '${id}')">
+                <div class="form-group">
+                    <label for="edit-tenant-name">Name *</label>
+                    <input type="text" id="edit-tenant-name" required 
+                           value="${escapeHtml(tenant.name)}">
+                </div>
+                
+                <div class="form-group">
+                    <label for="edit-tenant-slug">Slug *</label>
+                    <input type="text" id="edit-tenant-slug" required 
+                           pattern="[a-z0-9-]+" 
+                           value="${escapeHtml(tenant.slug)}">
+                </div>
+                
+                <div class="form-group">
+                    <label for="edit-tenant-billing-email">Billing Email</label>
+                    <input type="email" id="edit-tenant-billing-email" 
+                           value="${tenant.billing_email || ''}">
+                </div>
+                
+                <div class="form-group">
+                    <label for="edit-tenant-plan">Plan</label>
+                    <select id="edit-tenant-plan">
+                        <option value="">None</option>
+                        <option value="starter" ${tenant.plan === 'starter' ? 'selected' : ''}>Starter</option>
+                        <option value="pro" ${tenant.plan === 'pro' ? 'selected' : ''}>Pro</option>
+                        <option value="enterprise" ${tenant.plan === 'enterprise' ? 'selected' : ''}>Enterprise</option>
+                    </select>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        Update Tenant
+                    </button>
+                </div>
+            </form>
+        `);
+    } catch (error) {
+        showToast('Failed to load tenant: ' + error.message, 'error');
+    }
+}
+
+async function updateTenant(event, id) {
+    event.preventDefault();
+    
+    const data = {
+        name: document.getElementById('edit-tenant-name').value,
+        slug: document.getElementById('edit-tenant-slug').value,
+        billing_email: document.getElementById('edit-tenant-billing-email').value || null,
+        plan: document.getElementById('edit-tenant-plan').value || null
+    };
+    
+    try {
+        await api.updateTenant(id, data);
+        closeModal();
+        showToast('Tenant updated successfully');
+        loadTenantsPage();
+    } catch (error) {
+        showToast('Failed to update tenant: ' + error.message, 'error');
+    }
+}
+
+async function viewTenantStats(id) {
+    try {
+        const stats = await api.getTenantStats(id);
+        const tenant = await api.getTenant(id);
+        
+        showModal(`Tenant Statistics: ${tenant.name}`, `
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Agents</h3>
+                    <p class="stat-value">${stats.agents}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Prompts</h3>
+                    <p class="stat-value">${stats.prompts}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Vector Stores</h3>
+                    <p class="stat-value">${stats.vector_stores}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Users</h3>
+                    <p class="stat-value">${stats.users}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Conversations</h3>
+                    <p class="stat-value">${stats.conversations}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Leads</h3>
+                    <p class="stat-value">${stats.leads}</p>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">
+                    Close
+                </button>
+            </div>
+        `);
+    } catch (error) {
+        showToast('Failed to load tenant stats: ' + error.message, 'error');
+    }
+}
+
+async function suspendTenant(id) {
+    if (!confirm('Are you sure you want to suspend this tenant? Their services will be disabled.')) {
+        return;
+    }
+    
+    try {
+        await api.suspendTenant(id);
+        showToast('Tenant suspended successfully');
+        loadTenantsPage();
+    } catch (error) {
+        showToast('Failed to suspend tenant: ' + error.message, 'error');
+    }
+}
+
+async function activateTenant(id) {
+    try {
+        await api.activateTenant(id);
+        showToast('Tenant activated successfully');
+        loadTenantsPage();
+    } catch (error) {
+        showToast('Failed to activate tenant: ' + error.message, 'error');
+    }
+}
+
+async function deleteTenant(id) {
+    const tenant = await api.getTenant(id);
+    const stats = await api.getTenantStats(id);
+    
+    if (stats.total_resources > 0) {
+        if (!confirm(`WARNING: This tenant has ${stats.total_resources} resources that will be permanently deleted. This action cannot be undone. Are you sure?`)) {
+            return;
+        }
+    } else {
+        if (!confirm('Are you sure you want to delete this tenant? This action cannot be undone.')) {
+            return;
+        }
+    }
+    
+    try {
+        await api.deleteTenant(id);
+        showToast('Tenant deleted successfully');
+        loadTenantsPage();
+    } catch (error) {
+        showToast('Failed to delete tenant: ' + error.message, 'error');
     }
 }
 
