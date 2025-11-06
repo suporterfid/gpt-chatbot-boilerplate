@@ -151,7 +151,7 @@ class GuardrailLoader
         $currentKey = null;
         $multilineValue = [];
         $inMultiline = false;
-        $multilineIndent = 0;
+        $currentObject = null; // For nested objects like 'meta'
         
         foreach ($lines as $line) {
             // Skip comments and empty lines
@@ -169,13 +169,13 @@ class GuardrailLoader
                 $currentKey = $matches[1];
                 $multilineValue = [];
                 $inMultiline = true;
-                $multilineIndent = 0;
+                $currentObject = null; // Exit any nested object
                 continue;
             }
             
             // In multiline mode
             if ($inMultiline) {
-                // Check for next key (end of multiline)
+                // Check for next top-level key (end of multiline)
                 if (preg_match('/^(\w+):/', $line)) {
                     // Save multiline value
                     if ($currentKey !== null) {
@@ -184,26 +184,16 @@ class GuardrailLoader
                     $inMultiline = false;
                     $multilineValue = [];
                     
-                    // Process this line as a regular key-value
-                    if (preg_match('/^(\w+):\s*(.*)$/', $line, $matches)) {
-                        $key = $matches[1];
-                        $value = $matches[2];
-                        
-                        if ($value === 'true') $value = true;
-                        elseif ($value === 'false') $value = false;
-                        elseif (is_numeric($value)) $value = $value + 0; // Convert to int or float
-                        
-                        $data[$key] = $value;
-                    }
+                    // Fall through to process this line
                 } else {
                     // Continue multiline
                     $multilineValue[] = $line;
+                    continue;
                 }
-                continue;
             }
             
-            // Regular key-value line
-            if (preg_match('/^(\w+):\s*(.*)$/', $line, $matches)) {
+            // Top-level key with value (key: value)
+            if (preg_match('/^(\w+):\s*(.+)$/', $line, $matches)) {
                 $key = $matches[1];
                 $value = trim($matches[2]);
                 
@@ -213,18 +203,20 @@ class GuardrailLoader
                 elseif (is_numeric($value)) $value = $value + 0;
                 
                 $data[$key] = $value;
+                $currentObject = null;
+                continue;
             }
             
-            // Nested object (meta:)
-            if (preg_match('/^(\w+):$/', $line, $matches)) {
+            // Top-level key without value (starts nested object)
+            if (preg_match('/^(\w+):\s*$/', $line, $matches)) {
                 $key = $matches[1];
                 $data[$key] = [];
-                $currentKey = $key;
+                $currentObject = $key;
                 continue;
             }
             
             // Nested property (  property: value)
-            if (preg_match('/^\s{2,}(\w+):\s*(.*)$/', $line, $matches) && $currentKey !== null) {
+            if (preg_match('/^\s{2,}(\w+):\s*(.*)$/', $line, $matches) && $currentObject !== null) {
                 $property = $matches[1];
                 $value = trim($matches[2]);
                 
@@ -233,10 +225,10 @@ class GuardrailLoader
                 elseif ($value === 'false') $value = false;
                 elseif (is_numeric($value)) $value = $value + 0;
                 
-                if (!is_array($data[$currentKey])) {
-                    $data[$currentKey] = [];
+                if (!is_array($data[$currentObject])) {
+                    $data[$currentObject] = [];
                 }
-                $data[$currentKey][$property] = $value;
+                $data[$currentObject][$property] = $value;
             }
         }
         
