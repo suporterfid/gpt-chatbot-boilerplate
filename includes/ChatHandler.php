@@ -152,9 +152,9 @@ class ChatHandler {
         }
     }
 
-    public function validateRequest($message, $conversationId, $fileData = null) {
-        // Rate limiting
-        $this->checkRateLimit();
+    public function validateRequest($message, $conversationId, $fileData = null, $agentConfig = null) {
+        // Rate limiting (per-agent if whitelabel)
+        $this->checkRateLimit($agentConfig);
 
         // Validate message
         if (empty(trim($message))) {
@@ -1683,14 +1683,31 @@ class ChatHandler {
         return $fileIds;
     }
 
-    private function checkRateLimit() {
+    private function checkRateLimit($agentConfig = null) {
         $clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        $rateLimitFile = sys_get_temp_dir() . '/chatbot_rate_limit_' . md5($clientIP);
-        $requestsFile = sys_get_temp_dir() . '/chatbot_requests_' . md5($clientIP);
-
-        $currentTime = time();
+        
+        // Use per-agent rate limits if whitelabel agent is provided
         $rateLimit = $this->config['chat_config']['rate_limit_requests'];
         $window = $this->config['chat_config']['rate_limit_window'];
+        $agentKey = '';
+        
+        if ($agentConfig && isset($agentConfig['agent_public_id'])) {
+            // Per-agent whitelabel rate limiting
+            $agentKey = '_' . $agentConfig['agent_public_id'];
+            
+            if (isset($agentConfig['wl_rate_limit_requests']) && $agentConfig['wl_rate_limit_requests'] > 0) {
+                $rateLimit = $agentConfig['wl_rate_limit_requests'];
+            }
+            
+            if (isset($agentConfig['wl_rate_limit_window_seconds']) && $agentConfig['wl_rate_limit_window_seconds'] > 0) {
+                $window = $agentConfig['wl_rate_limit_window_seconds'];
+            }
+        }
+        
+        $rateLimitFile = sys_get_temp_dir() . '/chatbot_rate_limit_' . md5($clientIP . $agentKey);
+        $requestsFile = sys_get_temp_dir() . '/chatbot_requests_' . md5($clientIP . $agentKey);
+
+        $currentTime = time();
 
         // Read existing requests
         $requests = [];

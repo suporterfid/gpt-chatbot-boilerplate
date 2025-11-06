@@ -240,6 +240,151 @@ try {
         }
     }
 
+    // Extract whitelabel parameters
+    $agentPublicId = null;
+    $wlToken = null;
+    
+    if ($method === 'GET') {
+        $agentPublicId = $_GET['agent_public_id'] ?? null;
+        $wlToken = $_GET['wl_token'] ?? null;
+    } elseif ($method === 'POST') {
+        $agentPublicId = $input['agent_public_id'] ?? null;
+        $wlToken = $input['wl_token'] ?? null;
+    }
+    
+    // If whitelabel mode (agent_public_id present), enforce strict validation
+    $whitelabelMode = !empty($agentPublicId);
+    $whitelabelAgent = null;
+    
+    if ($whitelabelMode) {
+        require_once 'includes/WhitelabelTokenService.php';
+        
+        // Validate whitelabel token
+        if (empty($wlToken)) {
+            log_debug('Whitelabel request missing wl_token', 'error');
+            
+            if ($shouldStream) {
+                sendSSEEvent('error', [
+                    'code' => 'WL_TOKEN_MISSING',
+                    'message' => 'Unauthorized: token required. Please reload the page.'
+                ]);
+                exit();
+            } else {
+                http_response_code(403);
+                echo json_encode([
+                    'error' => [
+                        'code' => 'WL_TOKEN_MISSING',
+                        'message' => 'Unauthorized: token required. Please reload the page.'
+                    ]
+                ]);
+                exit();
+            }
+        }
+        
+        // Resolve agent by public ID
+        $whitelabelAgent = $agentService ? $agentService->getAgentByPublicId($agentPublicId) : null;
+        
+        if (!$whitelabelAgent) {
+            log_debug("Whitelabel agent not found: {$agentPublicId}", 'error');
+            
+            if ($shouldStream) {
+                sendSSEEvent('error', [
+                    'code' => 'WL_AGENT_NOT_FOUND',
+                    'message' => 'Agent not found or not published'
+                ]);
+                exit();
+            } else {
+                http_response_code(404);
+                echo json_encode([
+                    'error' => [
+                        'code' => 'WL_AGENT_NOT_FOUND',
+                        'message' => 'Agent not found or not published'
+                    ]
+                ]);
+                exit();
+            }
+        }
+        
+        // Verify whitelabel is enabled
+        if (!$whitelabelAgent['whitelabel_enabled']) {
+            log_debug("Whitelabel not enabled for agent: {$whitelabelAgent['id']}", 'error');
+            
+            if ($shouldStream) {
+                sendSSEEvent('error', [
+                    'code' => 'WL_NOT_ENABLED',
+                    'message' => 'Agent not published'
+                ]);
+                exit();
+            } else {
+                http_response_code(403);
+                echo json_encode([
+                    'error' => [
+                        'code' => 'WL_NOT_ENABLED',
+                        'message' => 'Agent not published'
+                    ]
+                ]);
+                exit();
+            }
+        }
+        
+        // Validate token if required
+        if ($whitelabelAgent['wl_require_signed_requests']) {
+            $dbConfig = [
+                'database_url' => $config['admin']['database_url'] ?? null,
+                'database_path' => $config['admin']['database_path'] ?? __DIR__ . '/data/chatbot.db'
+            ];
+            $db = new DB($dbConfig);
+            $tokenService = new WhitelabelTokenService($db, $config);
+            
+            $validatedPayload = $tokenService->validateToken(
+                $wlToken,
+                $agentPublicId,
+                $whitelabelAgent['wl_hmac_secret']
+            );
+            
+            if (!$validatedPayload) {
+                log_debug("Whitelabel token validation failed for agent: {$agentPublicId}", 'error');
+                
+                if ($shouldStream) {
+                    sendSSEEvent('error', [
+                        'code' => 'WL_TOKEN_INVALID',
+                        'message' => 'Unauthorized or expired link. Please reload the page.'
+                    ]);
+                    exit();
+                } else {
+                    http_response_code(403);
+                    echo json_encode([
+                        'error' => [
+                            'code' => 'WL_TOKEN_INVALID',
+                            'message' => 'Unauthorized or expired link. Please reload the page.'
+                        ]
+                    ]);
+                    exit();
+                }
+            }
+            
+            log_debug("Whitelabel token validated for agent: {$agentPublicId}");
+        }
+        
+        // Override agentId to enforce whitelabel agent (ignore user-provided agent_id)
+        $agentId = $whitelabelAgent['id'];
+        
+        // Apply CORS for whitelabel
+        $allowedOrigins = $whitelabelAgent['allowed_origins'] ?? [];
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? null;
+        
+        if (!empty($allowedOrigins) && $origin) {
+            if (in_array($origin, $allowedOrigins, true)) {
+                header('Access-Control-Allow-Origin: ' . $origin);
+            } else {
+                log_debug("CORS denied for origin: {$origin}", 'warn');
+                // Still allow same-origin
+            }
+        }
+        
+        log_debug("Whitelabel mode: agent={$whitelabelAgent['name']} ({$agentPublicId})");
+    }
+    
     log_debug("Incoming request method=$method apiType=$apiType conv=$conversationId agentId=$agentId msgLen=" . strlen($message));
     
     // Generate correlation ID for audit trail
@@ -287,7 +432,7 @@ try {
 
     // Validate and sanitize input
     try {
-        $chatHandler->validateRequest($message, $conversationId, $fileData);
+        $chatHandler->validateRequest($message, $conversationId, $fileData, $whitelabelAgent);
     } catch (Exception $e) {
         // Audit validation error
         if ($auditService && $auditService->isEnabled()) {
