@@ -251,6 +251,106 @@ class AdminAPI {
     getTenantStats(id) {
         return this.request('get_tenant_stats', { params: `&id=${id}` });
     }
+    
+    // Billing & Usage
+    getUsageStats(tenantId = null, filters = {}) {
+        let params = '';
+        if (tenantId) params += `&tenant_id=${tenantId}`;
+        if (filters.start_date) params += `&start_date=${filters.start_date}`;
+        if (filters.end_date) params += `&end_date=${filters.end_date}`;
+        if (filters.resource_type) params += `&resource_type=${filters.resource_type}`;
+        return this.request('get_usage_stats', { params });
+    }
+    
+    getUsageTimeSeries(tenantId = null, filters = {}) {
+        let params = '';
+        if (tenantId) params += `&tenant_id=${tenantId}`;
+        if (filters.start_date) params += `&start_date=${filters.start_date}`;
+        if (filters.end_date) params += `&end_date=${filters.end_date}`;
+        if (filters.resource_type) params += `&resource_type=${filters.resource_type}`;
+        if (filters.interval) params += `&interval=${filters.interval}`;
+        return this.request('get_usage_timeseries', { params });
+    }
+    
+    listQuotas(tenantId = null) {
+        let params = '';
+        if (tenantId) params += `&tenant_id=${tenantId}`;
+        return this.request('list_quotas', { params });
+    }
+    
+    getQuotaStatus(tenantId = null) {
+        let params = '';
+        if (tenantId) params += `&tenant_id=${tenantId}`;
+        return this.request('get_quota_status', { params });
+    }
+    
+    setQuota(data) {
+        return this.request('set_quota', { method: 'POST', body: data });
+    }
+    
+    deleteQuota(id) {
+        return this.request('delete_quota', { method: 'POST', params: `&id=${id}` });
+    }
+    
+    getSubscription(tenantId = null) {
+        let params = '';
+        if (tenantId) params += `&tenant_id=${tenantId}`;
+        return this.request('get_subscription', { params });
+    }
+    
+    createSubscription(data) {
+        return this.request('create_subscription', { method: 'POST', body: data });
+    }
+    
+    updateSubscription(data) {
+        return this.request('update_subscription', { method: 'POST', body: data });
+    }
+    
+    cancelSubscription(tenantId, immediately = false) {
+        return this.request('cancel_subscription', { method: 'POST', body: { tenant_id: tenantId, immediately } });
+    }
+    
+    listInvoices(tenantId = null, filters = {}) {
+        let params = '';
+        if (tenantId) params += `&tenant_id=${tenantId}`;
+        if (filters.status) params += `&status=${filters.status}`;
+        if (filters.limit) params += `&limit=${filters.limit}`;
+        if (filters.offset) params += `&offset=${filters.offset}`;
+        return this.request('list_invoices', { params });
+    }
+    
+    getInvoice(id) {
+        return this.request('get_invoice', { params: `&id=${id}` });
+    }
+    
+    createInvoice(data) {
+        return this.request('create_invoice', { method: 'POST', body: data });
+    }
+    
+    updateInvoice(id, data) {
+        return this.request('update_invoice', { method: 'POST', params: `&id=${id}`, body: data });
+    }
+    
+    listNotifications(tenantId = null, filters = {}) {
+        let params = '';
+        if (tenantId) params += `&tenant_id=${tenantId}`;
+        if (filters.type) params += `&type=${filters.type}`;
+        if (filters.status) params += `&status=${filters.status}`;
+        if (filters.unread_only) params += `&unread_only=${filters.unread_only}`;
+        if (filters.limit) params += `&limit=${filters.limit}`;
+        if (filters.offset) params += `&offset=${filters.offset}`;
+        return this.request('list_notifications', { params });
+    }
+    
+    markNotificationRead(id) {
+        return this.request('mark_notification_read', { method: 'POST', params: `&id=${id}` });
+    }
+    
+    getUnreadCount(tenantId = null) {
+        let params = '';
+        if (tenantId) params += `&tenant_id=${tenantId}`;
+        return this.request('get_unread_count', { params });
+    }
 }
 
 let api = new AdminAPI();
@@ -454,6 +554,7 @@ function navigateTo(page) {
         'vector-stores': 'Vector Stores',
         'jobs': 'Background Jobs',
         'tenants': 'Tenants',
+        'billing': 'Billing & Usage',
         'audit': 'Audit Log',
         'audit-conversations': 'Audit Trails',
         'settings': 'Settings'
@@ -473,6 +574,7 @@ function loadCurrentPage() {
         'vector-stores': loadVectorStoresPage,
         'jobs': loadJobsPage,
         'tenants': loadTenantsPage,
+        'billing': loadBillingPage,
         'audit': loadAuditPage,
         'audit-conversations': loadAuditConversationsPage,
         'settings': loadSettingsPage
@@ -2028,6 +2130,239 @@ async function exportAuditLog() {
         showToast('Audit log exported successfully', 'success');
     } catch (error) {
         showToast('Failed to export audit log: ' + error.message, 'error');
+    }
+}
+
+// ==================== Billing Page ====================
+
+async function loadBillingPage() {
+    const content = document.getElementById('content');
+    content.innerHTML = '<div class="spinner"></div>';
+    
+    try {
+        // Load data in parallel
+        const [quotaStatus, usageStats, subscription, invoices, notifications] = await Promise.all([
+            api.getQuotaStatus().catch(() => []),
+            api.getUsageStats(null, { 
+                start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() 
+            }).catch(() => ({ by_resource_type: [], totals: {} })),
+            api.getSubscription().catch(() => null),
+            api.listInvoices(null, { limit: 10 }).catch(() => []),
+            api.listNotifications(null, { limit: 5, unread_only: true }).catch(() => [])
+        ]);
+        
+        let html = `
+            <div style="display: grid; gap: 1.5rem;">
+                <!-- Summary Cards -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+                    <div class="card">
+                        <div class="card-body">
+                            <h4 style="margin: 0 0 0.5rem 0; color: #6b7280; font-size: 0.875rem;">Current Plan</h4>
+                            <div style="font-size: 1.5rem; font-weight: 600;">${subscription ? subscription.plan_type : 'No Plan'}</div>
+                            ${subscription ? `<div style="color: #6b7280; font-size: 0.875rem; margin-top: 0.25rem;">
+                                ${subscription.billing_cycle} • ${subscription.status}
+                            </div>` : ''}
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-body">
+                            <h4 style="margin: 0 0 0.5rem 0; color: #6b7280; font-size: 0.875rem;">Total Usage (30d)</h4>
+                            <div style="font-size: 1.5rem; font-weight: 600;">${usageStats.totals.total_quantity || 0}</div>
+                            <div style="color: #6b7280; font-size: 0.875rem; margin-top: 0.25rem;">
+                                ${usageStats.totals.total_events || 0} events
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-body">
+                            <h4 style="margin: 0 0 0.5rem 0; color: #6b7280; font-size: 0.875rem;">Active Quotas</h4>
+                            <div style="font-size: 1.5rem; font-weight: 600;">${quotaStatus.length}</div>
+                            <div style="color: #6b7280; font-size: 0.875rem; margin-top: 0.25rem;">
+                                ${quotaStatus.filter(q => !q.allowed).length} exceeded
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-body">
+                            <h4 style="margin: 0 0 0.5rem 0; color: #6b7280; font-size: 0.875rem;">Notifications</h4>
+                            <div style="font-size: 1.5rem; font-weight: 600;">${notifications.length}</div>
+                            <div style="color: #6b7280; font-size: 0.875rem; margin-top: 0.25rem;">Unread alerts</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Quota Status -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Quota Status</h3>
+                        <button class="btn btn-primary btn-small" onclick="showCreateQuotaModal()">Add Quota</button>
+                    </div>
+                    <div class="card-body">
+        `;
+        
+        if (quotaStatus.length === 0) {
+            html += `<p style="color: #6b7280; text-align: center; padding: 2rem;">No quotas configured</p>`;
+        } else {
+            html += `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Resource</th>
+                                <th>Period</th>
+                                <th>Usage/Limit</th>
+                                <th>Progress</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${quotaStatus.map(quota => {
+                                const progressColor = quota.percentage >= 90 ? '#ef4444' : 
+                                                     quota.percentage >= 80 ? '#f59e0b' : 
+                                                     '#10b981';
+                                return `
+                                    <tr>
+                                        <td><code>${quota.resource_type}</code></td>
+                                        <td>${quota.period}</td>
+                                        <td>${quota.current}/${quota.limit} ${quota.is_hard_limit ? '🔒' : ''}</td>
+                                        <td>
+                                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                                <div style="flex: 1; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
+                                                    <div style="height: 100%; background: ${progressColor}; width: ${Math.min(quota.percentage, 100)}%;"></div>
+                                                </div>
+                                                <span style="font-size: 0.875rem; min-width: 3rem; text-align: right;">${quota.percentage.toFixed(1)}%</span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-small btn-danger" onclick="deleteQuota('${quota.id}')">Delete</button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        html += `
+                    </div>
+                </div>
+                
+                <!-- Usage Stats -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Usage (Last 30 Days)</h3>
+                    </div>
+                    <div class="card-body">
+        `;
+        
+        if (usageStats.by_resource_type.length === 0) {
+            html += `<p style="color: #6b7280; text-align: center; padding: 2rem;">No usage data available</p>`;
+        } else {
+            html += `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Resource Type</th>
+                                <th>Events</th>
+                                <th>Total Quantity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${usageStats.by_resource_type.map(stat => `
+                                <tr>
+                                    <td><code>${stat.resource_type}</code></td>
+                                    <td>${stat.event_count}</td>
+                                    <td>${stat.total_quantity}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        html += `</div></div></div>`;
+        content.innerHTML = html;
+    } catch (error) {
+        console.error('Error loading billing page:', error);
+        content.innerHTML = `<div class="card"><div class="card-body">Error: ${error.message}</div></div>`;
+        showToast('Failed to load billing: ' + error.message, 'error');
+    }
+}
+
+function showCreateQuotaModal() {
+    const content = `
+        <form onsubmit="createQuota(event)" id="create-quota-form">
+            <div class="form-group">
+                <label for="quota-resource-type">Resource Type *</label>
+                <select id="quota-resource-type" name="resource_type" required class="form-control">
+                    <option value="message">Message</option>
+                    <option value="completion">Completion</option>
+                    <option value="file_upload">File Upload</option>
+                    <option value="vector_query">Vector Query</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="quota-limit">Limit *</label>
+                <input type="number" id="quota-limit" name="limit_value" min="1" required class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="quota-period">Period *</label>
+                <select id="quota-period" name="period" required class="form-control">
+                    <option value="hourly">Hourly</option>
+                    <option value="daily">Daily</option>
+                    <option value="monthly">Monthly</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label><input type="checkbox" id="quota-hard-limit" name="is_hard_limit"> Hard Limit</label>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create</button>
+            </div>
+        </form>
+    `;
+    openModal('Create Quota', content);
+}
+
+async function createQuota(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    const data = {
+        resource_type: formData.get('resource_type'),
+        limit_value: parseInt(formData.get('limit_value')),
+        period: formData.get('period'),
+        is_hard_limit: formData.get('is_hard_limit') === 'on',
+        notification_threshold: 80
+    };
+    
+    try {
+        await api.setQuota(data);
+        closeModal();
+        showToast('Quota created', 'success');
+        loadBillingPage();
+    } catch (error) {
+        showToast('Error: ' + error.message, 'error');
+    }
+}
+
+async function deleteQuota(id) {
+    if (!confirm('Delete this quota?')) return;
+    try {
+        await api.deleteQuota(id);
+        showToast('Quota deleted', 'success');
+        loadBillingPage();
+    } catch (error) {
+        showToast('Error: ' + error.message, 'error');
     }
 }
 
