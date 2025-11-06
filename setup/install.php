@@ -9,12 +9,22 @@
 
 session_start();
 
+// Generate CSRF token if not exists
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 // Prevent re-installation if already configured
 $lockFile = __DIR__ . '/../.install.lock';
 $envFile = __DIR__ . '/../.env';
 
 // Handle installation lock removal (for re-installation)
 if (isset($_GET['unlock']) && $_GET['unlock'] === 'confirm') {
+    // Verify CSRF token for unlock action
+    if (!isset($_GET['token']) || $_GET['token'] !== $_SESSION['csrf_token']) {
+        die('Invalid security token. Please try again.');
+    }
+    
     if (file_exists($lockFile)) {
         unlink($lockFile);
         header('Location: install.php');
@@ -27,6 +37,11 @@ $step = isset($_GET['step']) ? (int)$_GET['step'] : 1;
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isInstalled) {
+    // Verify CSRF token
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        die('Invalid security token. Please refresh the page and try again.');
+    }
+    
     $errors = [];
     $success = false;
     
@@ -56,7 +71,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isInstalled) {
                 
                 // Admin
                 'ADMIN_ENABLED' => 'true',
-                'ADMIN_TOKEN' => $_POST['admin_token'] ?? bin2hex(random_bytes(32)),
+                'ADMIN_TOKEN' => !empty($_POST['admin_token']) 
+                    ? trim($_POST['admin_token']) 
+                    : bin2hex(random_bytes(32)),
                 
                 // Security
                 'CORS_ORIGINS' => $_POST['cors_origins'] ?? '*',
@@ -84,8 +101,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isInstalled) {
             // Validate required fields
             if (empty($config['OPENAI_API_KEY'])) {
                 $errors[] = 'OpenAI API Key is required';
-            } elseif (!preg_match('/^sk-[a-zA-Z0-9_-]+$/', $config['OPENAI_API_KEY'])) {
-                $errors[] = 'Invalid OpenAI API Key format';
+            } elseif (!str_starts_with($config['OPENAI_API_KEY'], 'sk-') || strlen($config['OPENAI_API_KEY']) < 20) {
+                $errors[] = 'Invalid OpenAI API Key format. Must start with "sk-" and be at least 20 characters';
+            }
+            
+            // Validate admin token if provided
+            if (!empty($_POST['admin_token'])) {
+                $adminToken = trim($_POST['admin_token']);
+                if (strlen($adminToken) < 32) {
+                    $errors[] = 'Admin token must be at least 32 characters for security';
+                }
             }
             
             // Database configuration
@@ -214,6 +239,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isInstalled) {
                 
                 // Save .env file
                 if (file_put_contents($envFile, $envContent) !== false) {
+                    // Set restrictive permissions for security
+                    chmod($envFile, 0600);
                     $_SESSION['install_config'] = $config;
                     header('Location: install.php?step=3');
                     exit;
@@ -254,6 +281,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isInstalled) {
                 $success = true;
                 header('Location: install.php?step=4');
                 exit;
+            } catch (PDOException $e) {
+                $errorMsg = $e->getMessage();
+                if (strpos($errorMsg, 'Access denied') !== false) {
+                    $errors[] = 'Database authentication failed. Please check your username and password.';
+                } elseif (strpos($errorMsg, 'Unknown database') !== false) {
+                    $errors[] = 'Database does not exist. Please create the database first or check the database name.';
+                } elseif (strpos($errorMsg, 'Connection refused') !== false) {
+                    $errors[] = 'Cannot connect to database server. Please verify the host and port are correct and the server is running.';
+                } else {
+                    $errors[] = 'Database connection failed: ' . $errorMsg;
+                }
             } catch (Exception $e) {
                 $errors[] = 'Database initialization failed: ' . $e->getMessage();
             }
@@ -616,7 +654,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isInstalled) {
                     <div class="alert alert-warning" style="margin-top: 30px;">
                         <strong>⚠️ Need to reinstall?</strong><br>
                         To run the installation again, you must first delete the <code>.install.lock</code> file or 
-                        <a href="?unlock=confirm" style="color: #d63031; font-weight: bold;">click here to unlock</a>.
+                        <a href="?unlock=confirm&token=<?php echo urlencode($_SESSION['csrf_token']); ?>" style="color: #d63031; font-weight: bold;">click here to unlock</a>.
                         This will allow you to reconfigure the system but will not delete existing data.
                     </div>
                 </div>
@@ -713,6 +751,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isInstalled) {
                 
                 <form method="POST" action="install.php">
                     <input type="hidden" name="step" value="2">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                     
                     <div class="collapsible open">
                         <div class="collapsible-header" onclick="toggleCollapsible(this)">
@@ -911,6 +950,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isInstalled) {
                 
                 <form method="POST" action="install.php">
                     <input type="hidden" name="step" value="3">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                     
                     <div class="button-group">
                         <a href="?step=2" class="btn btn-secondary">← Back to Configuration</a>
