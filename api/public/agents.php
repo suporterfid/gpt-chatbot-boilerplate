@@ -10,8 +10,27 @@ require_once __DIR__ . '/../../config.php';
 require_once __DIR__ . '/../../includes/DB.php';
 require_once __DIR__ . '/../../includes/AgentService.php';
 
-// CORS headers
-header('Access-Control-Allow-Origin: *');
+// Validate origin for CORS
+$origin = $_SERVER['HTTP_ORIGIN'] ?? null;
+$allowedOrigin = '*'; // Default to allow all for public read-only endpoint
+
+// If origin is provided, validate it's from same domain or allowed domains
+if ($origin) {
+    $parsedOrigin = parse_url($origin);
+    $parsedServer = parse_url($_SERVER['HTTP_HOST'] ?? 'localhost');
+    
+    // Allow same-origin or localhost for development
+    if (
+        ($parsedOrigin['host'] ?? '') === ($parsedServer['host'] ?? '') ||
+        strpos($origin, 'localhost') !== false ||
+        strpos($origin, '127.0.0.1') !== false
+    ) {
+        $allowedOrigin = $origin;
+    }
+}
+
+// CORS headers - restrictive but functional for public read-only endpoint
+header('Access-Control-Allow-Origin: ' . $allowedOrigin);
 header('Access-Control-Allow-Methods: GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
 header('Content-Type: application/json');

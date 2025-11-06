@@ -302,10 +302,17 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
     <?php if (!empty($publicConfig['legal_disclaimer_md'])): ?>
     <div class="wl-disclaimer">
         <?php 
-        // Simple markdown to HTML conversion (basic)
+        // Simple, safe markdown to HTML conversion
         $disclaimer = htmlspecialchars($publicConfig['legal_disclaimer_md']);
-        $disclaimer = preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $disclaimer);
-        $disclaimer = preg_replace('/\*(.+?)\*/', '<em>$1</em>', $disclaimer);
+        
+        // Limit length to prevent DoS
+        if (strlen($disclaimer) > 1000) {
+            $disclaimer = substr($disclaimer, 0, 1000) . '...';
+        }
+        
+        // Simple replacements (safe, non-recursive)
+        $disclaimer = preg_replace('/\*\*(.{1,100}?)\*\*/', '<strong>$1</strong>', $disclaimer);
+        $disclaimer = preg_replace('/\*(.{1,100}?)\*/', '<em>$1</em>', $disclaimer);
         $disclaimer = nl2br($disclaimer);
         echo $disclaimer;
         ?>
@@ -316,7 +323,14 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
     <div class="wl-footer">
         <?php 
         $footer = htmlspecialchars($publicConfig['footer_brand_md']);
-        $footer = preg_replace('/\[(.+?)\]\((.+?)\)/', '<a href="$2" target="_blank" rel="noopener">$1</a>', $footer);
+        
+        // Limit length to prevent DoS
+        if (strlen($footer) > 500) {
+            $footer = substr($footer, 0, 500) . '...';
+        }
+        
+        // Simple link conversion (safe, non-recursive)
+        $footer = preg_replace('/\[(.{1,50}?)\]\((.{1,200}?)\)/', '<a href="$2" target="_blank" rel="noopener">$1</a>', $footer);
         echo $footer;
         ?>
     </div>

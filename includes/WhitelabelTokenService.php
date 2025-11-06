@@ -119,15 +119,20 @@ class WhitelabelTokenService {
     /**
      * Generate a cryptographically secure nonce
      * 
-     * @return string 16-character base62 nonce
+     * @return string 16-character nonce
      */
     private function generateNonce() {
-        $bytes = random_bytes(12);
-        return substr(bin2hex($bytes), 0, 16);
+        // Generate 8 bytes for 16 hex characters (64 bits of entropy)
+        $bytes = random_bytes(8);
+        return bin2hex($bytes);
     }
     
     /**
      * Check if a nonce has been used
+     * 
+     * NOTE: For high-traffic deployments, consider implementing a cache layer
+     * (Redis/Memcached) to reduce database load. The cache can hold recent
+     * nonces (within TTL) and fall back to database for older ones.
      * 
      * @param string $nonce The nonce to check
      * @param string $agentPublicId Agent public ID
@@ -224,9 +229,17 @@ class WhitelabelTokenService {
     /**
      * Generate a unique public ID for an agent
      * 
-     * @return string 24-character base62 public ID
+     * @return string 24-character public ID
+     * @throws Exception if GMP extension is not available
      */
     public static function generatePublicId() {
+        if (!extension_loaded('gmp')) {
+            // Fallback: use base64url encoding
+            $bytes = random_bytes(18);
+            $base64 = rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+            return 'PUB_' . substr($base64, 0, 20);
+        }
+        
         $bytes = random_bytes(18);
         $hex = bin2hex($bytes);
         
@@ -238,8 +251,14 @@ class WhitelabelTokenService {
     
     /**
      * Convert hex string to base62-like representation
+     * 
+     * @throws Exception if GMP extension is not available
      */
     private static function hexToBase62($hex) {
+        if (!extension_loaded('gmp')) {
+            throw new Exception('GMP extension required for base62 conversion');
+        }
+        
         $alphabet = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
         $base = strlen($alphabet);
         
