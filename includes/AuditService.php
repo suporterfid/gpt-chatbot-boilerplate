@@ -15,11 +15,13 @@ class AuditService {
     private $crypto;
     private $enabled;
     private $encryptAtRest;
+    private $tenantId;
     
-    public function __construct($config = []) {
+    public function __construct($config = [], $tenantId = null) {
         $this->config = $config;
         $this->enabled = $config['enabled'] ?? true;
         $this->encryptAtRest = $config['encrypt_at_rest'] ?? true;
+        $this->tenantId = $tenantId;
         
         if (!$this->enabled) {
             return;
@@ -60,6 +62,20 @@ class AuditService {
     }
     
     /**
+     * Set tenant context for tenant-scoped queries
+     */
+    public function setTenantId($tenantId) {
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Get current tenant ID
+     */
+    public function getTenantId() {
+        return $this->tenantId;
+    }
+    
+    /**
      * Generate a UUID v4
      */
     private function generateUUID() {
@@ -77,20 +93,23 @@ class AuditService {
      * @param string $conversationId Conversation ID
      * @param string|null $userFingerprint User fingerprint (hashed IP, user ID, etc.)
      * @param array $meta Additional metadata
+     * @param string|null $tenantId Optional tenant ID (uses context if not provided)
      * @return string Audit conversation ID
      */
-    public function startConversation($agentId, $channel, $conversationId, $userFingerprint = null, array $meta = []) {
+    public function startConversation($agentId, $channel, $conversationId, $userFingerprint = null, array $meta = [], $tenantId = null) {
         if (!$this->enabled) {
             return '';
         }
+        
+        $tenantId = $tenantId ?? $this->tenantId;
         
         try {
             $id = $this->generateUUID();
             $now = gmdate('Y-m-d\TH:i:s\Z');
             
             $sql = "INSERT INTO audit_conversations 
-                    (id, agent_id, channel, conversation_id, user_fingerprint, started_at, last_activity_at, meta_json, created_at) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    (id, agent_id, channel, conversation_id, user_fingerprint, tenant_id, started_at, last_activity_at, meta_json, created_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             
             $this->db->execute($sql, [
                 $id,
@@ -98,6 +117,7 @@ class AuditService {
                 $channel,
                 $conversationId,
                 $userFingerprint,
+                $tenantId,
                 $now,
                 $now,
                 json_encode($meta),

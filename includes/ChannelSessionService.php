@@ -7,9 +7,25 @@ require_once __DIR__ . '/DB.php';
 
 class ChannelSessionService {
     private $db;
+    private $tenantId;
     
-    public function __construct($db) {
+    public function __construct($db, $tenantId = null) {
         $this->db = $db;
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Set tenant context for tenant-scoped queries
+     */
+    public function setTenantId($tenantId) {
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Get current tenant ID
+     */
+    public function getTenantId() {
+        return $this->tenantId;
     }
     
     /**
@@ -18,13 +34,24 @@ class ChannelSessionService {
      * @param string $agentId Agent ID
      * @param string $channel Channel name (e.g., 'whatsapp')
      * @param string $externalUserId External user identifier (e.g., phone number)
+     * @param string|null $tenantId Optional tenant ID (uses context if not provided)
      * @return array Session data with conversation_id
      */
-    public function getOrCreateSession(string $agentId, string $channel, string $externalUserId): array {
+    public function getOrCreateSession(string $agentId, string $channel, string $externalUserId, ?string $tenantId = null): array {
+        $tenantId = $tenantId ?? $this->tenantId;
+        
         // Try to find existing session
         $sql = "SELECT * FROM channel_sessions 
                 WHERE agent_id = ? AND channel = ? AND external_user_id = ?";
-        $session = $this->db->getOne($sql, [$agentId, $channel, $externalUserId]);
+        $params = [$agentId, $channel, $externalUserId];
+        
+        // Add tenant filter if tenant context is set
+        if ($tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $tenantId;
+        }
+        
+        $session = $this->db->getOne($sql, $params);
         
         if ($session) {
             // Update last_seen_at
@@ -44,8 +71,8 @@ class ChannelSessionService {
         $now = date('c');
         
         $insertSql = "INSERT INTO channel_sessions 
-                      (id, agent_id, channel, external_user_id, conversation_id, last_seen_at, metadata_json, created_at, updated_at)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                      (id, agent_id, channel, external_user_id, conversation_id, tenant_id, last_seen_at, metadata_json, created_at, updated_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $this->db->insert($insertSql, [
             $id,
@@ -53,6 +80,7 @@ class ChannelSessionService {
             $channel,
             $externalUserId,
             $conversationId,
+            $tenantId,
             $now,
             '{}',
             $now,
@@ -90,7 +118,15 @@ class ChannelSessionService {
      */
     public function getSessionByConversationId(string $conversationId): ?array {
         $sql = "SELECT * FROM channel_sessions WHERE conversation_id = ?";
-        $session = $this->db->getOne($sql, [$conversationId]);
+        $params = [$conversationId];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $session = $this->db->getOne($sql, $params);
         
         if (!$session) {
             return null;
@@ -113,6 +149,12 @@ class ChannelSessionService {
     public function listSessions(string $agentId, string $channel = null, int $limit = 50, int $offset = 0): array {
         $params = [$agentId];
         $sql = "SELECT * FROM channel_sessions WHERE agent_id = ?";
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
         
         if ($channel) {
             $sql .= " AND channel = ?";
