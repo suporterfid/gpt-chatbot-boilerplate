@@ -4,14 +4,71 @@ This guide covers various deployment scenarios for the GPT Chatbot Boilerplate, 
 
 ## Table of Contents
 
+- [Web-Based Installation](#web-based-installation)
 - [Development Setup](#development-setup)
 - [Production Deployment](#production-deployment)
 - [Docker Deployment](#docker-deployment)
+- [MySQL Database Setup](#mysql-database-setup)
 - [Cloud Deployment](#cloud-deployment)
 - [Server Configuration](#server-configuration)
 - [Security Considerations](#security-considerations)
 - [Performance Optimization](#performance-optimization)
 - [Monitoring](#monitoring)
+
+## Web-Based Installation
+
+The easiest way to deploy the chatbot is using our web-based installation wizard.
+
+### Quick Start
+
+1. **Clone and start the application**:
+   ```bash
+   git clone https://github.com/suporterfid/gpt-chatbot-boilerplate.git
+   cd gpt-chatbot-boilerplate
+   
+   # Option A: Docker (recommended, includes MySQL)
+   docker-compose up -d
+   
+   # Option B: PHP built-in server
+   php -S localhost:8000
+   ```
+
+2. **Open installation wizard**:
+   ```
+   http://localhost:8088/setup/install.php
+   # or http://localhost:8000/setup/install.php
+   ```
+
+3. **Follow the wizard steps**:
+   - ✅ Verify system requirements (PHP, extensions, permissions)
+   - ⚙️ Configure OpenAI API and settings
+   - 🗄️ Choose and configure database (SQLite or MySQL)
+   - 🔐 Set up admin credentials and security
+   - 🎯 Enable optional features (file upload, audit trail, jobs)
+   - 🚀 Initialize database and complete installation
+
+4. **Access your chatbot**:
+   - Admin Panel: `http://localhost:8088/public/admin/`
+   - Chatbot Interface: `http://localhost:8088/`
+
+### Installation Features
+
+The wizard automatically:
+- Generates `.env` configuration file
+- Validates all required parameters
+- Tests database connectivity
+- Runs database migrations
+- Creates installation lock (`.install.lock`)
+- Provides secure admin token
+
+### Re-installation
+
+To reinstall or reconfigure:
+1. Delete `.install.lock` file, or
+2. Use the unlock link in the installation wizard
+3. Re-run the installation process
+
+⚠️ **Note**: Re-installation will not delete existing data, only reconfigure settings.
 
 ## Development Setup
 
@@ -284,28 +341,86 @@ Add these secrets under **Settings → Secrets and variables → Actions** in Gi
 
 ### Development with Docker
 
+The application includes Docker Compose configuration with MySQL database support:
+
 ```bash
 # Clone repository
-git clone https://github.com/your-repo/gpt-chatbot-boilerplate.git
+git clone https://github.com/suporterfid/gpt-chatbot-boilerplate.git
 cd gpt-chatbot-boilerplate
 
-# Configure environment
+# Option 1: Use web-based installer (recommended)
+docker-compose up -d
+# Then visit http://localhost:8088/setup/install.php
+
+# Option 2: Manual configuration
 cp .env.example .env
 # Edit .env with your settings
 # IMPORTANT: Set ADMIN_TOKEN to a secure random string (min 32 chars)
 
-# Start development environment
+# Start development environment (includes MySQL)
 docker-compose up -d
 
 # View logs
 docker-compose logs -f
 
 # Access application
-curl http://localhost:8080
+curl http://localhost:8088
 
 # Access admin panel
-# Open http://localhost:8080/public/admin/ in your browser
+# Open http://localhost:8088/public/admin/ in your browser
 # Enter the ADMIN_TOKEN from your .env file when prompted
+```
+
+### Docker Services
+
+The default `docker-compose.yml` includes:
+
+1. **chatbot** - Main PHP/Apache application
+   - Port: 8088
+   - Includes all required PHP extensions
+   - Auto-runs composer install
+   - Mounts logs and data volumes
+
+2. **mysql** - MySQL 8.0 database (recommended for production)
+   - Port: 3306
+   - Persistent volume storage
+   - Health checks enabled
+   - Configurable via environment variables
+
+### MySQL Configuration with Docker
+
+The application automatically uses MySQL when configured. Environment variables:
+
+```bash
+# In .env file
+DATABASE_URL=mysql:host=mysql;port=3306;dbname=chatbot;charset=utf8mb4
+DB_HOST=mysql
+DB_PORT=3306
+DB_NAME=chatbot
+DB_USER=chatbot
+DB_PASSWORD=your_secure_password
+
+# MySQL root password (for administration)
+MYSQL_ROOT_PASSWORD=your_root_password
+
+# Leave DATABASE_PATH empty when using MySQL
+DATABASE_PATH=
+```
+
+To access MySQL directly:
+
+```bash
+# Connect to MySQL container
+docker-compose exec mysql mysql -u chatbot -p
+
+# Backup database
+docker-compose exec mysql mysqldump -u chatbot -p chatbot > backup.sql
+
+# Restore database
+docker-compose exec -T mysql mysql -u chatbot -p chatbot < backup.sql
+
+# View MySQL logs
+docker-compose logs mysql
 ```
 
 ### Admin Panel Access in Docker
@@ -393,6 +508,216 @@ Header always set Access-Control-Allow-Origin "https://yourdomain.com"
    # Update application
    docker-compose pull && docker-compose up -d
    ```
+
+## MySQL Database Setup
+
+### Why MySQL?
+
+While SQLite is convenient for development and small deployments, MySQL is recommended for production use:
+
+- **Concurrent Access**: Better handling of multiple simultaneous connections
+- **Performance**: Optimized for high-traffic scenarios
+- **Scalability**: Easier to scale horizontally with read replicas
+- **Backup & Recovery**: Robust backup tools and point-in-time recovery
+- **Administration**: Comprehensive management tools and monitoring
+
+### Installation Options
+
+#### Option 1: Docker (Recommended)
+
+The included `docker-compose.yml` automatically sets up MySQL:
+
+```yaml
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-chatbot}
+      MYSQL_USER: ${DB_USER:-chatbot}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-chatbot}
+    volumes:
+      - mysql_data:/var/lib/mysql
+```
+
+Simply configure your `.env` and run:
+```bash
+docker-compose up -d
+```
+
+#### Option 2: Native MySQL Installation
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install mysql-server
+sudo mysql_secure_installation
+```
+
+**macOS:**
+```bash
+brew install mysql
+brew services start mysql
+```
+
+**Create Database:**
+```sql
+CREATE DATABASE chatbot CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'chatbot'@'localhost' IDENTIFIED BY 'your_secure_password';
+GRANT ALL PRIVILEGES ON chatbot.* TO 'chatbot'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+### Configuration
+
+Update your `.env` file:
+
+```bash
+# MySQL Configuration
+DATABASE_URL=mysql:host=localhost;port=3306;dbname=chatbot;charset=utf8mb4
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=chatbot
+DB_USER=chatbot
+DB_PASSWORD=your_secure_password
+
+# Leave DATABASE_PATH empty when using MySQL
+DATABASE_PATH=
+```
+
+For Docker:
+```bash
+DB_HOST=mysql  # Service name from docker-compose.yml
+```
+
+### Migration
+
+The application automatically runs migrations on first request. To manually trigger:
+
+```bash
+# With PHP CLI
+php -r "require 'includes/DB.php'; \$db = new DB(['database_url' => 'mysql:host=localhost;dbname=chatbot']); echo \$db->runMigrations('./db/migrations') . ' migrations executed';"
+
+# Or via Admin API
+curl -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  "http://localhost/admin-api.php?action=health"
+```
+
+### Backup & Restore
+
+**Backup:**
+```bash
+# With Docker
+docker-compose exec mysql mysqldump -u chatbot -p chatbot > backup_$(date +%Y%m%d).sql
+
+# Native MySQL
+mysqldump -u chatbot -p chatbot > backup_$(date +%Y%m%d).sql
+```
+
+**Restore:**
+```bash
+# With Docker
+docker-compose exec -T mysql mysql -u chatbot -p chatbot < backup_20240101.sql
+
+# Native MySQL
+mysql -u chatbot -p chatbot < backup_20240101.sql
+```
+
+**Automated Backups:**
+
+Add to crontab for daily backups at 2 AM:
+```bash
+0 2 * * * /usr/bin/docker-compose -f /path/to/docker-compose.yml exec -T mysql mysqldump -u chatbot -pchatbot chatbot > /backups/chatbot_$(date +\%Y\%m\%d).sql
+```
+
+### Performance Tuning
+
+**MySQL Configuration** (`/etc/mysql/my.cnf`):
+
+```ini
+[mysqld]
+# Memory optimization
+innodb_buffer_pool_size = 256M
+innodb_log_file_size = 64M
+
+# Connection limits
+max_connections = 200
+
+# Query cache (MySQL < 8.0)
+query_cache_type = 1
+query_cache_size = 32M
+
+# Character set
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+```
+
+### Monitoring
+
+**Check database size:**
+```sql
+SELECT 
+  table_schema AS 'Database',
+  ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'Size (MB)'
+FROM information_schema.tables
+WHERE table_schema = 'chatbot'
+GROUP BY table_schema;
+```
+
+**Monitor slow queries:**
+```sql
+SET GLOBAL slow_query_log = 'ON';
+SET GLOBAL long_query_time = 1;
+```
+
+**View active connections:**
+```sql
+SHOW PROCESSLIST;
+```
+
+### Troubleshooting
+
+**Connection Issues:**
+```bash
+# Test connection
+mysql -h localhost -u chatbot -p -e "SELECT 1;"
+
+# Check MySQL is running
+sudo systemctl status mysql  # Linux
+brew services list          # macOS
+
+# Check Docker container
+docker-compose ps
+docker-compose logs mysql
+```
+
+**Permission Issues:**
+```sql
+-- Grant privileges
+GRANT ALL PRIVILEGES ON chatbot.* TO 'chatbot'@'%';
+FLUSH PRIVILEGES;
+
+-- Verify grants
+SHOW GRANTS FOR 'chatbot'@'%';
+```
+
+**Reset root password:**
+```bash
+# Stop MySQL
+sudo systemctl stop mysql
+
+# Start in safe mode
+sudo mysqld_safe --skip-grant-tables &
+
+# Reset password
+mysql -u root
+mysql> ALTER USER 'root'@'localhost' IDENTIFIED BY 'new_password';
+mysql> FLUSH PRIVILEGES;
+mysql> EXIT;
+
+# Restart normally
+sudo systemctl start mysql
+```
 
 ## Cloud Deployment
 

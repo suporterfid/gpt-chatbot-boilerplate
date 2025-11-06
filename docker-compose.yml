@@ -3,6 +3,8 @@ services:
     build: .
     ports:
       - "8088:80"
+    depends_on:
+      - mysql
     environment:
       # OpenAI Configuration
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -84,6 +86,7 @@ services:
 
     volumes:
       - ./logs:/var/www/html/logs
+      - ./data:/var/www/html/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
@@ -91,6 +94,24 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-chatbot}
+      MYSQL_USER: ${DB_USER:-chatbot}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-chatbot}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 
   # Optional WebSocket server (uncomment if needed)
@@ -110,6 +131,10 @@ services:
   #   restart: unless-stopped
   #   depends_on:
   #     - chatbot
+
+volumes:
+  mysql_data:
+    driver: local
 
 networks:
   default:

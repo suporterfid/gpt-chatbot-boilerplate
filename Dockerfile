@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     git \
     unzip \
-    && docker-php-ext-install sockets \
+    && docker-php-ext-install sockets pdo pdo_mysql \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
