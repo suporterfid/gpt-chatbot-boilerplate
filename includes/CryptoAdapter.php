@@ -15,8 +15,10 @@ class CryptoAdapter {
             throw new Exception('Encryption key is required for CryptoAdapter');
         }
         
-        // Derive a proper 32-byte key from the provided key
-        $this->key = hash('sha256', $encryptionKey, true);
+        // Derive a proper 32-byte key using PBKDF2 with salt
+        // In production, use a stronger KDF like Argon2 if available
+        $salt = 'audit_trail_salt_v1'; // Fixed salt for deterministic key derivation
+        $this->key = hash_pbkdf2('sha256', $encryptionKey, $salt, 100000, 32, true);
     }
     
     /**

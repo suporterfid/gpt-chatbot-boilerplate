@@ -14,7 +14,7 @@ echo "Testing Audit Service...\n\n";
 $testConfig = [
     'enabled' => true,
     'encrypt_at_rest' => true,
-    'encryption_key' => 'test_encryption_key_for_audit_trails_minimum_32_chars',
+    'encryption_key' => 'TEST_ONLY_KEY_DO_NOT_USE_IN_PRODUCTION_32c',
     'retention_days' => 90,
     'pii_redaction_patterns' => '',
     'database_url' => '',

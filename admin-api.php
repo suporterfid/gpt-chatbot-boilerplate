@@ -1672,19 +1672,9 @@ try {
             
             $message = $result[0];
             
-            // Decrypt content if requested and encryption is enabled
+            // Decrypt content if requested
             if ($decryptContent && !empty($message['content_enc'])) {
-                try {
-                    $cryptoAdapter = new CryptoAdapter(['encryption_key' => $config['auditing']['encryption_key']]);
-                    $encrypted = $cryptoAdapter->decodeFromStorage($message['content_enc']);
-                    $message['content'] = $cryptoAdapter->decrypt(
-                        $encrypted['ciphertext'],
-                        $encrypted['nonce'],
-                        $encrypted['tag']
-                    );
-                } catch (Exception $e) {
-                    $message['content'] = '[DECRYPTION_FAILED]';
-                }
+                $message['content'] = $auditService->decryptContent($message['content_enc']);
             } else {
                 $message['content'] = '[ENCRYPTED]';
             }

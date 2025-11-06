@@ -461,7 +461,8 @@ class AuditService {
         }
         
         try {
-            $cutoffDate = gmdate('Y-m-d\TH:i:s\Z', time() - ($retentionDays * 86400));
+            $secondsPerDay = 86400;
+            $cutoffDate = gmdate('Y-m-d\TH:i:s\Z', time() - ($retentionDays * $secondsPerDay));
             
             $sql = "DELETE FROM audit_conversations WHERE started_at < ? AND (meta_json IS NULL OR json_extract(meta_json, '$.hold_until') IS NULL OR json_extract(meta_json, '$.hold_until') < ?)";
             
@@ -469,6 +470,30 @@ class AuditService {
         } catch (Exception $e) {
             error_log('AuditService: Failed to delete expired: ' . $e->getMessage());
             return 0;
+        }
+    }
+    
+    /**
+     * Decrypt a single message content
+     * 
+     * @param string $contentEnc Encrypted content from database
+     * @return string Decrypted content or error message
+     */
+    public function decryptContent($contentEnc) {
+        if (!$this->encryptAtRest || !$this->crypto || empty($contentEnc)) {
+            return $contentEnc;
+        }
+        
+        try {
+            $encrypted = $this->crypto->decodeFromStorage($contentEnc);
+            return $this->crypto->decrypt(
+                $encrypted['ciphertext'],
+                $encrypted['nonce'],
+                $encrypted['tag']
+            );
+        } catch (Exception $e) {
+            error_log('AuditService: Failed to decrypt content: ' . $e->getMessage());
+            return '[DECRYPTION_FAILED]';
         }
     }
 }
