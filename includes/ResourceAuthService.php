@@ -116,11 +116,6 @@ class ResourceAuthService {
     private function isResourceInUserTenant($user, $resourceType, $resourceId) {
         $tenantId = $user['tenant_id'] ?? null;
         
-        // Super-admins can access resources in any tenant
-        if ($user['role'] === AdminAuth::ROLE_SUPER_ADMIN) {
-            return true;
-        }
-        
         // Users without tenant cannot access tenant-scoped resources
         if ($tenantId === null) {
             return false;
@@ -312,6 +307,7 @@ class ResourceAuthService {
     
     /**
      * Generate UUID v4
+     * Note: Duplicated from AuditService for independence. Consider extracting to shared utility class.
      */
     private function generateUUID() {
         $data = random_bytes(16);

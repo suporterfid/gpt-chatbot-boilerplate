@@ -1105,6 +1105,8 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
+            // Note: Granting permissions requires 'update' permission on the resource
+            // This ensures only resource admins can manage who else has access
             requirePermission($authenticatedUser, 'update', $adminAuth);
             
             $data = getRequestBody();
