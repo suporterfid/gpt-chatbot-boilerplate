@@ -312,6 +312,19 @@ $config = [
         'rate_limit_requests' => (int)($_ENV['ADMIN_RATE_LIMIT_REQUESTS'] ?? getenv('ADMIN_RATE_LIMIT_REQUESTS') ?: 300),
         'rate_limit_window' => (int)($_ENV['ADMIN_RATE_LIMIT_WINDOW'] ?? getenv('ADMIN_RATE_LIMIT_WINDOW') ?: 60),
         'jobs_enabled' => filter_var($_ENV['JOBS_ENABLED'] ?? getenv('JOBS_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+    ],
+    
+    // Channels Configuration (WhatsApp, Telegram, etc.)
+    'channels' => [
+        'whatsapp' => [
+            'enabled' => filter_var($_ENV['CHANNELS_WHATSAPP_ENABLED'] ?? getenv('CHANNELS_WHATSAPP_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+            'default_zapi_base_url' => $_ENV['ZAPI_BASE_URL'] ?? getenv('ZAPI_BASE_URL') ?: 'https://api.z-api.io',
+            'default_timeout_ms' => (int)($_ENV['ZAPI_TIMEOUT_MS'] ?? getenv('ZAPI_TIMEOUT_MS') ?: 30000),
+            'default_retries' => (int)($_ENV['ZAPI_RETRIES'] ?? getenv('ZAPI_RETRIES') ?: 3),
+            'default_reply_chunk_size' => (int)($_ENV['WHATSAPP_REPLY_CHUNK_SIZE'] ?? getenv('WHATSAPP_REPLY_CHUNK_SIZE') ?: 4000),
+            'default_allow_media' => filter_var($_ENV['WHATSAPP_ALLOW_MEDIA'] ?? getenv('WHATSAPP_ALLOW_MEDIA') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+            'default_max_media_size' => (int)($_ENV['WHATSAPP_MAX_MEDIA_SIZE'] ?? getenv('WHATSAPP_MAX_MEDIA_SIZE') ?: 10485760), // 10MB
+        ]
     ]
 ];
 

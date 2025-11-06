@@ -87,6 +87,19 @@ An advanced open-source boilerplate for embedding GPT-powered chatbots on any we
 - **Practical Examples**: Bedtime story generator, research assistant with citations, data extraction, and more.
 - See [docs/HYBRID_GUARDRAILS.md](docs/HYBRID_GUARDRAILS.md) for detailed guide and examples.
 
+### 📱 **WhatsApp Channel Integration (Z-API)**
+- **Multi-Channel Support**: Connect agents to WhatsApp Business via Z-API for omnichannel communication.
+- **Per-Agent Configuration**: Each agent can have its own WhatsApp channel with independent settings.
+- **Session Management**: Automatic conversation tracking and context preservation across messages.
+- **Media Support**: Handle images, documents, and other file types with configurable size and type limits.
+- **Message Chunking**: Automatically split long responses to fit WhatsApp message limits.
+- **Idempotency**: Built-in duplicate message detection to prevent processing the same message twice.
+- **Opt-out Support**: Handle STOP/START commands for user privacy compliance.
+- **Admin UI Integration**: Configure and test WhatsApp channels directly from the Admin panel.
+- **Webhook Security**: Support for signature verification and HTTPS-only webhooks.
+- **Audit Trail**: Complete message history and session tracking for compliance.
+- See [docs/WHATSAPP_INTEGRATION.md](docs/WHATSAPP_INTEGRATION.md) for setup guide and API reference.
+
 ## 📋 Requirements
 
 - PHP 8.0+ with cURL and JSON extensions

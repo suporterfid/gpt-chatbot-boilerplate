@@ -431,4 +431,175 @@ class AgentService {
         $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
         return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
+    
+    // ============================================================
+    // Channel Management Methods
+    // ============================================================
+    
+    /**
+     * Get channel configuration for an agent
+     * 
+     * @param string $agentId Agent ID
+     * @param string $channel Channel name (e.g., 'whatsapp')
+     * @return array|null Channel configuration or null if not found
+     */
+    public function getAgentChannel($agentId, $channel) {
+        $sql = "SELECT * FROM agent_channels WHERE agent_id = ? AND channel = ?";
+        $channelConfig = $this->db->getOne($sql, [$agentId, $channel]);
+        
+        if (!$channelConfig) {
+            return null;
+        }
+        
+        return $this->normalizeChannel($channelConfig);
+    }
+    
+    /**
+     * List all channels for an agent
+     * 
+     * @param string $agentId Agent ID
+     * @return array Array of channel configurations
+     */
+    public function listAgentChannels($agentId) {
+        $sql = "SELECT * FROM agent_channels WHERE agent_id = ? ORDER BY channel";
+        $channels = $this->db->query($sql, [$agentId]);
+        
+        return array_map([$this, 'normalizeChannel'], $channels);
+    }
+    
+    /**
+     * Create or update channel configuration for an agent
+     * 
+     * @param string $agentId Agent ID
+     * @param string $channel Channel name
+     * @param array $config Channel configuration
+     * @return array Created/updated channel
+     */
+    public function upsertAgentChannel($agentId, $channel, $config) {
+        // Validate agent exists
+        $agent = $this->getAgent($agentId);
+        if (!$agent) {
+            throw new Exception('Agent not found', 404);
+        }
+        
+        // Validate channel
+        if (!in_array($channel, ['whatsapp'])) {
+            throw new Exception('Invalid channel type', 400);
+        }
+        
+        // Validate channel configuration
+        $this->validateChannelConfig($channel, $config);
+        
+        // Check if channel already exists
+        $existing = $this->getAgentChannel($agentId, $channel);
+        
+        $now = date('c');
+        
+        if ($existing) {
+            // Update existing channel
+            $sql = "UPDATE agent_channels 
+                    SET enabled = ?, config_json = ?, updated_at = ?
+                    WHERE agent_id = ? AND channel = ?";
+            
+            $this->db->execute($sql, [
+                isset($config['enabled']) ? (int)(bool)$config['enabled'] : $existing['enabled'],
+                json_encode($config),
+                $now,
+                $agentId,
+                $channel
+            ]);
+        } else {
+            // Create new channel
+            $id = $this->generateUUID();
+            $sql = "INSERT INTO agent_channels (id, agent_id, channel, enabled, config_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)";
+            
+            $this->db->insert($sql, [
+                $id,
+                $agentId,
+                $channel,
+                isset($config['enabled']) ? (int)(bool)$config['enabled'] : 0,
+                json_encode($config),
+                $now,
+                $now
+            ]);
+        }
+        
+        return $this->getAgentChannel($agentId, $channel);
+    }
+    
+    /**
+     * Delete a channel configuration
+     * 
+     * @param string $agentId Agent ID
+     * @param string $channel Channel name
+     * @return bool True if deleted
+     */
+    public function deleteAgentChannel($agentId, $channel) {
+        $sql = "DELETE FROM agent_channels WHERE agent_id = ? AND channel = ?";
+        $rowCount = $this->db->execute($sql, [$agentId, $channel]);
+        
+        if ($rowCount === 0) {
+            throw new Exception('Channel configuration not found', 404);
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Validate channel configuration
+     */
+    private function validateChannelConfig($channel, $config) {
+        if ($channel === 'whatsapp') {
+            // Required fields for WhatsApp
+            if (empty($config['zapi_instance_id'])) {
+                throw new Exception('zapi_instance_id is required for WhatsApp channel', 400);
+            }
+            if (empty($config['zapi_token'])) {
+                throw new Exception('zapi_token is required for WhatsApp channel', 400);
+            }
+            
+            // Validate business number format if provided
+            if (!empty($config['whatsapp_business_number'])) {
+                $number = $config['whatsapp_business_number'];
+                if (!preg_match('/^\+\d{10,15}$/', $number)) {
+                    throw new Exception('whatsapp_business_number must be in E.164 format (e.g., +5511999999999)', 400);
+                }
+            }
+            
+            // Validate numeric fields
+            if (isset($config['zapi_timeout_ms']) && (!is_numeric($config['zapi_timeout_ms']) || $config['zapi_timeout_ms'] < 1000)) {
+                throw new Exception('zapi_timeout_ms must be at least 1000', 400);
+            }
+            
+            if (isset($config['reply_chunk_size']) && (!is_numeric($config['reply_chunk_size']) || $config['reply_chunk_size'] < 100)) {
+                throw new Exception('reply_chunk_size must be at least 100', 400);
+            }
+            
+            if (isset($config['max_media_size_bytes']) && (!is_numeric($config['max_media_size_bytes']) || $config['max_media_size_bytes'] < 1)) {
+                throw new Exception('max_media_size_bytes must be greater than 0', 400);
+            }
+        }
+    }
+    
+    /**
+     * Normalize channel data for API responses
+     */
+    private function normalizeChannel($channel) {
+        if (!$channel) {
+            return null;
+        }
+        
+        $config = json_decode($channel['config_json'] ?? '{}', true);
+        
+        return [
+            'id' => $channel['id'],
+            'agent_id' => $channel['agent_id'],
+            'channel' => $channel['channel'],
+            'enabled' => (bool)$channel['enabled'],
+            'config' => $config,
+            'created_at' => $channel['created_at'],
+            'updated_at' => $channel['updated_at']
+        ];
+    }
 }

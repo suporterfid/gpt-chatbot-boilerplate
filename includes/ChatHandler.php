@@ -1439,5 +1439,24 @@ class ChatHandler {
     private function searchKnowledge($query) {
         return ['results' => 'Knowledge base search for: ' . $query];
     }
+    
+    /**
+     * Get agent configuration (public for channel integrations)
+     * 
+     * @param string|null $agentId
+     * @return array Agent configuration with overrides applied
+     */
+    public function getAgentConfig($agentId = null) {
+        $overrides = $this->resolveAgentOverrides($agentId);
+        
+        // Merge with base config
+        $apiType = $overrides['api_type'] ?? $this->config['api_type'] ?? 'responses';
+        
+        return array_merge([
+            'api_type' => $apiType,
+            'model' => $overrides['model'] ?? ($apiType === 'responses' ? $this->config['responses']['model'] : $this->config['chat']['model']),
+            'temperature' => $overrides['temperature'] ?? ($apiType === 'responses' ? $this->config['responses']['temperature'] : $this->config['chat']['temperature']),
+        ], $overrides);
+    }
 }
 ?>

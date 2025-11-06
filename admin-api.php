@@ -371,6 +371,145 @@ try {
             sendResponse(['success' => true, 'message' => 'Default agent set']);
             break;
         
+        // ==================== Agent Channels Endpoints ====================
+        
+        case 'list_agent_channels':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            if (empty($agentId)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $channels = $agentService->listAgentChannels($agentId);
+            sendResponse($channels);
+            break;
+        
+        case 'get_agent_channel':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            $channel = $_GET['channel'] ?? '';
+            
+            if (empty($agentId) || empty($channel)) {
+                sendError('Agent ID and channel are required', 400);
+            }
+            
+            $channelConfig = $agentService->getAgentChannel($agentId, $channel);
+            if (!$channelConfig) {
+                sendError('Channel configuration not found', 404);
+            }
+            
+            sendResponse($channelConfig);
+            break;
+        
+        case 'upsert_agent_channel':
+            if ($method !== 'POST' && $method !== 'PUT') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            $channel = $_GET['channel'] ?? '';
+            
+            if (empty($agentId) || empty($channel)) {
+                sendError('Agent ID and channel are required', 400);
+            }
+            
+            $data = getRequestBody();
+            $channelConfig = $agentService->upsertAgentChannel($agentId, $channel, $data);
+            log_admin("Channel configuration updated: agent=$agentId, channel=$channel");
+            sendResponse($channelConfig, 200);
+            break;
+        
+        case 'delete_agent_channel':
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            $channel = $_GET['channel'] ?? '';
+            
+            if (empty($agentId) || empty($channel)) {
+                sendError('Agent ID and channel are required', 400);
+            }
+            
+            $agentService->deleteAgentChannel($agentId, $channel);
+            log_admin("Channel configuration deleted: agent=$agentId, channel=$channel");
+            sendResponse(['success' => true, 'message' => 'Channel configuration deleted']);
+            break;
+        
+        case 'test_channel_send':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            $channel = $_GET['channel'] ?? '';
+            
+            if (empty($agentId) || empty($channel)) {
+                sendError('Agent ID and channel are required', 400);
+            }
+            
+            $data = getRequestBody();
+            $to = $data['to'] ?? '';
+            $message = $data['message'] ?? 'Test message from chatbot admin';
+            
+            if (empty($to)) {
+                sendError('Recipient (to) is required', 400);
+            }
+            
+            // Load channel manager
+            require_once __DIR__ . '/includes/ChannelManager.php';
+            $channelManager = new ChannelManager($db);
+            
+            try {
+                $result = $channelManager->sendText(
+                    $agentId,
+                    $channel,
+                    $to,
+                    $message,
+                    'test_' . uniqid()
+                );
+                
+                log_admin("Test message sent: agent=$agentId, channel=$channel, to=$to");
+                sendResponse($result);
+            } catch (Exception $e) {
+                log_admin("Test message failed: " . $e->getMessage(), 'error');
+                sendError('Failed to send test message: ' . $e->getMessage(), 500);
+            }
+            break;
+        
+        case 'list_channel_sessions':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            if (empty($agentId)) {
+                sendError('Agent ID required', 400);
+            }
+            
+            $channel = $_GET['channel'] ?? null;
+            $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
+            $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0;
+            
+            require_once __DIR__ . '/includes/ChannelManager.php';
+            $channelManager = new ChannelManager($db);
+            
+            $sessions = $channelManager->getSessionService()->listSessions($agentId, $channel, $limit, $offset);
+            sendResponse($sessions);
+            break;
+        
         // ==================== Prompts Endpoints ====================
         
         case 'list_prompts':

@@ -617,3 +617,96 @@ tr:hover {
 .btn-warning:hover {
     background: #d97706;
 }
+
+/* Channel Management Styles */
+.channel-management {
+    padding: 1rem 0;
+}
+
+.channel-section {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+}
+
+.channel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.channel-header h5 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.channel-status {
+    padding: 1rem 0;
+}
+
+.channel-status p {
+    margin: 0.5rem 0;
+}
+
+.channel-actions {
+    margin-top: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.badge-success {
+    background: #10b981;
+    color: white;
+}
+
+.badge-secondary {
+    background: #6b7280;
+    color: white;
+}
+
+.badge-info {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-info {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-info:hover {
+    background: #2563eb;
+}
+
+code {
+    background: #f3f4f6;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.text-muted {
+    color: #6b7280;
+}
+
+.channel-sessions {
+    padding: 1rem 0;
+}
+
+.channel-sessions .data-table {
+    margin-top: 1rem;
+}
