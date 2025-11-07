@@ -37,6 +37,7 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=false
     volumes:
       - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
       - ../dashboards:/etc/grafana/provisioning/dashboards
       - grafana-data:/var/lib/grafana
     networks:

@@ -7,7 +7,7 @@ This directory contains the complete observability and monitoring infrastructure
 ### `/alerts`
 Prometheus alerting rules for critical conditions and SLO/SLA monitoring.
 
-- `chatbot-alerts.yml` - 15+ pre-configured alert rules for:
+- `chatbot-alerts.yml` - 18+ pre-configured alert rules for:
   - API errors and latency
   - OpenAI API failures
   - Job queue health
@@ -15,6 +15,10 @@ Prometheus alerting rules for critical conditions and SLO/SLA monitoring.
   - Resource usage
   - Token consumption
   - Webhook processing
+  - **Multi-tenant specific alerts:**
+    - TenantHighErrorRate - Tenant with >20% error rate
+    - TenantInactive - Tenant without activity for 24h
+    - NoActiveTenants - No active tenants on platform
 
 ### `/dashboards`
 Grafana dashboard configurations for visualization and monitoring.
@@ -27,6 +31,18 @@ Grafana dashboard configurations for visualization and monitoring.
   - Token usage by model
   - Agent performance
   - Active alerts
+
+- `multi-tenant.json` - Multi-tenant monitoring dashboard showing:
+  - Active tenants (24h)
+  - Job processing rate per tenant
+  - Error rate per tenant
+  - Jobs by status and tenant
+  - Conversations per tenant
+  - Worker job duration by tenant
+  - API requests per tenant
+  - Tenant resource usage table
+  - Webhook events per tenant
+  - OpenAI API calls per tenant
 
 ### `/docker`
 Docker Compose stack for one-command deployment of the entire observability infrastructure.
@@ -83,7 +99,41 @@ receivers:
 
 - **[Quick Start Guide](QUICKSTART.md)** - Get up and running in minutes
 - **[Full Documentation](../docs/OBSERVABILITY.md)** - Comprehensive guide with examples
+- **[Multi-Tenant Guide](../docs/MULTI_TENANT_OBSERVABILITY.md)** - Multi-tenant observability and tracing
 - **[Alert Descriptions](alerts/chatbot-alerts.yml)** - Details on all alerts
+
+## Multi-Tenant Support
+
+The observability stack fully supports multi-tenant operations with:
+
+### Tenant Context Propagation
+- **Trace IDs** propagate across all services (API → Worker → Webhooks)
+- **Tenant ID** included in all logs, metrics, and traces
+- **W3C Trace Context** standard for distributed tracing
+
+### Tenant-Aware Monitoring
+- Separate metrics per tenant for resource tracking
+- Per-tenant error rates and SLO monitoring
+- Tenant-specific alerts for degraded performance
+- Multi-tenant dashboard in Grafana
+
+### Structured Logging
+All logs include tenant context:
+```json
+{
+  "trace_id": "a1b2c3...",
+  "tenant_id": "tenant-123",
+  "level": "INFO",
+  "message": "Job completed"
+}
+```
+
+Query logs by tenant in Loki:
+```logql
+{job="chatbot"} | json | tenant_id="tenant-123"
+```
+
+See **[Multi-Tenant Observability Guide](../docs/MULTI_TENANT_OBSERVABILITY.md)** for detailed implementation guide.
 
 ## Architecture
 
@@ -128,6 +178,16 @@ The chatbot platform exposes metrics at `/metrics.php`:
 - `chatbot_jobs_queue_depth` - Pending jobs
 - `chatbot_jobs_processed_total` - Completed jobs
 - `chatbot_jobs_failed_total` - Failed jobs
+
+### Worker Metrics
+- `chatbot_worker_jobs_completed_total` - Worker completed jobs by tenant
+- `chatbot_worker_jobs_failed_total` - Worker failed jobs by tenant
+
+### Multi-Tenant Metrics
+- `chatbot_tenant_jobs_total` - Jobs by tenant and status
+- `chatbot_active_tenants_24h` - Active tenants in last 24 hours
+- `chatbot_tenant_conversations_24h` - Conversations per tenant
+- `chatbot_webhook_events_processed_total` - Webhook events by tenant
 
 ### System
 - `chatbot_info` - Application version info

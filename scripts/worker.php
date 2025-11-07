@@ -15,6 +15,7 @@ require_once __DIR__ . '/../includes/JobQueue.php';
 require_once __DIR__ . '/../includes/OpenAIAdminClient.php';
 require_once __DIR__ . '/../includes/VectorStoreService.php';
 require_once __DIR__ . '/../includes/PromptService.php';
+require_once __DIR__ . '/../includes/ObservabilityMiddleware.php';
 
 // Parse command line arguments
 $options = getopt('', ['loop', 'daemon', 'sleep:', 'verbose']);
@@ -39,6 +40,16 @@ if ($daemon && extension_loaded('pcntl')) {
     echo "[WORKER] Warning: pcntl extension not available, graceful shutdown disabled\n";
 }
 
+// Initialize observability
+$observability = null;
+if ($config['observability']['enabled'] ?? true) {
+    $observability = new ObservabilityMiddleware($config);
+    $observability->getLogger()->setContext([
+        'service' => 'worker',
+        'worker_mode' => $daemon ? 'daemon' : ($loop ? 'loop' : 'single'),
+    ]);
+}
+
 // Initialize services
 try {
     $db = new DB($config['database'] ?? []);
@@ -47,19 +58,61 @@ try {
     $vectorStoreService = new VectorStoreService($db, $openaiClient);
     $promptService = new PromptService($db, $openaiClient);
     
+    if ($observability) {
+        $observability->getLogger()->info("Worker started", [
+            'mode' => $daemon ? 'daemon' : ($loop ? 'loop' : 'single'),
+        ]);
+    }
     echo "[WORKER] Started at " . date('Y-m-d H:i:s') . "\n";
     echo "[WORKER] Mode: " . ($daemon ? "daemon" : ($loop ? "loop" : "single")) . "\n";
     
 } catch (Exception $e) {
+    if ($observability) {
+        $observability->getLogger()->critical("Worker initialization failed", [
+            'exception' => $e,
+        ]);
+    }
     echo "[WORKER] Failed to initialize: " . $e->getMessage() . "\n";
     exit(1);
 }
 
 // Job processor function
-function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $verbose) {
+function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $verbose, $observability = null) {
     $jobId = $job['id'];
     $type = $job['type'];
     $payload = $job['payload'];
+    
+    // Extract trace ID from job metadata if available
+    $traceId = $job['trace_id'] ?? null;
+    $tenantId = $job['tenant_id'] ?? null;
+    
+    // Start span for job processing
+    $spanId = null;
+    if ($observability) {
+        // Set trace ID if available from job
+        if ($traceId) {
+            $observability->getTracing()->setTraceId($traceId);
+        }
+        
+        // Set tenant context if available
+        if ($tenantId) {
+            $observability->setTenantContext($tenantId);
+        }
+        
+        $spanId = $observability->createSpan('worker.job.process', [
+            'job_id' => $jobId,
+            'job_type' => $type,
+            'attempt' => ($job['attempts'] ?? 0) + 1,
+            'tenant_id' => $tenantId,
+        ]);
+        
+        $observability->getLogger()->info("Processing job", [
+            'job_id' => $jobId,
+            'job_type' => $type,
+            'attempt' => ($job['attempts'] ?? 0) + 1,
+            'tenant_id' => $tenantId,
+        ]);
+    }
     
     if ($verbose) {
         echo "[WORKER] Processing job $jobId (type: $type, attempt: " . ($job['attempts'] + 1) . ")\n";
@@ -70,23 +123,23 @@ function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $prompt
         
         switch ($type) {
             case 'file_ingest':
-                $result = handleFileIngest($payload, $openaiClient, $vectorStoreService, $verbose);
+                $result = handleFileIngest($payload, $openaiClient, $vectorStoreService, $verbose, $observability);
                 break;
                 
             case 'attach_file_to_store':
-                $result = handleAttachFileToStore($payload, $openaiClient, $vectorStoreService, $verbose);
+                $result = handleAttachFileToStore($payload, $openaiClient, $vectorStoreService, $verbose, $observability);
                 break;
                 
             case 'poll_ingestion_status':
-                $result = handlePollIngestionStatus($payload, $openaiClient, $vectorStoreService, $jobQueue, $verbose);
+                $result = handlePollIngestionStatus($payload, $openaiClient, $vectorStoreService, $jobQueue, $verbose, $observability);
                 break;
                 
             case 'prompt_version_create':
-                $result = handlePromptVersionCreate($payload, $openaiClient, $promptService, $verbose);
+                $result = handlePromptVersionCreate($payload, $openaiClient, $promptService, $verbose, $observability);
                 break;
                 
             case 'send_webhook_event':
-                $result = handleSendWebhookEvent($payload, $verbose);
+                $result = handleSendWebhookEvent($payload, $verbose, $observability);
                 break;
                 
             default:
@@ -95,6 +148,20 @@ function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $prompt
         
         $jobQueue->markCompleted($jobId, $result);
         
+        if ($observability) {
+            $observability->endSpan($spanId, ['status' => 'completed']);
+            $observability->getLogger()->info("Job completed successfully", [
+                'job_id' => $jobId,
+                'job_type' => $type,
+            ]);
+            
+            // Track metrics
+            $observability->getMetrics()->incrementCounter('chatbot_worker_jobs_completed_total', [
+                'job_type' => $type,
+                'tenant_id' => $tenantId ?? 'unknown',
+            ]);
+        }
+        
         if ($verbose) {
             echo "[WORKER] Job $jobId completed successfully\n";
         }
@@ -102,6 +169,21 @@ function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $prompt
         return true;
     } catch (Exception $e) {
         $error = $e->getMessage();
+        
+        if ($observability) {
+            $observability->handleError($spanId, $e, [
+                'job_id' => $jobId,
+                'job_type' => $type,
+            ]);
+            $observability->endSpan($spanId, ['status' => 'error']);
+            
+            // Track failure metric
+            $observability->getMetrics()->incrementCounter('chatbot_worker_jobs_failed_total', [
+                'job_type' => $type,
+                'tenant_id' => $tenantId ?? 'unknown',
+            ]);
+        }
+        
         error_log("[WORKER] Job $jobId failed: $error");
         
         if ($verbose) {
@@ -114,12 +196,19 @@ function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $prompt
 }
 
 // Job handlers
-function handleFileIngest($payload, $openaiClient, $vectorStoreService, $verbose) {
+function handleFileIngest($payload, $openaiClient, $vectorStoreService, $verbose, $observability = null) {
     $fileId = $payload['file_id'] ?? null;
     $vectorStoreId = $payload['vector_store_id'] ?? null;
     
     if (!$fileId || !$vectorStoreId) {
         throw new Exception("Missing file_id or vector_store_id in payload");
+    }
+    
+    if ($observability) {
+        $observability->getLogger()->debug("Handling file ingest", [
+            'file_id' => $fileId,
+            'vector_store_id' => $vectorStoreId,
+        ]);
     }
     
     if ($verbose) {
@@ -158,7 +247,7 @@ function handleFileIngest($payload, $openaiClient, $vectorStoreService, $verbose
     ];
 }
 
-function handleAttachFileToStore($payload, $openaiClient, $vectorStoreService, $verbose) {
+function handleAttachFileToStore($payload, $openaiClient, $vectorStoreService, $verbose, $observability = null) {
     $fileId = $payload['file_id'] ?? null;
     $vectorStoreId = $payload['vector_store_id'] ?? null;
     $openaiFileId = $payload['openai_file_id'] ?? null;
@@ -182,7 +271,7 @@ function handleAttachFileToStore($payload, $openaiClient, $vectorStoreService, $
     ];
 }
 
-function handlePollIngestionStatus($payload, $openaiClient, $vectorStoreService, $jobQueue, $verbose) {
+function handlePollIngestionStatus($payload, $openaiClient, $vectorStoreService, $jobQueue, $verbose, $observability = null) {
     $fileId = $payload['file_id'] ?? null;
     $vectorStoreId = $payload['vector_store_id'] ?? null;
     $openaiFileId = $payload['openai_file_id'] ?? null;
@@ -218,7 +307,7 @@ function handlePollIngestionStatus($payload, $openaiClient, $vectorStoreService,
     ];
 }
 
-function handlePromptVersionCreate($payload, $openaiClient, $promptService, $verbose) {
+function handlePromptVersionCreate($payload, $openaiClient, $promptService, $verbose, $observability = null) {
     $promptId = $payload['prompt_id'] ?? null;
     $definition = $payload['definition'] ?? null;
     
@@ -242,7 +331,7 @@ function handlePromptVersionCreate($payload, $openaiClient, $promptService, $ver
     ];
 }
 
-function handleSendWebhookEvent($payload, $verbose) {
+function handleSendWebhookEvent($payload, $verbose, $observability = null) {
     $url = $payload['url'] ?? null;
     $data = $payload['data'] ?? [];
     
@@ -254,15 +343,26 @@ function handleSendWebhookEvent($payload, $verbose) {
         echo "[WORKER] Sending webhook to $url\n";
     }
     
+    // Prepare headers with trace propagation
+    $headers = [
+        'Content-Type: application/json',
+        'User-Agent: GPT-Chatbot-Worker/1.0'
+    ];
+    
+    // Add trace propagation headers if observability is available
+    if ($observability) {
+        $traceHeaders = $observability->getTracePropagationHeaders();
+        foreach ($traceHeaders as $key => $value) {
+            $headers[] = "$key: $value";
+        }
+    }
+    
     // Send HTTP POST to webhook URL
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/json',
-        'User-Agent: GPT-Chatbot-Worker/1.0'
-    ]);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     curl_setopt($ch, CURLOPT_TIMEOUT, 10);
     
     $response = curl_exec($ch);
@@ -299,7 +399,7 @@ do {
         $job = $jobQueue->claimNext();
         
         if ($job) {
-            processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $verbose);
+            processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $verbose, $observability);
             $batchCount = 0; // Reset idle counter
         } else {
             // No jobs available
@@ -312,6 +412,11 @@ do {
             }
         }
     } catch (Exception $e) {
+        if ($observability) {
+            $observability->getLogger()->error("Worker main loop error", [
+                'exception' => $e,
+            ]);
+        }
         error_log("[WORKER] Error in main loop: " . $e->getMessage());
         if ($verbose) {
             echo "[WORKER] Error: " . $e->getMessage() . "\n";
