@@ -4,6 +4,8 @@
 
 This guide covers comprehensive backup and restore procedures for the GPT Chatbot platform. It includes automated backups for all persistent data: database, uploaded files, configuration, and application data.
 
+> **Multi-Tenant Deployments:** For tenant-specific backup and disaster recovery procedures, see [Multi-Tenant Backup & DR Guide](multi_tenant_backup_dr.md).
+
 ## Quick Reference
 
 ```bash
@@ -18,6 +20,9 @@ This guide covers comprehensive backup and restore procedures for the GPT Chatbo
 
 # Create a backup with off-site sync
 ./scripts/backup_all.sh --offsite
+
+# Create a tenant-specific backup (multi-tenant deployments)
+./scripts/tenant_backup.sh <tenant_id>
 
 # Restore from a full backup
 ./scripts/restore_all.sh /data/backups/full_backup_20251104_120000.tar.gz
@@ -818,6 +823,8 @@ To migrate from SQLite to PostgreSQL in production:
 
 ## See Also
 
+- [Disaster Recovery Runbook](disaster_recovery.md) - DR scenarios and procedures
+- [Multi-Tenant Backup & DR](multi_tenant_backup_dr.md) - Tenant-specific backup and recovery
 - [Production Deployment Guide](production-deploy.md)
 - [Incident Runbook](incident_runbook.md)
 - [Monitoring Guide](logs.md)
