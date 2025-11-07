@@ -10,13 +10,21 @@ class ChatHandler {
     private $auditService;
     private $leadSenseService;
     private $observability;
+    private $usageTrackingService;
+    private $quotaService;
+    private $rateLimitService;
+    private $tenantUsageService;
 
-    public function __construct($config, $agentService = null, $auditService = null, $observability = null) {
+    public function __construct($config, $agentService = null, $auditService = null, $observability = null, $usageTrackingService = null, $quotaService = null, $rateLimitService = null, $tenantUsageService = null) {
         $this->config = $config;
         $this->observability = $observability;
         $this->openAIClient = new OpenAIClient($config['openai'], $auditService, $observability);
         $this->agentService = $agentService;
         $this->auditService = $auditService;
+        $this->usageTrackingService = $usageTrackingService;
+        $this->quotaService = $quotaService;
+        $this->rateLimitService = $rateLimitService;
+        $this->tenantUsageService = $tenantUsageService;
         
         // Initialize LeadSense if enabled
         if (isset($config['leadsense']) && ($config['leadsense']['enabled'] ?? false)) {
@@ -187,7 +195,43 @@ class ChatHandler {
         }
     }
 
-    public function handleChatCompletion($message, $conversationId, $agentId = null) {
+    public function handleChatCompletion($message, $conversationId, $agentId = null, $tenantId = null) {
+        // Get tenant ID if not provided
+        if (!$tenantId) {
+            $tenantId = $this->getTenantId($conversationId);
+        }
+        
+        // Check rate limits
+        try {
+            $this->checkRateLimit($tenantId, 'api_call');
+            $this->checkRateLimit($tenantId, 'message');
+        } catch (Exception $e) {
+            if ($e->getCode() == 429) {
+                sendSSEEvent('error', [
+                    'code' => 429,
+                    'message' => $e->getMessage(),
+                    'type' => 'rate_limit_exceeded'
+                ]);
+                return;
+            }
+            throw $e;
+        }
+        
+        // Check quotas
+        try {
+            $this->checkQuota($tenantId, 'message', 'daily');
+        } catch (Exception $e) {
+            if ($e->getCode() == 429) {
+                sendSSEEvent('error', [
+                    'code' => 429,
+                    'message' => $e->getMessage(),
+                    'type' => 'quota_exceeded'
+                ]);
+                return;
+            }
+            throw $e;
+        }
+        
         // Resolve agent overrides
         $agentOverrides = $this->resolveAgentOverrides($agentId);
         
@@ -217,18 +261,20 @@ class ChatHandler {
                 'request_meta' => [
                     'model' => $agentOverrides['model'] ?? $this->config['chat']['model'],
                     'temperature' => $agentOverrides['temperature'] ?? $this->config['chat']['temperature'],
-                    'agent_id' => $agentId
+                    'agent_id' => $agentId,
+                    'tenant_id' => $tenantId
                 ]
             ]);
             
             $this->auditService->recordEvent($conversationId, 'request_start', [
                 'api_type' => 'chat',
-                'streaming' => true
+                'streaming' => true,
+                'tenant_id' => $tenantId
             ]);
         }
 
         // Stream response from OpenAI with agent overrides applied
-        $this->streamChatCompletion($messages, $conversationId, $agentOverrides);
+        $this->streamChatCompletion($messages, $conversationId, $agentOverrides, $tenantId);
     }
 
     public function handleChatCompletionSync($message, $conversationId, $agentId = null) {
@@ -976,7 +1022,7 @@ class ChatHandler {
         }
     }
 
-    private function streamChatCompletion($messages, $conversationId, $agentOverrides = []) {
+    private function streamChatCompletion($messages, $conversationId, $agentOverrides = [], $tenantId = null) {
         $payload = [
             'model' => $agentOverrides['model'] ?? $this->config['chat']['model'],
             'messages' => $messages,
@@ -994,8 +1040,9 @@ class ChatHandler {
         $auditService = $this->auditService;
         $leadSenseService = $this->leadSenseService;
         $chatHandler = $this;
+        $usageData = null;
 
-        $this->openAIClient->streamChatCompletion($payload, function($chunk) use (&$messageStarted, &$fullResponse, $conversationId, $messages, $startTime, $auditService, $leadSenseService, $chatHandler, $agentOverrides) {
+        $this->openAIClient->streamChatCompletion($payload, function($chunk) use (&$messageStarted, &$fullResponse, $conversationId, $messages, $startTime, $auditService, $leadSenseService, $chatHandler, $agentOverrides, $tenantId, &$usageData) {
             $messagesCopy = $messages;
 
             if (isset($chunk['choices'][0]['delta']['content'])) {
@@ -1016,6 +1063,11 @@ class ChatHandler {
                     'type' => 'chunk',
                     'content' => $content
                 ]);
+            }
+            
+            // Capture usage data from chunk
+            if (isset($chunk['usage'])) {
+                $usageData = $chunk['usage'];
             }
 
             if (isset($chunk['choices'][0]['finish_reason'])) {
@@ -1046,6 +1098,18 @@ class ChatHandler {
                 }
                 
                 $this->saveConversationHistory($conversationId, $messagesCopy);
+                
+                // Track usage for billing
+                if ($tenantId && $usageData) {
+                    $chatHandler->trackUsage($tenantId, 'completion', [
+                        'quantity' => 1,
+                        'tokens' => $usageData['total_tokens'] ?? 0,
+                        'prompt_tokens' => $usageData['prompt_tokens'] ?? 0,
+                        'completion_tokens' => $usageData['completion_tokens'] ?? 0,
+                        'model' => $agentOverrides['model'] ?? $chatHandler->config['chat']['model'],
+                        'conversation_id' => $conversationId
+                    ]);
+                }
                 
                 // Process with LeadSense after stream ends
                 if ($leadSenseService && $leadSenseService->isEnabled()) {
@@ -1877,6 +1941,125 @@ class ChatHandler {
             // Log error without exposing sensitive details
             error_log("LeadSense error in ChatHandler: " . $e->getMessage());
         }
+    }
+    
+    /**
+     * Track usage for billing and metering
+     * 
+     * @param string|null $tenantId Tenant ID
+     * @param string $resourceType Type of resource (message, completion, etc)
+     * @param array $metadata Additional metadata (tokens, model, etc)
+     */
+    private function trackUsage($tenantId, $resourceType, $metadata = []) {
+        if (!$tenantId) {
+            return; // Skip if no tenant ID
+        }
+        
+        $enabled = $this->config['usage_tracking']['enabled'] ?? false;
+        if (!$enabled || !$this->usageTrackingService) {
+            return;
+        }
+        
+        try {
+            // Log to usage_logs
+            $this->usageTrackingService->logUsage($tenantId, $resourceType, [
+                'quantity' => $metadata['quantity'] ?? 1,
+                'metadata' => $metadata
+            ]);
+            
+            // Also update tenant_usage aggregation in real-time
+            if ($this->tenantUsageService) {
+                $this->tenantUsageService->incrementUsage(
+                    $tenantId, 
+                    $resourceType, 
+                    $metadata['quantity'] ?? 1
+                );
+            }
+        } catch (Exception $e) {
+            error_log("Usage tracking error: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Check and enforce tenant rate limits
+     * 
+     * @param string|null $tenantId Tenant ID
+     * @param string $resourceType Type of resource being accessed
+     * @throws Exception if rate limit exceeded
+     */
+    private function checkRateLimit($tenantId, $resourceType = 'api_call') {
+        if (!$tenantId) {
+            return; // Skip if no tenant ID
+        }
+        
+        $enabled = $this->config['usage_tracking']['enabled'] ?? false;
+        if (!$enabled || !$this->rateLimitService) {
+            return;
+        }
+        
+        try {
+            // Get tenant-specific rate limit or use defaults
+            $rateLimit = $this->rateLimitService->getTenantRateLimit($tenantId, $resourceType);
+            
+            // Enforce the rate limit
+            $this->rateLimitService->enforceRateLimit(
+                $tenantId,
+                $resourceType,
+                $rateLimit['limit'],
+                $rateLimit['window_seconds']
+            );
+        } catch (Exception $e) {
+            // Re-throw rate limit exceptions
+            if ($e->getCode() == 429) {
+                throw $e;
+            }
+            error_log("Rate limit check error: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Check and enforce tenant quotas
+     * 
+     * @param string|null $tenantId Tenant ID
+     * @param string $resourceType Type of resource being accessed
+     * @throws Exception if quota exceeded
+     */
+    private function checkQuota($tenantId, $resourceType, $period = 'daily') {
+        if (!$tenantId) {
+            return; // Skip if no tenant ID
+        }
+        
+        $enabled = $this->config['quota_enforcement']['enabled'] ?? false;
+        if (!$enabled || !$this->quotaService) {
+            return;
+        }
+        
+        try {
+            // Enforce quota (throws exception if hard limit exceeded)
+            $this->quotaService->enforceQuota($tenantId, $resourceType, $period);
+        } catch (Exception $e) {
+            // Re-throw quota exceptions
+            if ($e->getCode() == 429) {
+                throw $e;
+            }
+            error_log("Quota check error: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Get tenant ID from conversation or request context
+     * Override this method or inject tenant_id via request
+     * 
+     * @param string $conversationId Conversation ID
+     * @return string|null Tenant ID
+     */
+    public function getTenantId($conversationId = null) {
+        // This can be extended to:
+        // 1. Extract from conversation metadata
+        // 2. Get from authenticated user session
+        // 3. Look up from API key
+        // For now, return null (multi-tenant support must be configured per deployment)
+        return null;
     }
 }
 ?>

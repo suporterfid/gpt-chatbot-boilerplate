@@ -422,6 +422,31 @@ $config = [
         'rate_limit_per_min' => (int)($_ENV['PROMPT_BUILDER_RATE_LIMIT'] ?? getenv('PROMPT_BUILDER_RATE_LIMIT') ?: 10),
         'audit_enabled' => filter_var($_ENV['PROMPT_BUILDER_AUDIT'] ?? getenv('PROMPT_BUILDER_AUDIT') ?: 'true', FILTER_VALIDATE_BOOLEAN),
         'templates_path' => __DIR__ . '/includes/PromptBuilder/templates/guardrails',
+    ],
+    
+    // Usage Tracking & Billing Configuration
+    'usage_tracking' => [
+        'enabled' => filter_var($_ENV['USAGE_TRACKING_ENABLED'] ?? getenv('USAGE_TRACKING_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+    ],
+    
+    'quota_enforcement' => [
+        'enabled' => filter_var($_ENV['QUOTA_ENFORCEMENT_ENABLED'] ?? getenv('QUOTA_ENFORCEMENT_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'warning_threshold' => (int)($_ENV['QUOTA_WARNING_THRESHOLD'] ?? getenv('QUOTA_WARNING_THRESHOLD') ?: 80), // Percentage
+    ],
+    
+    'billing' => [
+        'notifications_enabled' => filter_var($_ENV['BILLING_NOTIFICATIONS_ENABLED'] ?? getenv('BILLING_NOTIFICATIONS_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'admin_email' => $_ENV['BILLING_ADMIN_EMAIL'] ?? getenv('BILLING_ADMIN_EMAIL') ?: '',
+        'auto_invoice_generation' => filter_var($_ENV['AUTO_INVOICE_GENERATION'] ?? getenv('AUTO_INVOICE_GENERATION') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+        'auto_payment_retry' => filter_var($_ENV['AUTO_PAYMENT_RETRY'] ?? getenv('AUTO_PAYMENT_RETRY') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'payment_retry_attempts' => (int)($_ENV['PAYMENT_RETRY_ATTEMPTS'] ?? getenv('PAYMENT_RETRY_ATTEMPTS') ?: 3),
+        'payment_retry_interval_hours' => (int)($_ENV['PAYMENT_RETRY_INTERVAL_HOURS'] ?? getenv('PAYMENT_RETRY_INTERVAL_HOURS') ?: 24),
+    ],
+    
+    'asaas' => [
+        'enabled' => filter_var($_ENV['ASAAS_ENABLED'] ?? getenv('ASAAS_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+        'api_key' => $_ENV['ASAAS_API_KEY'] ?? getenv('ASAAS_API_KEY') ?: '',
+        'production' => filter_var($_ENV['ASAAS_PRODUCTION'] ?? getenv('ASAAS_PRODUCTION') ?: 'false', FILTER_VALIDATE_BOOLEAN),
     ]
 ];
 
