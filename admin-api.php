@@ -469,10 +469,21 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Agent ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $agentService->setDefaultAgent($id);
             log_admin('Default agent set: ' . $id);
             sendResponse(['success' => true, 'message' => 'Default agent set']);
@@ -491,6 +502,14 @@ try {
                 sendError('Agent ID required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $data = getRequestBody();
             $agent = $agentService->enableWhitelabel($id, $data);
             log_admin('Whitelabel enabled for agent: ' . $id);
@@ -508,6 +527,14 @@ try {
                 sendError('Agent ID required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $agent = $agentService->disableWhitelabel($id);
             log_admin('Whitelabel disabled for agent: ' . $id);
             sendResponse($agent);
@@ -523,6 +550,14 @@ try {
             if (empty($id)) {
                 sendError('Agent ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
             
             $agent = $agentService->rotateHmacSecret($id);
             log_admin('Whitelabel secret rotated for agent: ' . $id);
@@ -540,6 +575,14 @@ try {
                 sendError('Agent ID required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $data = getRequestBody();
             $agent = $agentService->updateWhitelabelConfig($id, $data);
             log_admin('Whitelabel config updated for agent: ' . $id);
@@ -556,6 +599,14 @@ try {
             if (empty($id)) {
                 sendError('Agent ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $id, 
+                ResourceAuthService::ACTION_READ
+            );
             
             $agent = $agentService->getAgent($id);
             if (!$agent) {
@@ -606,6 +657,14 @@ try {
                 sendError('Agent ID required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_READ
+            );
+            
             $channels = $agentService->listAgentChannels($agentId);
             sendResponse($channels);
             break;
@@ -622,6 +681,14 @@ try {
             if (empty($agentId) || empty($channel)) {
                 sendError('Agent ID and channel are required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_READ
+            );
             
             $channelConfig = $agentService->getAgentChannel($agentId, $channel);
             if (!$channelConfig) {
@@ -644,6 +711,14 @@ try {
                 sendError('Agent ID and channel are required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $data = getRequestBody();
             $channelConfig = $agentService->upsertAgentChannel($agentId, $channel, $data);
             log_admin("Channel configuration updated: agent=$agentId, channel=$channel");
@@ -663,6 +738,14 @@ try {
                 sendError('Agent ID and channel are required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_DELETE
+            );
+            
             $agentService->deleteAgentChannel($agentId, $channel);
             log_admin("Channel configuration deleted: agent=$agentId, channel=$channel");
             sendResponse(['success' => true, 'message' => 'Channel configuration deleted']);
@@ -680,6 +763,14 @@ try {
             if (empty($agentId) || empty($channel)) {
                 sendError('Agent ID and channel are required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_UPDATE
+            );
             
             $data = getRequestBody();
             $to = $data['to'] ?? '';
@@ -720,6 +811,14 @@ try {
             if (empty($agentId)) {
                 sendError('Agent ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_READ
+            );
             
             $channel = $_GET['channel'] ?? null;
             $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
@@ -838,10 +937,21 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Prompt ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_PROMPT, 
+                $id, 
+                ResourceAuthService::ACTION_READ
+            );
+            
             $filters = [];
             if (isset($_GET['limit'])) {
                 $filters['limit'] = (int)$_GET['limit'];
@@ -854,10 +964,21 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'create', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Prompt ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_PROMPT, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $data = getRequestBody();
             $version = $promptService->createPromptVersion($id, $data);
             log_admin('Prompt version created: ' . $version['id']);
@@ -982,10 +1103,21 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Vector store ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_VECTOR_STORE, 
+                $id, 
+                ResourceAuthService::ACTION_READ
+            );
+            
             $filters = [];
             if (isset($_GET['status'])) {
                 $filters['status'] = $_GET['status'];
@@ -1001,10 +1133,21 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'create', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Vector store ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_VECTOR_STORE, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $data = getRequestBody();
             $file = $vectorStoreService->addFile($id, $data);
             log_admin('File added to vector store: ' . $file['id']);
@@ -1015,11 +1158,22 @@ try {
             if ($method !== 'POST' && $method !== 'DELETE') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
             $id = $_GET['id'] ?? '';
             $fileId = $_GET['file_id'] ?? '';
             if (empty($id) || empty($fileId)) {
                 sendError('Vector store ID and file ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_VECTOR_STORE, 
+                $id, 
+                ResourceAuthService::ACTION_DELETE
+            );
+            
             $vectorStoreService->deleteFile($fileId);
             log_admin('File deleted from vector store: ' . $fileId);
             sendResponse(['success' => true, 'message' => 'File deleted']);
@@ -1367,12 +1521,21 @@ try {
             if ($method !== 'POST' && $method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
             
             // This endpoint streams a test response
             $id = $_GET['id'] ?? '';
             if (empty($id)) {
                 sendError('Agent ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $id, 
+                ResourceAuthService::ACTION_UPDATE
+            );
             
             // Support both POST body and GET/POST parameters for message
             $message = 'Hello, this is a test message.';
