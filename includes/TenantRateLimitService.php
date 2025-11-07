@@ -98,7 +98,7 @@ class TenantRateLimitService {
         if (!$check['allowed']) {
             $resetIn = $check['reset_at'] - time();
             throw new Exception(
-                "Rate limit exceeded for tenant $tenantId. Limit: {$check['limit']}/{$windowSeconds}s. Try again in {$resetIn}s",
+                "Rate limit exceeded. Limit: {$check['limit']}/{$windowSeconds}s. Try again in {$resetIn}s",
                 429
             );
         }

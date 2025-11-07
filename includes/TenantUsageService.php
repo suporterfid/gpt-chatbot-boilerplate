@@ -26,7 +26,7 @@ class TenantUsageService {
     public function aggregateUsage($tenantId = null, $periodType = self::PERIOD_DAILY) {
         $validPeriods = [self::PERIOD_HOURLY, self::PERIOD_DAILY, self::PERIOD_MONTHLY, self::PERIOD_TOTAL];
         if (!in_array($periodType, $validPeriods)) {
-            throw new Exception('Invalid period type', 400);
+            throw new Exception('Invalid period type. Valid options: hourly, daily, monthly, total', 400);
         }
         
         // Determine the period range

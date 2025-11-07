@@ -135,18 +135,21 @@ try {
                         $quota['period']
                     );
                     
-                    $notificationService->createNotification($tid, [
-                        'type' => 'quota_exceeded',
-                        'title' => 'Quota Limit Exceeded',
-                        'message' => "Hard limit exceeded for {$quota['resource_type']} ({$quota['period']}). Current: {$status['current']}, Limit: {$status['limit']}",
-                        'priority' => 'high',
-                        'metadata' => [
-                            'resource_type' => $quota['resource_type'],
-                            'period' => $quota['period'],
-                            'current' => $status['current'],
-                            'limit' => $status['limit']
+                    $notificationService->createNotification(
+                        $tid,
+                        'quota_exceeded',
+                        'Quota Limit Exceeded',
+                        "Hard limit exceeded for {$quota['resource_type']} ({$quota['period']}). Current: {$status['current']}, Limit: {$status['limit']}",
+                        [
+                            'priority' => 'high',
+                            'metadata' => [
+                                'resource_type' => $quota['resource_type'],
+                                'period' => $quota['period'],
+                                'current' => $status['current'],
+                                'limit' => $status['limit']
+                            ]
                         ]
-                    ]);
+                    );
                     
                     $alertsSent++;
                     

@@ -153,18 +153,21 @@ try {
             ]);
             
             // Send notification
-            $notificationService->createNotification($tid, [
-                'type' => 'invoice_created',
-                'title' => 'New Invoice Generated',
-                'message' => "Invoice {$invoice['invoice_number']} for \${$subtotal} has been generated for the period $month.",
-                'priority' => 'medium',
-                'metadata' => [
-                    'invoice_id' => $invoice['id'],
-                    'invoice_number' => $invoice['invoice_number'],
-                    'amount' => $subtotal,
-                    'currency' => 'USD'
+            $notificationService->createNotification(
+                $tid,
+                'invoice_created',
+                'New Invoice Generated',
+                "Invoice {$invoice['invoice_number']} for \${$subtotal} has been generated for the period $month.",
+                [
+                    'priority' => 'medium',
+                    'metadata' => [
+                        'invoice_id' => $invoice['id'],
+                        'invoice_number' => $invoice['invoice_number'],
+                        'amount' => $subtotal,
+                        'currency' => 'USD'
+                    ]
                 ]
-            ]);
+            );
             
             if ($verbose) {
                 echo "  ✓ Invoice created: {$invoice['invoice_number']}\n\n";
