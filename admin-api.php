@@ -231,7 +231,13 @@ function checkTenantStatus($tenantId, $db) {
 function checkAdminRateLimit($config, $user, $rateLimitService = null) {
     // Use tenant ID or user ID as the rate limiting key (NOT IP address)
     $tenantId = $user['tenant_id'] ?? null;
-    $userId = $user['id'] ?? $user['email'] ?? 'unknown';
+    $userId = $user['id'] ?? $user['email'] ?? null;
+    
+    // Admin endpoints MUST have authenticated user
+    if (!$userId) {
+        log_admin("Rate limit check failed: no user ID available", 'error');
+        sendError('Authentication required', 401);
+    }
     
     // Construct identifier: prefer tenant, fallback to user
     $identifier = $tenantId ? "tenant_$tenantId" : "user_$userId";

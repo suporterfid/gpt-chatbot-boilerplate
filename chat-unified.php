@@ -7,6 +7,10 @@ require_once 'config.php';
 require_once 'includes/OpenAIClient.php';
 require_once 'includes/ChatHandler.php';
 require_once 'includes/AuditService.php';
+require_once 'includes/UsageTrackingService.php';
+require_once 'includes/QuotaService.php';
+require_once 'includes/TenantRateLimitService.php';
+require_once 'includes/TenantUsageService.php';
 
 // Initialize observability if enabled
 $observability = null;
@@ -271,7 +275,7 @@ try {
         }
     }
     
-    // Initialize multi-tenant services
+    // Initialize multi-tenant services (classes already loaded at top of file)
     $usageTrackingService = null;
     $quotaService = null;
     $rateLimitService = null;
@@ -279,11 +283,6 @@ try {
     
     if ($config['usage_tracking']['enabled'] ?? false) {
         try {
-            require_once __DIR__ . '/includes/UsageTrackingService.php';
-            require_once __DIR__ . '/includes/QuotaService.php';
-            require_once __DIR__ . '/includes/TenantRateLimitService.php';
-            require_once __DIR__ . '/includes/TenantUsageService.php';
-            
             $usageTrackingService = new UsageTrackingService($db);
             $quotaService = new QuotaService($db, $usageTrackingService);
             $rateLimitService = new TenantRateLimitService($db);

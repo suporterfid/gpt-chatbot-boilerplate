@@ -1840,10 +1840,19 @@ class ChatHandler {
     }
 
     /**
-     * Check and enforce tenant-based rate limits (DEPRECATED - use checkRateLimitTenant instead)
+     * Check and enforce tenant-based rate limits (DEPRECATED)
      * This method kept for backwards compatibility with older whitelabel integrations
      * 
-     * @deprecated Use tenant-based rate limiting via checkRateLimitTenant()
+     * @deprecated Since v2.0.0. Will be removed in v3.0.0. 
+     *             Use tenant-based rate limiting via checkRateLimitTenant() instead.
+     * 
+     * Migration Example:
+     * OLD: $this->checkRateLimitLegacy($agentConfig);
+     * NEW: $this->checkRateLimitTenant($tenantId, 'api_call');
+     * 
+     * To migrate, ensure your requests include a tenant_id or API key that can be resolved to a tenant.
+     * See docs/TENANT_RATE_LIMITING.md for details.
+     * 
      * @param array|null $agentConfig Agent configuration
      * @throws Exception if rate limit exceeded
      */
@@ -2102,10 +2111,17 @@ class ChatHandler {
      * @throws Exception if rate limit exceeded (429 error code)
      */
     private function checkRateLimitTenant($tenantId, $resourceType = 'api_call') {
+        // Check configuration: should we require tenant ID?
+        $requireTenantId = $this->config['usage_tracking']['require_tenant_id'] ?? false;
+        
         if (!$tenantId) {
-            // No tenant ID - fallback to IP-based for anonymous requests
-            // In production, you may want to require tenant ID for all requests
-            error_log("Warning: Rate limit check called without tenant ID for resource type: $resourceType");
+            if ($requireTenantId) {
+                // Strict mode: require tenant ID for all requests
+                error_log("ERROR: Tenant ID required but not provided for resource type: $resourceType");
+                throw new Exception('Tenant identification required. Please include API key or X-Tenant-ID header.', 401);
+            }
+            // Permissive mode: allow anonymous requests (fallback to legacy rate limiting)
+            error_log("Warning: Rate limit check called without tenant ID for resource type: $resourceType (permissive mode)");
             return;
         }
         
