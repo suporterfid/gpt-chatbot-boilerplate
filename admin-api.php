@@ -1684,11 +1684,20 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
             
             $jobId = $_GET['id'] ?? '';
             if (empty($jobId)) {
                 sendError('Job ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_JOB, 
+                $jobId, 
+                ResourceAuthService::ACTION_READ
+            );
             
             $job = $jobQueue->getJob($jobId);
             if (!$job) {
@@ -1702,11 +1711,20 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
             
             $jobId = $_GET['id'] ?? '';
             if (empty($jobId)) {
                 sendError('Job ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_JOB, 
+                $jobId, 
+                ResourceAuthService::ACTION_UPDATE
+            );
             
             $jobQueue->retryJob($jobId);
             log_admin("Job retried: $jobId");
@@ -1717,11 +1735,20 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
             
             $jobId = $_GET['id'] ?? '';
             if (empty($jobId)) {
                 sendError('Job ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_JOB, 
+                $jobId, 
+                ResourceAuthService::ACTION_DELETE
+            );
             
             $jobQueue->cancelJob($jobId);
             log_admin("Job cancelled: $jobId");
@@ -2153,6 +2180,18 @@ try {
                 sendError('Conversation not found', 404);
             }
             
+            // Tenant-level authorization check for conversation
+            // Conversations belong to tenants through their tenant_id field
+            if ($authenticatedUser['role'] !== AdminAuth::ROLE_SUPER_ADMIN) {
+                $tenantId = $authenticatedUser['tenant_id'] ?? null;
+                $convTenantId = $conversation['tenant_id'] ?? null;
+                
+                if ($tenantId !== $convTenantId) {
+                    log_admin("Access denied: User {$authenticatedUser['email']} attempted to access conversation $conversationId from different tenant");
+                    sendError('Access denied: You do not have permission to access this conversation', 403);
+                }
+            }
+            
             $decryptContent = isset($_GET['decrypt']) && $_GET['decrypt'] === 'true';
             if ($decryptContent) {
                 requirePermission($authenticatedUser, 'read_sensitive_audit', $adminAuth);
@@ -2196,6 +2235,22 @@ try {
             }
             
             $message = $result[0];
+            
+            // Check tenant access through conversation
+            if ($authenticatedUser['role'] !== AdminAuth::ROLE_SUPER_ADMIN) {
+                $convSql = "SELECT tenant_id FROM audit_conversations WHERE conversation_id = ?";
+                $convResult = $db->query($convSql, [$message['conversation_id']]);
+                
+                if (!empty($convResult)) {
+                    $tenantId = $authenticatedUser['tenant_id'] ?? null;
+                    $convTenantId = $convResult[0]['tenant_id'] ?? null;
+                    
+                    if ($tenantId !== $convTenantId) {
+                        log_admin("Access denied: User {$authenticatedUser['email']} attempted to access message $messageId from different tenant");
+                        sendError('Access denied: You do not have permission to access this message', 403);
+                    }
+                }
+            }
             
             // Decrypt content if requested
             if ($decryptContent && !empty($message['content_enc'])) {
@@ -2267,13 +2322,29 @@ try {
             $retentionDays = $data['retention_days'] ?? null;
             
             if ($conversationId) {
-                // Delete specific conversation
+                // Delete specific conversation - check tenant access first
+                if ($authenticatedUser['role'] !== AdminAuth::ROLE_SUPER_ADMIN) {
+                    $conversation = $auditService->getConversation($conversationId);
+                    if ($conversation) {
+                        $tenantId = $authenticatedUser['tenant_id'] ?? null;
+                        $convTenantId = $conversation['tenant_id'] ?? null;
+                        
+                        if ($tenantId !== $convTenantId) {
+                            log_admin("Access denied: User {$authenticatedUser['email']} attempted to delete conversation $conversationId from different tenant");
+                            sendError('Access denied: You do not have permission to delete this conversation', 403);
+                        }
+                    }
+                }
+                
                 $sql = "DELETE FROM audit_conversations WHERE conversation_id = ?";
                 $deleted = $db->execute($sql, [$conversationId]);
                 log_admin("Deleted audit conversation: $conversationId");
                 sendResponse(['deleted' => $deleted]);
             } elseif ($retentionDays !== null) {
-                // Delete by retention period
+                // Delete by retention period - only super-admin can do this globally
+                if ($authenticatedUser['role'] !== AdminAuth::ROLE_SUPER_ADMIN) {
+                    sendError('Only super-admins can delete by retention period', 403);
+                }
                 $deleted = $auditService->deleteExpired((int)$retentionDays);
                 log_admin("Deleted $deleted expired audit conversations");
                 sendResponse(['deleted' => $deleted]);
@@ -2344,6 +2415,14 @@ try {
                 sendError('Lead ID required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_LEAD, 
+                $leadId, 
+                ResourceAuthService::ACTION_READ
+            );
+            
             $leadRepo = new LeadRepository($config['leadsense']);
             $redactor = new Redactor($config['leadsense']);
             
@@ -2383,6 +2462,14 @@ try {
             if (!$leadId) {
                 sendError('Lead ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_LEAD, 
+                $leadId, 
+                ResourceAuthService::ACTION_UPDATE
+            );
             
             $leadRepo = new LeadRepository($config['leadsense']);
             
@@ -2440,6 +2527,14 @@ try {
                 sendError('Lead ID and note required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_LEAD, 
+                $leadId, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $leadRepo = new LeadRepository($config['leadsense']);
             
             $eventId = $leadRepo->addEvent($leadId, 'note', [
@@ -2474,6 +2569,14 @@ try {
             if (!$leadId) {
                 sendError('Lead ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_LEAD, 
+                $leadId, 
+                ResourceAuthService::ACTION_UPDATE
+            );
             
             $leadRepo = new LeadRepository($config['leadsense']);
             $lead = $leadRepo->getById($leadId);
@@ -2537,6 +2640,14 @@ try {
                 sendError('Agent ID required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $data = getRequestBody();
             $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
             $userId = $authenticatedUser['id'] ?? $authenticatedUser['email'] ?? null;
@@ -2558,6 +2669,14 @@ try {
                 sendError('Agent ID required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_READ
+            );
+            
             $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
             $result = $controller->route('GET', [$agentId, 'prompts'], [], null);
             sendResponse($result);
@@ -2577,6 +2696,14 @@ try {
                 sendError('Agent ID and version required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_READ
+            );
+            
             $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
             $result = $controller->route('GET', [$agentId, 'prompts', $version], [], null);
             sendResponse($result);
@@ -2595,6 +2722,14 @@ try {
             if (empty($agentId) || empty($version)) {
                 sendError('Agent ID and version required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_UPDATE
+            );
             
             $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
             $userId = $authenticatedUser['id'] ?? $authenticatedUser['email'] ?? null;
@@ -2616,6 +2751,14 @@ try {
                 sendError('Agent ID required', 400);
             }
             
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_UPDATE
+            );
+            
             $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
             $userId = $authenticatedUser['id'] ?? $authenticatedUser['email'] ?? null;
             
@@ -2635,6 +2778,14 @@ try {
             if (empty($agentId)) {
                 sendError('Agent ID required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_UPDATE
+            );
             
             $data = getRequestBody();
             $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
@@ -2657,6 +2808,14 @@ try {
             if (empty($agentId) || empty($version)) {
                 sendError('Agent ID and version required', 400);
             }
+            
+            // Resource-level authorization check
+            $resourceAuth->requireResourceAccess(
+                $authenticatedUser, 
+                ResourceAuthService::RESOURCE_AGENT, 
+                $agentId, 
+                ResourceAuthService::ACTION_DELETE
+            );
             
             $controller = new AdminPromptBuilderController($db->getPdo(), $config, $auditService);
             $result = $controller->route('DELETE', [$agentId, 'prompts', $version], [], null);

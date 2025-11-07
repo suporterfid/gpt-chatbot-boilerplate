@@ -20,6 +20,8 @@ class ResourceAuthService {
     const RESOURCE_CONVERSATION = 'conversation';
     const RESOURCE_FILE = 'file';
     const RESOURCE_WEBHOOK = 'webhook';
+    const RESOURCE_JOB = 'job';
+    const RESOURCE_LEAD = 'lead';
     
     // Actions
     const ACTION_READ = 'read';
@@ -307,7 +309,9 @@ class ResourceAuthService {
             self::RESOURCE_VECTOR_STORE => 'vector_stores',
             self::RESOURCE_CONVERSATION => 'audit_conversations',
             self::RESOURCE_FILE => 'vector_store_files',
-            self::RESOURCE_WEBHOOK => 'webhook_events'
+            self::RESOURCE_WEBHOOK => 'webhook_events',
+            self::RESOURCE_JOB => 'jobs',
+            self::RESOURCE_LEAD => 'leads'
         ];
         
         return $mapping[$resourceType] ?? null;

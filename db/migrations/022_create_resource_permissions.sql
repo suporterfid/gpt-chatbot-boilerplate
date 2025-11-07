@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS resource_permissions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
     resource_type TEXT NOT NULL CHECK(resource_type IN (
-        'agent', 'prompt', 'vector_store', 'conversation', 'file', 'webhook'
+        'agent', 'prompt', 'vector_store', 'conversation', 'file', 'webhook', 'job', 'lead'
     )),
     resource_id TEXT NOT NULL,
     permissions_json TEXT NOT NULL, -- JSON array of permissions: ["read", "update", "delete", "execute"]
