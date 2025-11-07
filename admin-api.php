@@ -345,11 +345,15 @@ try {
     require_once __DIR__ . '/includes/QuotaService.php';
     require_once __DIR__ . '/includes/BillingService.php';
     require_once __DIR__ . '/includes/NotificationService.php';
+    require_once __DIR__ . '/includes/TenantUsageService.php';
+    require_once __DIR__ . '/includes/TenantRateLimitService.php';
     
     $usageTrackingService = new UsageTrackingService($db);
     $quotaService = new QuotaService($db, $usageTrackingService);
     $billingService = new BillingService($db);
     $notificationService = new NotificationService($db);
+    $tenantUsageService = new TenantUsageService($db);
+    $rateLimitService = new TenantRateLimitService($db);
 
     $logUser = $authenticatedUser['email'] ?? 'anonymous';
     log_admin("$method /admin-api.php?action=$action [user: $logUser]");
@@ -3128,6 +3132,109 @@ try {
             
             $count = $notificationService->getUnreadCount($targetTenantId);
             sendResponse(['count' => $count]);
+            break;
+            
+        // ===== Tenant Usage Aggregation Endpoints =====
+        
+        case 'get_tenant_usage_summary':
+            // Get current period usage summary (aggregated)
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $periodType = $_GET['period_type'] ?? 'daily';
+            $summary = $tenantUsageService->getCurrentUsageSummary($targetTenantId, $periodType);
+            sendResponse($summary);
+            break;
+            
+        case 'get_tenant_usage_trends':
+            // Get usage trends over time
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $periodType = $_GET['period_type'] ?? 'daily';
+            $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 30;
+            
+            $trends = $tenantUsageService->getUsageTrends($targetTenantId, $periodType, $limit);
+            sendResponse($trends);
+            break;
+            
+        case 'aggregate_tenant_usage':
+            // Manually trigger usage aggregation (admin only)
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            if ($authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden - super-admin only', 403);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? null;
+            $periodType = $_GET['period_type'] ?? 'daily';
+            
+            $count = $tenantUsageService->aggregateUsage($targetTenantId, $periodType);
+            sendResponse([
+                'success' => true,
+                'aggregated_records' => $count,
+                'period_type' => $periodType
+            ]);
+            break;
+            
+        // ===== Rate Limiting Endpoints =====
+        
+        case 'get_rate_limit_status':
+            // Get rate limit status for a tenant
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? $tenantId;
+            
+            if ($targetTenantId !== $tenantId && $authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden', 403);
+            }
+            
+            $status = $rateLimitService->getTenantRateLimitStatus($targetTenantId);
+            sendResponse($status);
+            break;
+            
+        case 'clear_rate_limit':
+            // Clear rate limit for a tenant (admin only)
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            if ($authenticatedUser['role'] !== 'super-admin') {
+                sendError('Forbidden - super-admin only', 403);
+            }
+            
+            $targetTenantId = $_GET['tenant_id'] ?? null;
+            if (!$targetTenantId) {
+                sendError('Tenant ID is required', 400);
+            }
+            
+            $resourceType = $_GET['resource_type'] ?? 'api_call';
+            $rateLimitService->clearRateLimit($targetTenantId, $resourceType);
+            
+            sendResponse([
+                'success' => true,
+                'message' => 'Rate limit cleared',
+                'tenant_id' => $targetTenantId,
+                'resource_type' => $resourceType
+            ]);
             break;
             
         default:
