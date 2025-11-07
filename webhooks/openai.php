@@ -9,13 +9,32 @@ require_once __DIR__ . '/../includes/DB.php';
 require_once __DIR__ . '/../includes/WebhookHandler.php';
 require_once __DIR__ . '/../includes/VectorStoreService.php';
 require_once __DIR__ . '/../includes/OpenAIAdminClient.php';
+require_once __DIR__ . '/../includes/ObservabilityMiddleware.php';
 
 // Set JSON response header
 header('Content-Type: application/json');
 
-// Logging helper
+// Initialize observability
+$observability = null;
+if ($config['observability']['enabled'] ?? true) {
+    $observability = new ObservabilityMiddleware($config);
+    $observability->getLogger()->setContext([
+        'service' => 'webhook',
+        'endpoint' => 'openai',
+    ]);
+}
+
+// Logging helper - now uses observability
 function logWebhook($message, $level = 'info') {
-    global $config;
+    global $config, $observability;
+    
+    if ($observability) {
+        $logger = $observability->getLogger();
+        $logger->$level($message);
+        return;
+    }
+    
+    // Fallback to file logging
     $logFile = $config['logging']['file'] ?? __DIR__ . '/../logs/chatbot.log';
     $dir = dirname($logFile);
     if (!is_dir($dir)) {
@@ -65,6 +84,15 @@ if (!$eventId || !$eventType) {
 }
 
 logWebhook("Received event: $eventId (type: $eventType)");
+
+// Start span for webhook processing
+$spanId = null;
+if ($observability) {
+    $spanId = $observability->handleRequestStart('webhook.openai', [
+        'event_id' => $eventId,
+        'event_type' => $eventType,
+    ]);
+}
 
 try {
     // Initialize services
@@ -123,6 +151,22 @@ try {
     // Mark event as processed
     $webhookHandler->markEventProcessed($eventId);
     
+    // Track metrics
+    if ($observability) {
+        $observability->getMetrics()->incrementCounter('chatbot_webhook_events_processed_total', [
+            'event_type' => $eventType,
+            'status' => 'success',
+        ]);
+    }
+    
+    // End span
+    if ($observability && $spanId) {
+        $observability->handleRequestEnd($spanId, 'webhook.openai', 200, [
+            'event_id' => $eventId,
+            'event_type' => $eventType,
+        ]);
+    }
+    
     // Return success response
     http_response_code(200);
     echo json_encode([
@@ -134,6 +178,24 @@ try {
     logWebhook("Successfully processed event $eventId");
     
 } catch (Exception $e) {
+    // Handle error with observability
+    if ($observability && $spanId) {
+        $observability->handleError($spanId, $e, [
+            'event_id' => $eventId,
+            'event_type' => $eventType,
+        ]);
+        $observability->handleRequestEnd($spanId, 'webhook.openai', 500, [
+            'event_id' => $eventId,
+            'event_type' => $eventType,
+        ]);
+        
+        // Track failure metric
+        $observability->getMetrics()->incrementCounter('chatbot_webhook_events_processed_total', [
+            'event_type' => $eventType ?? 'unknown',
+            'status' => 'error',
+        ]);
+    }
+    
     http_response_code(500);
     echo json_encode(['error' => 'Internal server error']);
     logWebhook("Failed to process event $eventId: " . $e->getMessage(), 'error');

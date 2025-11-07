@@ -159,3 +159,48 @@ groups:
         annotations:
           summary: "High memory usage"
           description: "Memory usage: {{ $value | humanizePercentage }}"
+          
+      # Multi-Tenant Specific Alerts
+      
+      # Tenant High Error Rate
+      - alert: TenantHighErrorRate
+        expr: |
+          (
+            sum by (tenant_id) (rate(chatbot_tenant_jobs_total{status="failed"}[10m]))
+            /
+            sum by (tenant_id) (rate(chatbot_tenant_jobs_total[10m]))
+          ) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          component: multi-tenant
+        annotations:
+          summary: "High error rate for tenant {{ $labels.tenant_id }}"
+          description: "Tenant {{ $labels.tenant_id }} has {{ $value | humanizePercentage }} error rate"
+          
+      # Tenant Inactive
+      - alert: TenantInactive
+        expr: |
+          (
+            time() - max by (tenant_id) (
+              chatbot_tenant_jobs_total{status="completed"}
+            )
+          ) > 86400
+        for: 1h
+        labels:
+          severity: info
+          component: multi-tenant
+        annotations:
+          summary: "Tenant {{ $labels.tenant_id }} inactive"
+          description: "Tenant {{ $labels.tenant_id }} has not processed jobs for over 24 hours"
+          
+      # No Active Tenants
+      - alert: NoActiveTenants
+        expr: chatbot_active_tenants_24h == 0
+        for: 1h
+        labels:
+          severity: critical
+          component: multi-tenant
+        annotations:
+          summary: "No active tenants in last 24 hours"
+          description: "Platform has no active tenants - potential system issue"

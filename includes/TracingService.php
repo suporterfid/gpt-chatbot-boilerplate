@@ -69,6 +69,13 @@ class TracingService {
     }
     
     /**
+     * Set trace ID (for propagating existing traces)
+     */
+    public function setTraceId(string $traceId): void {
+        $this->traceId = $traceId;
+    }
+    
+    /**
      * Get current span ID
      */
     public function getSpanId(): string {

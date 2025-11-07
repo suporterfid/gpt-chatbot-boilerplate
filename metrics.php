@@ -347,6 +347,75 @@ foreach ($runtimeMetrics as $metric) {
     );
 }
 
+// Metric: Multi-tenant metrics
+try {
+    // Jobs by tenant
+    $stmt = $db->query("
+        SELECT tenant_id, status, COUNT(*) as count 
+        FROM jobs 
+        WHERE tenant_id IS NOT NULL
+        GROUP BY tenant_id, status
+    ");
+    
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        echo promMetric(
+            'chatbot_tenant_jobs_total',
+            'counter',
+            'Total jobs by tenant and status',
+            (int)$row['count'],
+            [
+                'tenant_id' => $row['tenant_id'],
+                'status' => $row['status']
+            ]
+        );
+    }
+} catch (Exception $e) {
+    error_log("Metrics: Failed to query tenant jobs: " . $e->getMessage());
+}
+
+// Metric: Active tenants
+try {
+    $stmt = $db->query("
+        SELECT COUNT(DISTINCT tenant_id) as count 
+        FROM jobs 
+        WHERE tenant_id IS NOT NULL
+        AND created_at > datetime('now', '-1 day')
+    ");
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    echo promMetric(
+        'chatbot_active_tenants_24h',
+        'gauge',
+        'Number of active tenants in last 24 hours',
+        (int)$row['count']
+    );
+} catch (Exception $e) {
+    error_log("Metrics: Failed to query active tenants: " . $e->getMessage());
+}
+
+// Metric: Tenant conversation metrics (if conversations table exists)
+try {
+    $stmt = $db->query("
+        SELECT tenant_id, COUNT(*) as count 
+        FROM conversations 
+        WHERE tenant_id IS NOT NULL
+        AND created_at > datetime('now', '-1 day')
+        GROUP BY tenant_id
+    ");
+    
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        echo promMetric(
+            'chatbot_tenant_conversations_24h',
+            'gauge',
+            'Number of conversations per tenant in last 24 hours',
+            (int)$row['count'],
+            ['tenant_id' => $row['tenant_id']]
+        );
+    }
+} catch (Exception $e) {
+    // Table might not exist in all installations
+    error_log("Metrics: Could not query tenant conversations: " . $e->getMessage());
+}
+
 // Metric: Scrape duration
 echo promMetric(
     'chatbot_metrics_scrape_duration_seconds',
