@@ -4,6 +4,8 @@
 
 This runbook provides step-by-step procedures for recovering from various disaster scenarios in the GPT Chatbot platform. It defines Recovery Point Objectives (RPO) and Recovery Time Objectives (RTO) for different data classes and provides tested procedures for complete system restoration.
 
+> **Multi-Tenant Deployments:** For tenant-specific disaster recovery procedures, tier-based RPO/RTO objectives, and selective tenant restore operations, see [Multi-Tenant Backup & DR Guide](multi_tenant_backup_dr.md).
+
 ## Recovery Objectives
 
 ### RPO (Recovery Point Objective) - Maximum Acceptable Data Loss
@@ -790,7 +792,8 @@ Ensure backup procedures meet:
 
 ## References
 
-- [Backup & Restore Guide](backup_restore.md)
+- [Backup & Restore Guide](backup_restore.md) - General backup procedures
+- [Multi-Tenant Backup & DR](multi_tenant_backup_dr.md) - Tenant-specific procedures
 - [Production Deployment Guide](production-deploy.md)
 - [Incident Response Runbook](incident_runbook.md)
 - [Monitoring Guide](monitoring/README.md)
@@ -801,6 +804,7 @@ Ensure backup procedures meet:
 | Date | Version | Changes | Author |
 |------|---------|---------|--------|
 | 2025-11-06 | 1.0 | Initial disaster recovery runbook | System |
+| 2025-11-07 | 1.1 | Added multi-tenant backup & DR reference | System |
 
 ## Approval
 
