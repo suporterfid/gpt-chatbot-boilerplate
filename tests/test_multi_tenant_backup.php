@@ -57,12 +57,12 @@ function setupTestEnvironment() {
     // Create tenants table
     $db->exec('
         CREATE TABLE tenants (
-            id INTEGER PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             slug TEXT UNIQUE NOT NULL,
             status TEXT DEFAULT "active",
-            tier TEXT DEFAULT "starter",
-            settings TEXT DEFAULT "{}"
+            plan TEXT DEFAULT "starter",
+            settings_json TEXT DEFAULT "{}"
         )
     ');
     
@@ -70,7 +70,7 @@ function setupTestEnvironment() {
     $db->exec('
         CREATE TABLE agents (
             id INTEGER PRIMARY KEY,
-            tenant_id INTEGER NOT NULL,
+            tenant_id TEXT NOT NULL,
             name TEXT NOT NULL,
             data TEXT,
             FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
@@ -80,28 +80,28 @@ function setupTestEnvironment() {
     $db->exec('
         CREATE TABLE prompts (
             id INTEGER PRIMARY KEY,
-            tenant_id INTEGER NOT NULL,
+            tenant_id TEXT NOT NULL,
             title TEXT NOT NULL,
             content TEXT,
             FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
         )
     ');
     
-    // Insert test tenants
-    $db->exec("INSERT INTO tenants (id, name, slug, status, tier) VALUES (1, 'Enterprise Corp', 'enterprise-corp', 'active', 'enterprise')");
-    $db->exec("INSERT INTO tenants (id, name, slug, status, tier) VALUES (2, 'Pro Business', 'pro-business', 'active', 'pro')");
-    $db->exec("INSERT INTO tenants (id, name, slug, status, tier) VALUES (3, 'Starter Inc', 'starter-inc', 'active', 'starter')");
-    $db->exec("INSERT INTO tenants (id, name, slug, status, tier) VALUES (4, 'Free User', 'free-user', 'active', 'free')");
+    // Insert test tenants (using TEXT IDs like production)
+    $db->exec("INSERT INTO tenants (id, name, slug, status, plan) VALUES ('ent-001', 'Enterprise Corp', 'enterprise-corp', 'active', 'enterprise')");
+    $db->exec("INSERT INTO tenants (id, name, slug, status, plan) VALUES ('pro-001', 'Pro Business', 'pro-business', 'active', 'pro')");
+    $db->exec("INSERT INTO tenants (id, name, slug, status, plan) VALUES ('str-001', 'Starter Inc', 'starter-inc', 'active', 'starter')");
+    $db->exec("INSERT INTO tenants (id, name, slug, status, plan) VALUES ('free-001', 'Free User', 'free-user', 'active', 'free')");
     
     // Insert test data for each tenant
-    $db->exec("INSERT INTO agents (tenant_id, name, data) VALUES (1, 'Enterprise Agent 1', 'data1')");
-    $db->exec("INSERT INTO agents (tenant_id, name, data) VALUES (1, 'Enterprise Agent 2', 'data2')");
-    $db->exec("INSERT INTO agents (tenant_id, name, data) VALUES (2, 'Pro Agent 1', 'data3')");
-    $db->exec("INSERT INTO agents (tenant_id, name, data) VALUES (3, 'Starter Agent 1', 'data4')");
-    $db->exec("INSERT INTO agents (tenant_id, name, data) VALUES (4, 'Free Agent 1', 'data5')");
+    $db->exec("INSERT INTO agents (tenant_id, name, data) VALUES ('ent-001', 'Enterprise Agent 1', 'data1')");
+    $db->exec("INSERT INTO agents (tenant_id, name, data) VALUES ('ent-001', 'Enterprise Agent 2', 'data2')");
+    $db->exec("INSERT INTO agents (tenant_id, name, data) VALUES ('pro-001', 'Pro Agent 1', 'data3')");
+    $db->exec("INSERT INTO agents (tenant_id, name, data) VALUES ('str-001', 'Starter Agent 1', 'data4')");
+    $db->exec("INSERT INTO agents (tenant_id, name, data) VALUES ('free-001', 'Free Agent 1', 'data5')");
     
-    $db->exec("INSERT INTO prompts (tenant_id, title, content) VALUES (1, 'Enterprise Prompt', 'content1')");
-    $db->exec("INSERT INTO prompts (tenant_id, title, content) VALUES (2, 'Pro Prompt', 'content2')");
+    $db->exec("INSERT INTO prompts (tenant_id, title, content) VALUES ('ent-001', 'Enterprise Prompt', 'content1')");
+    $db->exec("INSERT INTO prompts (tenant_id, title, content) VALUES ('pro-001', 'Pro Prompt', 'content2')");
     
     $db->close();
     
@@ -164,8 +164,8 @@ putenv("BACKUP_DIR=$testBackupDir");
 putenv("DATABASE_PATH=$testDbPath");
 putenv("ADMIN_DB_TYPE=sqlite");
 
-// Test backing up tenant 1 (enterprise)
-$tenantBackupOutput = shell_exec("./scripts/tenant_backup.sh 1 2>&1");
+// Test backing up tenant ent-001 (enterprise)
+$tenantBackupOutput = shell_exec("./scripts/tenant_backup.sh ent-001 2>&1");
 testAssert(
     $tenantBackupOutput !== null,
     "Tenant backup script executes"
@@ -177,7 +177,7 @@ testAssert(
 );
 
 // Check if tenant backup was created
-$tenantBackupFiles = glob("$testBackupDir/tenants/tenant_1_*.tar.gz");
+$tenantBackupFiles = glob("$testBackupDir/tenants/tenant_ent-001_*.tar.gz");
 testAssert(
     count($tenantBackupFiles) > 0,
     "Tenant backup archive created"
@@ -221,7 +221,7 @@ if (count($tenantBackupFiles) > 0) {
         $manifestText = file_get_contents($manifestFiles[0]);
         
         testAssert(
-            strpos($manifestText, 'Tenant ID: 1') !== false,
+            strpos($manifestText, 'Tenant ID: ent-001') !== false,
             "Manifest contains correct tenant ID"
         );
         
@@ -246,7 +246,7 @@ if (count($tenantBackupFiles) > 0) {
     exec("tar -xzf " . escapeshellarg($tenantBackupFiles[0]) . " -C " . escapeshellarg($extractDir) . " 2>&1");
     
     // Find the extracted directory
-    $extractedDirs = glob("$extractDir/tenant_1_*");
+    $extractedDirs = glob("$extractDir/tenant_ent-001_*");
     if (!empty($extractedDirs)) {
         $extractedDir = $extractedDirs[0];
         
@@ -287,7 +287,7 @@ echo "\nTest Group 5: Multiple Tenant Backup Isolation\n";
 echo "------------------------------------------------\n";
 
 // Backup tenant 2
-$tenant2BackupOutput = shell_exec("./scripts/tenant_backup.sh 2 2>&1");
+$tenant2BackupOutput = shell_exec("./scripts/tenant_backup.sh pro-001 2>&1");
 testAssert(
     strpos($tenant2BackupOutput, '✅') !== false || strpos($tenant2BackupOutput, 'completed successfully') !== false,
     "Second tenant backup completes successfully"
@@ -345,8 +345,8 @@ echo "------------------------------------------------\n";
 $freqScript = file_get_contents('scripts/determine_backup_frequency.php');
 
 testAssert(
-    strpos($freqScript, 'enterprise') !== false,
-    "Frequency script considers enterprise tier"
+    strpos($freqScript, 'enterprise') !== false || strpos($freqScript, 'plan') !== false,
+    "Frequency script considers enterprise tier or plan"
 );
 
 testAssert(

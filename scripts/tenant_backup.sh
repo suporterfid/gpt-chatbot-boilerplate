@@ -33,6 +33,12 @@ if [ -z "$TENANT_ID" ]; then
     exit 1
 fi
 
+# Validate tenant ID format (alphanumeric, hyphens, underscores only)
+if ! [[ "$TENANT_ID" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "Error: Invalid tenant ID format. Only alphanumeric characters, hyphens, and underscores allowed."
+    exit 1
+fi
+
 # Load .env if exists
 if [ -f .env ]; then
     export $(cat .env | grep -v '^#' | xargs)
@@ -99,15 +105,17 @@ log_error() {
 # Verify tenant exists
 echo "Verifying tenant exists..."
 if [ "$DB_TYPE" = "sqlite" ]; then
-    TENANT_EXISTS=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM tenants WHERE id = $TENANT_ID;" 2>/dev/null || echo "0")
+    # Use parameterized query approach - escape single quotes in tenant ID
+    SAFE_TENANT_ID="${TENANT_ID//\'/\'\'}"
+    TENANT_EXISTS=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM tenants WHERE id = '$SAFE_TENANT_ID';" 2>/dev/null || echo "0")
     if [ "$TENANT_EXISTS" -eq 0 ]; then
         log_error "Tenant $TENANT_ID not found in database"
         exit 1
     fi
     
     # Get tenant info
-    TENANT_NAME=$(sqlite3 "$DB_PATH" "SELECT name FROM tenants WHERE id = $TENANT_ID;" 2>/dev/null || echo "Unknown")
-    TENANT_STATUS=$(sqlite3 "$DB_PATH" "SELECT status FROM tenants WHERE id = $TENANT_ID;" 2>/dev/null || echo "unknown")
+    TENANT_NAME=$(sqlite3 "$DB_PATH" "SELECT name FROM tenants WHERE id = '$SAFE_TENANT_ID';" 2>/dev/null || echo "Unknown")
+    TENANT_STATUS=$(sqlite3 "$DB_PATH" "SELECT status FROM tenants WHERE id = '$SAFE_TENANT_ID';" 2>/dev/null || echo "unknown")
     
     echo "✓ Tenant found: $TENANT_NAME (Status: $TENANT_STATUS)"
 else
@@ -137,7 +145,7 @@ echo "Exporting tenant metadata..."
 if [ "$DB_TYPE" = "sqlite" ]; then
     sqlite3 "$DB_PATH" > "$BACKUP_DIR/tenant_record.sql" 2>&1 <<EOF
 .mode insert tenants
-SELECT * FROM tenants WHERE id = $TENANT_ID;
+SELECT * FROM tenants WHERE id = '$SAFE_TENANT_ID';
 EOF
     echo "✓ Tenant record exported"
     echo "  - tenant_record.sql" >> "$MANIFEST_FILE"
@@ -170,7 +178,7 @@ for table in "${TENANT_TABLES[@]}"; do
         fi
         
         # Count records
-        RECORD_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM $table WHERE tenant_id = $TENANT_ID;" 2>/dev/null || echo "0")
+        RECORD_COUNT=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM $table WHERE tenant_id = '$SAFE_TENANT_ID';" 2>/dev/null || echo "0")
         
         if [ "$RECORD_COUNT" -eq 0 ]; then
             echo "  ⓘ No records found in $table for tenant $TENANT_ID"
@@ -180,7 +188,7 @@ for table in "${TENANT_TABLES[@]}"; do
         # Export data
         sqlite3 "$DB_PATH" > "$BACKUP_DIR/${table}.sql" 2>&1 <<EOF
 .mode insert $table
-SELECT * FROM $table WHERE tenant_id = $TENANT_ID;
+SELECT * FROM $table WHERE tenant_id = '$SAFE_TENANT_ID';
 EOF
         
         if [ $? -eq 0 ]; then

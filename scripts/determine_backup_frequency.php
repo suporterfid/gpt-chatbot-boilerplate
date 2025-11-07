@@ -13,18 +13,19 @@
  */
 
 require_once __DIR__ . '/../config.php';
-require_once __DIR__ . '/../includes/Database.php';
+require_once __DIR__ . '/../includes/DB.php';
 
 try {
-    $db = new Database();
+    $db = DB::getInstance();
     
     // Query for highest tier among active tenants
+    // Check both plan column and settings_json for tier information
     $sql = "
         SELECT 
             CASE
-                WHEN LOWER(settings) LIKE '%enterprise%' OR LOWER(tier) = 'enterprise' THEN 'hourly'
-                WHEN LOWER(settings) LIKE '%pro%' OR LOWER(tier) = 'pro' THEN '6hourly'
-                WHEN LOWER(settings) LIKE '%starter%' OR LOWER(tier) = 'starter' THEN 'daily'
+                WHEN LOWER(COALESCE(plan, '')) LIKE '%enterprise%' OR LOWER(COALESCE(settings_json, '{}')) LIKE '%enterprise%' THEN 'hourly'
+                WHEN LOWER(COALESCE(plan, '')) LIKE '%pro%' OR LOWER(COALESCE(settings_json, '{}')) LIKE '%pro%' THEN '6hourly'
+                WHEN LOWER(COALESCE(plan, '')) LIKE '%starter%' OR LOWER(COALESCE(settings_json, '{}')) LIKE '%starter%' THEN 'daily'
                 ELSE 'weekly'
             END as frequency,
             COUNT(*) as tenant_count
