@@ -1,0 +1,250 @@
+{
+  "dashboard": {
+    "title": "Multi-Tenant Observability Dashboard",
+    "tags": ["chatbot", "multi-tenant", "tenants"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "title": "Active Tenants (24h)",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "chatbot_active_tenants_24h",
+            "legendFormat": "Active Tenants"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "auto"
+        }
+      },
+      {
+        "title": "Total Jobs by Tenant",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id) (chatbot_tenant_jobs_total)",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "auto"
+        }
+      },
+      {
+        "title": "Worker Jobs Completed by Tenant",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id) (chatbot_worker_jobs_completed_total)",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "auto"
+        }
+      },
+      {
+        "title": "Worker Jobs Failed by Tenant",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id) (chatbot_worker_jobs_failed_total)",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto",
+          "textMode": "value",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 10, "color": "yellow"},
+              {"value": 50, "color": "red"}
+            ]
+          }
+        }
+      },
+      {
+        "title": "Job Processing Rate by Tenant",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id) (rate(chatbot_tenant_jobs_total[5m]))",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Jobs/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "Job Error Rate by Tenant",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id) (rate(chatbot_tenant_jobs_total{status=\"failed\"}[5m])) / sum by (tenant_id) (rate(chatbot_tenant_jobs_total[5m]))",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "percentunit", "label": "Error Rate", "max": 1, "min": 0},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "Jobs by Status and Tenant",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id, status) (chatbot_tenant_jobs_total)",
+            "legendFormat": "{{tenant_id}} - {{status}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Jobs"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "Conversations per Tenant (24h)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+        "targets": [
+          {
+            "expr": "chatbot_tenant_conversations_24h",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Conversations"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "Worker Job Duration by Tenant",
+        "type": "heatmap",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id, le) (rate(chatbot_agent_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "options": {
+          "calculate": false,
+          "calculation": {},
+          "cellGap": 2,
+          "cellRadius": 0,
+          "color": {
+            "exponent": 0.5,
+            "fill": "dark-orange",
+            "mode": "scheme",
+            "reverse": false,
+            "scale": "exponential",
+            "scheme": "Spectral",
+            "steps": 128
+          }
+        }
+      },
+      {
+        "title": "API Requests by Tenant",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id) (rate(chatbot_api_requests_total{tenant_id!=\"\"}[5m]))",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Requests/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "Tenant Resource Usage",
+        "type": "table",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 28},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id) (chatbot_tenant_jobs_total)",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {
+                "Time": true,
+                "__name__": true
+              },
+              "indexByName": {},
+              "renameByName": {
+                "tenant_id": "Tenant ID",
+                "Value": "Total Jobs"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "title": "Webhook Events by Tenant",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 36},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id) (rate(chatbot_webhook_events_processed_total{tenant_id!=\"\"}[5m]))",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "Events/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "title": "OpenAI API Calls by Tenant",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 36},
+        "targets": [
+          {
+            "expr": "sum by (tenant_id) (rate(chatbot_openai_requests_total{tenant_id!=\"\"}[5m]))",
+            "legendFormat": "{{tenant_id}}"
+          }
+        ],
+        "yaxes": [
+          {"format": "ops", "label": "API Calls/sec"},
+          {"format": "short"}
+        ]
+      }
+    ]
+  },
+  "overwrite": true
+}
