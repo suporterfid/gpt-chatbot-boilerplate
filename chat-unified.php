@@ -7,6 +7,10 @@ require_once 'config.php';
 require_once 'includes/OpenAIClient.php';
 require_once 'includes/ChatHandler.php';
 require_once 'includes/AuditService.php';
+require_once 'includes/UsageTrackingService.php';
+require_once 'includes/QuotaService.php';
+require_once 'includes/TenantRateLimitService.php';
+require_once 'includes/TenantUsageService.php';
 
 // Initialize observability if enabled
 $observability = null;
@@ -113,6 +117,69 @@ function sendSSEEvent($type, $data = null, $id = null) {
 }
 
 /**
+ * Extract tenant ID from request headers, API keys, or tokens
+ * Returns tenant ID or null if not found
+ * 
+ * @param object|null $db Database connection for API key lookup
+ * @return string|null Tenant ID
+ */
+function extractTenantId($db = null) {
+    // Method 1: Check for X-Tenant-ID header (explicit tenant identification)
+    $headers = [];
+    if (function_exists('getallheaders')) {
+        $headers = array_change_key_case(getallheaders(), CASE_LOWER);
+    }
+    
+    if (!empty($headers['x-tenant-id'])) {
+        return trim($headers['x-tenant-id']);
+    }
+    
+    // Method 2: Check for API key in Authorization header or X-API-Key header
+    $apiKey = null;
+    
+    if (!empty($_SERVER['HTTP_AUTHORIZATION'])) {
+        if (preg_match('/^Bearer\s+(.+)$/i', $_SERVER['HTTP_AUTHORIZATION'], $matches)) {
+            $apiKey = trim($matches[1]);
+        }
+    } elseif (!empty($headers['authorization'])) {
+        if (preg_match('/^Bearer\s+(.+)$/i', $headers['authorization'], $matches)) {
+            $apiKey = trim($matches[1]);
+        }
+    } elseif (!empty($_SERVER['HTTP_X_API_KEY'])) {
+        $apiKey = trim($_SERVER['HTTP_X_API_KEY']);
+    } elseif (!empty($headers['x-api-key'])) {
+        $apiKey = trim($headers['x-api-key']);
+    }
+    
+    // If we have an API key and database connection, look up the tenant
+    if ($apiKey && $db) {
+        try {
+            // Look up API key in admin_api_keys table
+            $sql = "SELECT tenant_id FROM admin_api_keys WHERE api_key = ? AND (expires_at IS NULL OR expires_at > datetime('now'))";
+            $result = $db->query($sql, [$apiKey]);
+            
+            if (!empty($result) && isset($result[0]['tenant_id'])) {
+                return $result[0]['tenant_id'];
+            }
+        } catch (Exception $e) {
+            error_log("Failed to lookup tenant from API key: " . $e->getMessage());
+        }
+    }
+    
+    // Method 3: Check for tenant_id in request parameters (GET/POST)
+    if (!empty($_GET['tenant_id'])) {
+        return trim($_GET['tenant_id']);
+    }
+    
+    if (!empty($_POST['tenant_id'])) {
+        return trim($_POST['tenant_id']);
+    }
+    
+    // No tenant ID found
+    return null;
+}
+
+/**
  * Decode and validate tools payload from request input.
  *
  * @param mixed $rawTools
@@ -195,18 +262,38 @@ try {
         }
     }
     
-    // Initialize Audit Service
+    // Extract tenant ID from request (for multi-tenant rate limiting)
+    $tenantId = extractTenantId($db ?? null);
+    
+    // Initialize Audit Service (with tenant context if available)
     $auditService = null;
     if ($config['auditing']['enabled']) {
         try {
-            $auditService = new AuditService($config['auditing']);
+            $auditService = new AuditService($config['auditing'], $tenantId);
         } catch (Exception $e) {
             log_debug('Failed to initialize AuditService: ' . $e->getMessage(), 'warn');
         }
     }
     
-    // Initialize ChatHandler with observability
-    $chatHandler = new ChatHandler($config, $agentService, $auditService, $observability);
+    // Initialize multi-tenant services (classes already loaded at top of file)
+    $usageTrackingService = null;
+    $quotaService = null;
+    $rateLimitService = null;
+    $tenantUsageService = null;
+    
+    if ($config['usage_tracking']['enabled'] ?? false) {
+        try {
+            $usageTrackingService = new UsageTrackingService($db);
+            $quotaService = new QuotaService($db, $usageTrackingService);
+            $rateLimitService = new TenantRateLimitService($db);
+            $tenantUsageService = new TenantUsageService($db);
+        } catch (Exception $e) {
+            log_debug('Failed to initialize usage tracking services: ' . $e->getMessage(), 'warn');
+        }
+    }
+    
+    // Initialize ChatHandler with observability and multi-tenant services
+    $chatHandler = new ChatHandler($config, $agentService, $auditService, $observability, $usageTrackingService, $quotaService, $rateLimitService, $tenantUsageService);
     
     // Start request span if observability is enabled
     $requestSpanId = null;
@@ -480,15 +567,15 @@ try {
 
         // Route to appropriate handler
         if ($apiType === 'responses') {
-            $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion, $tools, $responseFormat, $agentId);
+            $chatHandler->handleResponsesChat($message, $conversationId, $fileData, $promptId, $promptVersion, $tools, $responseFormat, $agentId, $tenantId);
         } else {
-            $chatHandler->handleChatCompletion($message, $conversationId, $agentId);
+            $chatHandler->handleChatCompletion($message, $conversationId, $agentId, $tenantId);
         }
     } else {
         if ($apiType === 'responses') {
-            $result = $chatHandler->handleResponsesChatSync($message, $conversationId, $fileData, $promptId, $promptVersion, $tools, $responseFormat, $agentId);
+            $result = $chatHandler->handleResponsesChatSync($message, $conversationId, $fileData, $promptId, $promptVersion, $tools, $responseFormat, $agentId, $tenantId);
         } else {
-            $result = $chatHandler->handleChatCompletionSync($message, $conversationId, $agentId);
+            $result = $chatHandler->handleChatCompletionSync($message, $conversationId, $agentId, $tenantId);
         }
 
         $result['conversation_id'] = $conversationId;

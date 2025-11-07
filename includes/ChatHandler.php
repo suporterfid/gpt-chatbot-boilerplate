@@ -163,8 +163,9 @@ class ChatHandler {
     }
 
     public function validateRequest($message, $conversationId, $fileData = null, $agentConfig = null) {
-        // Rate limiting (per-agent if whitelabel)
-        $this->checkRateLimit($agentConfig);
+        // Rate limiting - use legacy method for whitelabel backwards compatibility
+        // The proper tenant-based rate limiting is handled in the individual handler methods
+        $this->checkRateLimitLegacy($agentConfig);
 
         // Validate message
         if (empty(trim($message))) {
@@ -201,10 +202,10 @@ class ChatHandler {
             $tenantId = $this->getTenantId($conversationId);
         }
         
-        // Check rate limits
+        // Check tenant-based rate limits
         try {
-            $this->checkRateLimit($tenantId, 'api_call');
-            $this->checkRateLimit($tenantId, 'message');
+            $this->checkRateLimitTenant($tenantId, 'api_call');
+            $this->checkRateLimitTenant($tenantId, 'message');
         } catch (Exception $e) {
             if ($e->getCode() == 429) {
                 sendSSEEvent('error', [
@@ -277,7 +278,33 @@ class ChatHandler {
         $this->streamChatCompletion($messages, $conversationId, $agentOverrides, $tenantId);
     }
 
-    public function handleChatCompletionSync($message, $conversationId, $agentId = null) {
+    public function handleChatCompletionSync($message, $conversationId, $agentId = null, $tenantId = null) {
+        // Get tenant ID if not provided
+        if (!$tenantId) {
+            $tenantId = $this->getTenantId($conversationId);
+        }
+        
+        // Check tenant-based rate limits
+        if ($tenantId) {
+            try {
+                $this->checkRateLimitTenant($tenantId, 'api_call');
+                $this->checkRateLimitTenant($tenantId, 'message');
+            } catch (Exception $e) {
+                if ($e->getCode() == 429) {
+                    throw $e;
+                }
+            }
+            
+            // Check quotas
+            try {
+                $this->checkQuota($tenantId, 'message', 'daily');
+            } catch (Exception $e) {
+                if ($e->getCode() == 429) {
+                    throw $e;
+                }
+            }
+        }
+        
         // Resolve agent overrides
         $agentOverrides = $this->resolveAgentOverrides($agentId);
         
@@ -386,8 +413,45 @@ class ChatHandler {
      * @param array|null $tools Optional Responses tools configuration overrides.
      * @param array|null $responseFormat Optional response_format configuration for structured outputs.
      * @param string|null $agentId Optional agent ID to load configuration from.
+     * @param string|null $tenantId Optional tenant ID for multi-tenant rate limiting and quotas.
      */
-    public function handleResponsesChat($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null, $responseFormat = null, $agentId = null) {
+    public function handleResponsesChat($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null, $responseFormat = null, $agentId = null, $tenantId = null) {
+        // Get tenant ID if not provided
+        if (!$tenantId) {
+            $tenantId = $this->getTenantId($conversationId);
+        }
+        
+        // Check tenant-based rate limits
+        try {
+            $this->checkRateLimitTenant($tenantId, 'api_call');
+            $this->checkRateLimitTenant($tenantId, 'message');
+        } catch (Exception $e) {
+            if ($e->getCode() == 429) {
+                sendSSEEvent('error', [
+                    'code' => 429,
+                    'message' => $e->getMessage(),
+                    'type' => 'rate_limit_exceeded'
+                ]);
+                return;
+            }
+            throw $e;
+        }
+        
+        // Check quotas
+        try {
+            $this->checkQuota($tenantId, 'message', 'daily');
+        } catch (Exception $e) {
+            if ($e->getCode() == 429) {
+                sendSSEEvent('error', [
+                    'code' => 429,
+                    'message' => $e->getMessage(),
+                    'type' => 'quota_exceeded'
+                ]);
+                return;
+            }
+            throw $e;
+        }
+        
         // Resolve agent overrides (agent > config.php)
         $agentOverrides = $this->resolveAgentOverrides($agentId);
         
@@ -798,7 +862,33 @@ class ChatHandler {
      *
      * @return array
      */
-    public function handleResponsesChatSync($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null, $responseFormat = null, $agentId = null) {
+    public function handleResponsesChatSync($message, $conversationId, $fileData = null, $promptId = null, $promptVersion = null, $tools = null, $responseFormat = null, $agentId = null, $tenantId = null) {
+        // Get tenant ID if not provided
+        if (!$tenantId) {
+            $tenantId = $this->getTenantId($conversationId);
+        }
+        
+        // Check tenant-based rate limits
+        if ($tenantId) {
+            try {
+                $this->checkRateLimitTenant($tenantId, 'api_call');
+                $this->checkRateLimitTenant($tenantId, 'message');
+            } catch (Exception $e) {
+                if ($e->getCode() == 429) {
+                    throw $e;
+                }
+            }
+            
+            // Check quotas
+            try {
+                $this->checkQuota($tenantId, 'message', 'daily');
+            } catch (Exception $e) {
+                if ($e->getCode() == 429) {
+                    throw $e;
+                }
+            }
+        }
+        
         // Resolve agent overrides (agent > config.php)
         $agentOverrides = $this->resolveAgentOverrides($agentId);
         
@@ -1749,48 +1839,80 @@ class ChatHandler {
         return $fileIds;
     }
 
-    private function checkRateLimit($agentConfig = null) {
+    /**
+     * Check and enforce tenant-based rate limits (DEPRECATED)
+     * This method kept for backwards compatibility with older whitelabel integrations
+     * 
+     * @deprecated Since v2.0.0. Will be removed in v3.0.0. 
+     *             Use tenant-based rate limiting via checkRateLimitTenant() instead.
+     * 
+     * Migration Example:
+     * OLD: $this->checkRateLimitLegacy($agentConfig);
+     * NEW: $this->checkRateLimitTenant($tenantId, 'api_call');
+     * 
+     * To migrate, ensure your requests include a tenant_id or API key that can be resolved to a tenant.
+     * See docs/TENANT_RATE_LIMITING.md for details.
+     * 
+     * @param array|null $agentConfig Agent configuration
+     * @throws Exception if rate limit exceeded
+     */
+    private function checkRateLimitLegacy($agentConfig = null) {
+        // For whitelabel agents without tenant context, use IP + agent as fallback
         $clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         
-        // Use per-agent rate limits if whitelabel agent is provided
-        $rateLimit = $this->config['chat_config']['rate_limit_requests'];
-        $window = $this->config['chat_config']['rate_limit_window'];
-        $agentKey = '';
-        
+        // Construct a pseudo-tenant ID from IP and agent for backwards compatibility
         if ($agentConfig && isset($agentConfig['agent_public_id'])) {
-            // Per-agent whitelabel rate limiting
-            $agentKey = '_' . $agentConfig['agent_public_id'];
+            $pseudoTenantId = 'whitelabel_' . $agentConfig['agent_public_id'] . '_' . md5($clientIP);
             
-            if (isset($agentConfig['wl_rate_limit_requests']) && $agentConfig['wl_rate_limit_requests'] > 0) {
-                $rateLimit = $agentConfig['wl_rate_limit_requests'];
-            }
+            // Get custom rate limits from whitelabel config
+            $limit = isset($agentConfig['wl_rate_limit_requests']) && $agentConfig['wl_rate_limit_requests'] > 0
+                ? $agentConfig['wl_rate_limit_requests']
+                : $this->config['chat_config']['rate_limit_requests'];
             
-            if (isset($agentConfig['wl_rate_limit_window_seconds']) && $agentConfig['wl_rate_limit_window_seconds'] > 0) {
-                $window = $agentConfig['wl_rate_limit_window_seconds'];
+            $window = isset($agentConfig['wl_rate_limit_window_seconds']) && $agentConfig['wl_rate_limit_window_seconds'] > 0
+                ? $agentConfig['wl_rate_limit_window_seconds']
+                : $this->config['chat_config']['rate_limit_window'];
+        } else {
+            // No tenant context, use IP-based fallback
+            $pseudoTenantId = 'ip_' . md5($clientIP);
+            $limit = $this->config['chat_config']['rate_limit_requests'];
+            $window = $this->config['chat_config']['rate_limit_window'];
+        }
+        
+        // Use TenantRateLimitService if available, otherwise fall back to file-based
+        if ($this->rateLimitService) {
+            try {
+                $this->rateLimitService->enforceRateLimit($pseudoTenantId, 'api_call', $limit, $window);
+                return;
+            } catch (Exception $e) {
+                if ($e->getCode() == 429) {
+                    throw $e;
+                }
+                error_log("Rate limit service error: " . $e->getMessage());
+                // Fall through to file-based fallback
             }
         }
         
-        $rateLimitFile = sys_get_temp_dir() . '/chatbot_rate_limit_' . md5($clientIP . $agentKey);
-        $requestsFile = sys_get_temp_dir() . '/chatbot_requests_' . md5($clientIP . $agentKey);
-
+        // File-based fallback for backwards compatibility
+        $requestsFile = sys_get_temp_dir() . '/chatbot_requests_' . md5($pseudoTenantId);
         $currentTime = time();
-
+        
         // Read existing requests
         $requests = [];
         if (file_exists($requestsFile)) {
             $requests = json_decode(file_get_contents($requestsFile), true) ?: [];
         }
-
+        
         // Remove old requests outside the window
         $requests = array_filter($requests, function($timestamp) use ($currentTime, $window) {
             return $currentTime - $timestamp < $window;
         });
-
+        
         // Check if rate limit exceeded
-        if (count($requests) >= $rateLimit) {
+        if (count($requests) >= $limit) {
             throw new Exception('Rate limit exceeded. Please wait before sending another message.', 429);
         }
-
+        
         // Add current request
         $requests[] = $currentTime;
         file_put_contents($requestsFile, json_encode($requests));
@@ -1981,27 +2103,39 @@ class ChatHandler {
     }
     
     /**
-     * Check and enforce tenant rate limits
+     * Check and enforce tenant-based rate limits (Tenant/API Key based - NOT IP based)
+     * This is the primary rate limiting mechanism for multi-tenant support
      * 
-     * @param string|null $tenantId Tenant ID
-     * @param string $resourceType Type of resource being accessed
-     * @throws Exception if rate limit exceeded
+     * @param string|null $tenantId Tenant ID or API key identifier
+     * @param string $resourceType Type of resource being accessed (api_call, message, completion, etc)
+     * @throws Exception if rate limit exceeded (429 error code)
      */
-    private function checkRateLimit($tenantId, $resourceType = 'api_call') {
+    private function checkRateLimitTenant($tenantId, $resourceType = 'api_call') {
+        // Check configuration: should we require tenant ID?
+        $requireTenantId = $this->config['usage_tracking']['require_tenant_id'] ?? false;
+        
         if (!$tenantId) {
-            return; // Skip if no tenant ID
+            if ($requireTenantId) {
+                // Strict mode: require tenant ID for all requests
+                error_log("ERROR: Tenant ID required but not provided for resource type: $resourceType");
+                throw new Exception('Tenant identification required. Please include API key or X-Tenant-ID header.', 401);
+            }
+            // Permissive mode: allow anonymous requests (fallback to legacy rate limiting)
+            error_log("Warning: Rate limit check called without tenant ID for resource type: $resourceType (permissive mode)");
+            return;
         }
         
         $enabled = $this->config['usage_tracking']['enabled'] ?? false;
         if (!$enabled || !$this->rateLimitService) {
+            // Rate limiting not enabled or service not available
             return;
         }
         
         try {
-            // Get tenant-specific rate limit or use defaults
+            // Get tenant-specific rate limit configuration or use defaults
             $rateLimit = $this->rateLimitService->getTenantRateLimit($tenantId, $resourceType);
             
-            // Enforce the rate limit
+            // Enforce the rate limit (throws exception if exceeded)
             $this->rateLimitService->enforceRateLimit(
                 $tenantId,
                 $resourceType,
@@ -2009,11 +2143,12 @@ class ChatHandler {
                 $rateLimit['window_seconds']
             );
         } catch (Exception $e) {
-            // Re-throw rate limit exceptions
+            // Re-throw rate limit exceptions (429)
             if ($e->getCode() == 429) {
                 throw $e;
             }
-            error_log("Rate limit check error: " . $e->getMessage());
+            // Log other errors but don't block the request
+            error_log("Rate limit check error for tenant $tenantId: " . $e->getMessage());
         }
     }
     

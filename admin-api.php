@@ -227,15 +227,45 @@ function checkTenantStatus($tenantId, $db) {
     }
 }
 
-// Rate limiting for admin endpoints
-function checkAdminRateLimit($config) {
-    $clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-    $requestsFile = sys_get_temp_dir() . '/admin_requests_' . md5($clientIP);
+// Tenant/User-based rate limiting for admin endpoints
+function checkAdminRateLimit($config, $user, $rateLimitService = null) {
+    // Use tenant ID or user ID as the rate limiting key (NOT IP address)
+    $tenantId = $user['tenant_id'] ?? null;
+    $userId = $user['id'] ?? $user['email'] ?? null;
     
-    $currentTime = time();
+    // Admin endpoints MUST have authenticated user
+    if (!$userId) {
+        log_admin("Rate limit check failed: no user ID available", 'error');
+        sendError('Authentication required', 401);
+    }
+    
+    // Construct identifier: prefer tenant, fallback to user
+    $identifier = $tenantId ? "tenant_$tenantId" : "user_$userId";
+    
     // Admin endpoints get more generous limits: 300 req/min (vs 60 for chat)
     $rateLimit = $config['admin']['rate_limit_requests'] ?? 300;
     $window = $config['admin']['rate_limit_window'] ?? 60;
+    
+    // Try to use TenantRateLimitService if available
+    if ($rateLimitService && $tenantId) {
+        try {
+            // Use 'admin_api' as resource type for admin operations
+            $rateLimitService->enforceRateLimit($tenantId, 'admin_api', $rateLimit, $window);
+            return;
+        } catch (Exception $e) {
+            if ($e->getCode() == 429) {
+                log_admin("Rate limit exceeded for tenant: $tenantId (user: {$user['email']})", 'warn');
+                sendError($e->getMessage(), 429);
+            }
+            // Log other errors and fall through to file-based fallback
+            error_log("Admin rate limit service error: " . $e->getMessage());
+        }
+    }
+    
+    // File-based fallback (for users without tenant context or service unavailable)
+    $requestsFile = sys_get_temp_dir() . '/admin_requests_' . md5($identifier);
+    
+    $currentTime = time();
     
     // Read existing requests
     $requests = [];
@@ -250,7 +280,7 @@ function checkAdminRateLimit($config) {
     
     // Check if rate limit exceeded
     if (count($requests) >= $rateLimit) {
-        log_admin("Rate limit exceeded for IP: $clientIP", 'warn');
+        log_admin("Rate limit exceeded for $identifier (user: {$user['email']})", 'warn');
         sendError('Rate limit exceeded. Please wait before making another request.', 429);
     }
     
@@ -295,9 +325,6 @@ try {
         // Check tenant status (after authentication, before rate limit)
         $tenantId = $authenticatedUser['tenant_id'] ?? null;
         checkTenantStatus($tenantId, $db);
-        
-        // Check rate limit (after authentication and tenant check)
-        checkAdminRateLimit($config);
     }
 
     // Initialize OpenAI Admin Client
@@ -354,6 +381,11 @@ try {
     $notificationService = new NotificationService($db);
     $tenantUsageService = new TenantUsageService($db);
     $rateLimitService = new TenantRateLimitService($db);
+    
+    // Check tenant/user-based rate limit (after services initialized)
+    if ($requiresAuth && $authenticatedUser) {
+        checkAdminRateLimit($config, $authenticatedUser, $rateLimitService);
+    }
 
     $logUser = $authenticatedUser['email'] ?? 'anonymous';
     log_admin("$method /admin-api.php?action=$action [user: $logUser]");

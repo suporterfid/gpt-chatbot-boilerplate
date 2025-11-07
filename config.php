@@ -427,6 +427,7 @@ $config = [
     // Usage Tracking & Billing Configuration
     'usage_tracking' => [
         'enabled' => filter_var($_ENV['USAGE_TRACKING_ENABLED'] ?? getenv('USAGE_TRACKING_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'require_tenant_id' => filter_var($_ENV['USAGE_TRACKING_REQUIRE_TENANT_ID'] ?? getenv('USAGE_TRACKING_REQUIRE_TENANT_ID') ?: 'false', FILTER_VALIDATE_BOOLEAN),
     ],
     
     'quota_enforcement' => [
