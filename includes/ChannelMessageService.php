@@ -7,9 +7,25 @@ require_once __DIR__ . '/DB.php';
 
 class ChannelMessageService {
     private $db;
+    private $tenantId;
     
-    public function __construct($db) {
+    public function __construct($db, $tenantId = null) {
         $this->db = $db;
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Set tenant context for tenant-scoped queries
+     */
+    public function setTenantId($tenantId) {
+        $this->tenantId = $tenantId;
+    }
+    
+    /**
+     * Get current tenant ID
+     */
+    public function getTenantId() {
+        return $this->tenantId;
     }
     
     /**
@@ -20,7 +36,15 @@ class ChannelMessageService {
      */
     public function messageExists(string $externalMessageId): bool {
         $sql = "SELECT id FROM channel_messages WHERE external_message_id = ?";
-        $result = $this->db->getOne($sql, [$externalMessageId]);
+        $params = [$externalMessageId];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $result = $this->db->getOne($sql, $params);
         return $result !== null;
     }
     
@@ -33,6 +57,7 @@ class ChannelMessageService {
      * @param string $conversationId Conversation ID
      * @param string|null $externalMessageId External message ID
      * @param array $payload Message payload
+     * @param string|null $tenantId Optional tenant ID (uses context if not provided)
      * @return string Message ID
      */
     public function recordInbound(
@@ -41,15 +66,17 @@ class ChannelMessageService {
         string $externalUserId,
         string $conversationId,
         ?string $externalMessageId,
-        array $payload
+        array $payload,
+        ?string $tenantId = null
     ): string {
+        $tenantId = $tenantId ?? $this->tenantId;
         $id = $this->generateUUID();
         $now = date('c');
         
         $sql = "INSERT INTO channel_messages 
                 (id, agent_id, channel, direction, external_message_id, external_user_id, 
-                 conversation_id, payload_json, status, created_at, updated_at)
-                VALUES (?, ?, ?, 'inbound', ?, ?, ?, ?, 'received', ?, ?)";
+                 conversation_id, tenant_id, payload_json, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'inbound', ?, ?, ?, ?, ?, 'received', ?, ?)";
         
         try {
             $this->db->insert($sql, [
@@ -59,6 +86,7 @@ class ChannelMessageService {
                 $externalMessageId,
                 $externalUserId,
                 $conversationId,
+                $tenantId,
                 json_encode($payload),
                 $now,
                 $now
@@ -85,6 +113,7 @@ class ChannelMessageService {
      * @param string $conversationId Conversation ID
      * @param array $payload Message payload
      * @param string|null $externalMessageId External message ID (if known)
+     * @param string|null $tenantId Optional tenant ID (uses context if not provided)
      * @return string Message ID
      */
     public function recordOutbound(
@@ -93,15 +122,17 @@ class ChannelMessageService {
         string $externalUserId,
         string $conversationId,
         array $payload,
-        ?string $externalMessageId = null
+        ?string $externalMessageId = null,
+        ?string $tenantId = null
     ): string {
+        $tenantId = $tenantId ?? $this->tenantId;
         $id = $this->generateUUID();
         $now = date('c');
         
         $sql = "INSERT INTO channel_messages 
                 (id, agent_id, channel, direction, external_message_id, external_user_id, 
-                 conversation_id, payload_json, status, created_at, updated_at)
-                VALUES (?, ?, ?, 'outbound', ?, ?, ?, ?, 'sent', ?, ?)";
+                 conversation_id, tenant_id, payload_json, status, created_at, updated_at)
+                VALUES (?, ?, ?, 'outbound', ?, ?, ?, ?, ?, 'sent', ?, ?)";
         
         $this->db->insert($sql, [
             $id,
@@ -110,6 +141,7 @@ class ChannelMessageService {
             $externalMessageId,
             $externalUserId,
             $conversationId,
+            $tenantId,
             json_encode($payload),
             $now,
             $now
@@ -138,11 +170,20 @@ class ChannelMessageService {
      */
     public function getMessages(string $conversationId, int $limit = 50, int $offset = 0): array {
         $sql = "SELECT * FROM channel_messages 
-                WHERE conversation_id = ? 
-                ORDER BY created_at DESC 
-                LIMIT ? OFFSET ?";
+                WHERE conversation_id = ?";
+        $params = [$conversationId];
         
-        return $this->db->query($sql, [$conversationId, $limit, $offset]);
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $sql .= " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+        $params[] = $limit;
+        $params[] = $offset;
+        
+        return $this->db->query($sql, $params);
     }
     
     /**
@@ -151,6 +192,12 @@ class ChannelMessageService {
     public function getStats(string $agentId, string $channel = null): array {
         $params = [$agentId];
         $whereClauses = ["agent_id = ?"];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $whereClauses[] = "tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
         
         if ($channel) {
             $whereClauses[] = "channel = ?";

@@ -196,6 +196,37 @@ function getRequestBody() {
     return $decoded ?? [];
 }
 
+// Check tenant status and block if suspended
+function checkTenantStatus($tenantId, $db) {
+    if ($tenantId === null) {
+        // Super-admin with no tenant restriction
+        return;
+    }
+    
+    try {
+        $sql = "SELECT status FROM tenants WHERE id = ?";
+        $tenant = $db->getOne($sql, [$tenantId]);
+        
+        if (!$tenant) {
+            log_admin("Tenant not found: $tenantId", 'error');
+            sendError('Tenant not found', 404);
+        }
+        
+        if ($tenant['status'] === 'suspended') {
+            log_admin("Access denied: Tenant $tenantId is suspended", 'warn');
+            sendError('Access denied: Tenant is suspended', 403);
+        }
+        
+        if ($tenant['status'] === 'inactive') {
+            log_admin("Access denied: Tenant $tenantId is inactive", 'warn');
+            sendError('Access denied: Tenant is inactive', 403);
+        }
+    } catch (Exception $e) {
+        log_admin('Tenant status check failed: ' . $e->getMessage(), 'error');
+        sendError('Internal server error', 500);
+    }
+}
+
 // Rate limiting for admin endpoints
 function checkAdminRateLimit($config) {
     $clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
@@ -261,7 +292,11 @@ try {
     if ($requiresAuth) {
         $authenticatedUser = checkAuthentication($config, $adminAuth);
 
-        // Check rate limit (after authentication, before processing request)
+        // Check tenant status (after authentication, before rate limit)
+        $tenantId = $authenticatedUser['tenant_id'] ?? null;
+        checkTenantStatus($tenantId, $db);
+        
+        // Check rate limit (after authentication and tenant check)
         checkAdminRateLimit($config);
     }
 
@@ -271,6 +306,13 @@ try {
         $openaiClient = new OpenAIAdminClient($config['openai']);
     }
 
+    // Initialize TenantContext singleton
+    require_once __DIR__ . '/includes/TenantContext.php';
+    $tenantContext = TenantContext::getInstance();
+    if ($authenticatedUser) {
+        $tenantContext->setFromUser($authenticatedUser);
+    }
+    
     // Initialize services with tenant context
     $tenantId = $authenticatedUser['tenant_id'] ?? null;
     $agentService = new AgentService($db, $tenantId);
@@ -285,11 +327,11 @@ try {
         $tenantService = new TenantService($db);
     }
     
-    // Initialize Audit Service
+    // Initialize Audit Service with tenant context
     $auditService = null;
     if ($config['auditing']['enabled']) {
         try {
-            $auditService = new AuditService($config['auditing']);
+            $auditService = new AuditService($config['auditing'], $tenantId);
         } catch (Exception $e) {
             log_admin('Failed to initialize AuditService: ' . $e->getMessage(), 'warn');
         }
