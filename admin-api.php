@@ -374,6 +374,8 @@ try {
     require_once __DIR__ . '/includes/NotificationService.php';
     require_once __DIR__ . '/includes/TenantUsageService.php';
     require_once __DIR__ . '/includes/TenantRateLimitService.php';
+    require_once __DIR__ . '/includes/ConsentService.php';
+    require_once __DIR__ . '/includes/WhatsAppTemplateService.php';
     
     $usageTrackingService = new UsageTrackingService($db);
     $quotaService = new QuotaService($db, $usageTrackingService);
@@ -381,6 +383,8 @@ try {
     $notificationService = new NotificationService($db);
     $tenantUsageService = new TenantUsageService($db);
     $rateLimitService = new TenantRateLimitService($db);
+    $consentService = new ConsentService($db, $tenantId);
+    $templateService = new WhatsAppTemplateService($db, $tenantId);
     
     // Check tenant/user-based rate limit (after services initialized)
     if ($requiresAuth && $authenticatedUser) {
@@ -3589,6 +3593,368 @@ try {
                 'tenant_id' => $targetTenantId,
                 'resource_type' => $resourceType
             ]);
+            break;
+            
+        // ===== Consent Management Endpoints =====
+        
+        case 'list_consents':
+            // List consent records with filters
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $filters = [];
+            if (isset($_GET['agent_id'])) {
+                $filters['agent_id'] = $_GET['agent_id'];
+            }
+            if (isset($_GET['channel'])) {
+                $filters['channel'] = $_GET['channel'];
+            }
+            if (isset($_GET['external_user_id'])) {
+                $filters['external_user_id'] = $_GET['external_user_id'];
+            }
+            if (isset($_GET['consent_type'])) {
+                $filters['consent_type'] = $_GET['consent_type'];
+            }
+            if (isset($_GET['consent_status'])) {
+                $filters['consent_status'] = $_GET['consent_status'];
+            }
+            if (isset($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            if (isset($_GET['offset'])) {
+                $filters['offset'] = (int)$_GET['offset'];
+            }
+            
+            $consents = $consentService->listConsents($filters);
+            sendResponse($consents);
+            break;
+            
+        case 'get_consent':
+            // Get specific consent record
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            $channel = $_GET['channel'] ?? '';
+            $externalUserId = $_GET['external_user_id'] ?? '';
+            $consentType = $_GET['consent_type'] ?? 'service';
+            
+            if (empty($agentId) || empty($channel) || empty($externalUserId)) {
+                sendError('agent_id, channel, and external_user_id required', 400);
+            }
+            
+            $consent = $consentService->getConsent($agentId, $channel, $externalUserId, $consentType);
+            if (!$consent) {
+                sendError('Consent not found', 404);
+            }
+            sendResponse($consent);
+            break;
+            
+        case 'grant_consent':
+            // Grant consent for a user
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $body = getRequestBody();
+            $agentId = $body['agent_id'] ?? '';
+            $channel = $body['channel'] ?? '';
+            $externalUserId = $body['external_user_id'] ?? '';
+            
+            if (empty($agentId) || empty($channel) || empty($externalUserId)) {
+                sendError('agent_id, channel, and external_user_id required', 400);
+            }
+            
+            $options = [
+                'consent_type' => $body['consent_type'] ?? 'service',
+                'consent_method' => $body['consent_method'] ?? 'explicit_opt_in',
+                'consent_text' => $body['consent_text'] ?? null,
+                'consent_language' => $body['consent_language'] ?? 'en',
+                'ip_address' => $body['ip_address'] ?? $_SERVER['REMOTE_ADDR'] ?? null,
+                'user_agent' => $body['user_agent'] ?? $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'expires_at' => $body['expires_at'] ?? null,
+                'legal_basis' => $body['legal_basis'] ?? 'consent',
+                'metadata' => $body['metadata'] ?? []
+            ];
+            
+            $consent = $consentService->grantConsent($agentId, $channel, $externalUserId, $options);
+            sendResponse($consent, 201);
+            break;
+            
+        case 'withdraw_consent':
+            // Withdraw consent (opt-out)
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $body = getRequestBody();
+            $agentId = $body['agent_id'] ?? '';
+            $channel = $body['channel'] ?? '';
+            $externalUserId = $body['external_user_id'] ?? '';
+            $consentType = $body['consent_type'] ?? 'all';
+            
+            if (empty($agentId) || empty($channel) || empty($externalUserId)) {
+                sendError('agent_id, channel, and external_user_id required', 400);
+            }
+            
+            $options = [
+                'reason' => $body['reason'] ?? 'User requested opt-out',
+                'triggered_by' => 'admin',
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+            ];
+            
+            $result = $consentService->withdrawConsent($agentId, $channel, $externalUserId, $consentType, $options);
+            sendResponse($result);
+            break;
+            
+        case 'check_consent':
+            // Check if user has active consent
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $agentId = $_GET['agent_id'] ?? '';
+            $channel = $_GET['channel'] ?? '';
+            $externalUserId = $_GET['external_user_id'] ?? '';
+            $consentType = $_GET['consent_type'] ?? 'service';
+            
+            if (empty($agentId) || empty($channel) || empty($externalUserId)) {
+                sendError('agent_id, channel, and external_user_id required', 400);
+            }
+            
+            $hasConsent = $consentService->hasConsent($agentId, $channel, $externalUserId, $consentType);
+            sendResponse(['has_consent' => $hasConsent]);
+            break;
+            
+        case 'get_consent_audit':
+            // Get consent audit history
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $consentId = $_GET['consent_id'] ?? '';
+            if (empty($consentId)) {
+                sendError('consent_id required', 400);
+            }
+            
+            $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
+            $history = $consentService->getConsentAuditHistory($consentId, $limit);
+            sendResponse($history);
+            break;
+            
+        // ===== WhatsApp Template Management Endpoints =====
+        
+        case 'list_templates':
+            // List WhatsApp templates with filters
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $filters = [];
+            if (isset($_GET['agent_id'])) {
+                $filters['agent_id'] = $_GET['agent_id'];
+            }
+            if (isset($_GET['status'])) {
+                $filters['status'] = $_GET['status'];
+            }
+            if (isset($_GET['category'])) {
+                $filters['category'] = $_GET['category'];
+            }
+            if (isset($_GET['language'])) {
+                $filters['language'] = $_GET['language'];
+            }
+            if (isset($_GET['search'])) {
+                $filters['search'] = $_GET['search'];
+            }
+            if (isset($_GET['limit'])) {
+                $filters['limit'] = (int)$_GET['limit'];
+            }
+            if (isset($_GET['offset'])) {
+                $filters['offset'] = (int)$_GET['offset'];
+            }
+            
+            $templates = $templateService->listTemplates($filters);
+            sendResponse($templates);
+            break;
+            
+        case 'get_template':
+            // Get specific template
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $templateId = $_GET['id'] ?? '';
+            if (empty($templateId)) {
+                sendError('Template ID required', 400);
+            }
+            
+            $template = $templateService->getTemplate($templateId);
+            if (!$template) {
+                sendError('Template not found', 404);
+            }
+            sendResponse($template);
+            break;
+            
+        case 'create_template':
+            // Create new WhatsApp template
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $body = getRequestBody();
+            $required = ['template_name', 'template_category', 'language_code', 'content_text'];
+            foreach ($required as $field) {
+                if (empty($body[$field])) {
+                    sendError("Missing required field: $field", 400);
+                }
+            }
+            
+            try {
+                $template = $templateService->createTemplate($body);
+                sendResponse($template, 201);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+            
+        case 'update_template':
+            // Update existing template
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $templateId = $_GET['id'] ?? '';
+            if (empty($templateId)) {
+                sendError('Template ID required', 400);
+            }
+            
+            $body = getRequestBody();
+            try {
+                $template = $templateService->updateTemplate($templateId, $body);
+                sendResponse($template);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+            
+        case 'submit_template':
+            // Submit template for WhatsApp approval
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $templateId = $_GET['id'] ?? '';
+            if (empty($templateId)) {
+                sendError('Template ID required', 400);
+            }
+            
+            try {
+                $template = $templateService->submitTemplate($templateId);
+                sendResponse($template);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+            
+        case 'approve_template':
+            // Mark template as approved (after WhatsApp approval)
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $templateId = $_GET['id'] ?? '';
+            if (empty($templateId)) {
+                sendError('Template ID required', 400);
+            }
+            
+            $body = getRequestBody();
+            $whatsappTemplateId = $body['whatsapp_template_id'] ?? '';
+            if (empty($whatsappTemplateId)) {
+                sendError('whatsapp_template_id required', 400);
+            }
+            
+            $qualityScore = $body['quality_score'] ?? 'PENDING';
+            
+            try {
+                $template = $templateService->approveTemplate($templateId, $whatsappTemplateId, $qualityScore);
+                sendResponse($template);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+            
+        case 'reject_template':
+            // Mark template as rejected
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $templateId = $_GET['id'] ?? '';
+            if (empty($templateId)) {
+                sendError('Template ID required', 400);
+            }
+            
+            $body = getRequestBody();
+            $rejectionReason = $body['rejection_reason'] ?? 'Template rejected by WhatsApp';
+            
+            try {
+                $template = $templateService->rejectTemplate($templateId, $rejectionReason);
+                sendResponse($template);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+            
+        case 'delete_template':
+            // Delete template (draft or rejected only)
+            if ($method !== 'DELETE' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $templateId = $_GET['id'] ?? '';
+            if (empty($templateId)) {
+                sendError('Template ID required', 400);
+            }
+            
+            try {
+                $result = $templateService->deleteTemplate($templateId);
+                sendResponse($result);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+            
+        case 'get_template_stats':
+            // Get template usage statistics
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $templateId = $_GET['id'] ?? '';
+            if (empty($templateId)) {
+                sendError('Template ID required', 400);
+            }
+            
+            $stats = $templateService->getTemplateStats($templateId);
+            sendResponse($stats);
             break;
             
         default:
