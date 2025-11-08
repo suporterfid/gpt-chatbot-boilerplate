@@ -4012,6 +4012,190 @@ try {
             sendResponse($stats);
             break;
             
+        // ==================== COMPLIANCE ENDPOINTS ====================
+        
+        case 'export_user_data':
+            // Export all user data (GDPR Art. 15, LGPD Art. 18)
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $externalUserId = $_GET['user_id'] ?? '';
+            if (empty($externalUserId)) {
+                sendError('user_id required', 400);
+            }
+            
+            $format = $_GET['format'] ?? 'json';
+            if (!in_array($format, ['json', 'csv'])) {
+                sendError('Invalid format. Use json or csv', 400);
+            }
+            
+            require_once 'includes/ComplianceService.php';
+            $complianceService = new ComplianceService($db, $tenantId);
+            
+            try {
+                $export = $complianceService->exportUserData($externalUserId, $format);
+                
+                // Log export request
+                $db->insert(
+                    "INSERT INTO audit_events 
+                     (tenant_id, user_id, event_type, resource_type, resource_id, ip_address, created_at) 
+                     VALUES (?, ?, 'data_export', 'user_data', ?, ?, NOW())",
+                    [
+                        $tenantId,
+                        $authenticatedUser['id'],
+                        $externalUserId,
+                        $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                    ]
+                );
+                
+                if ($format === 'csv') {
+                    header('Content-Type: text/csv; charset=utf-8');
+                    header('Content-Disposition: attachment; filename="user_data_' . date('Ymd') . '.csv"');
+                    echo $export;
+                    exit();
+                } else {
+                    sendResponse($export);
+                }
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+            
+        case 'delete_user_data':
+            // Delete all user data (GDPR Art. 17, LGPD Art. 18)
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
+            $body = getRequestBody();
+            $externalUserId = $body['user_id'] ?? '';
+            if (empty($externalUserId)) {
+                sendError('user_id required', 400);
+            }
+            
+            $softDelete = $body['soft_delete'] ?? false;
+            $confirm = $body['confirm'] ?? false;
+            
+            if (!$confirm) {
+                sendError('Deletion must be confirmed. Set confirm=true', 400);
+            }
+            
+            require_once 'includes/ComplianceService.php';
+            $complianceService = new ComplianceService($db, $tenantId);
+            
+            try {
+                $summary = $complianceService->deleteUserData($externalUserId, $softDelete);
+                sendResponse($summary);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+            
+        case 'apply_retention_policy':
+            // Apply data retention policies
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            
+            // Only super-admins can apply retention policies
+            if ($authenticatedUser['role'] !== AdminAuth::ROLE_SUPER_ADMIN) {
+                sendError('Only super-admins can apply retention policies', 403);
+            }
+            
+            $body = getRequestBody();
+            $conversationDays = $body['conversation_days'] ?? 180;
+            $auditDays = $body['audit_days'] ?? 365;
+            $usageDays = $body['usage_days'] ?? 730;
+            
+            require_once 'includes/ComplianceService.php';
+            $complianceService = new ComplianceService($db, $tenantId);
+            
+            try {
+                $summary = $complianceService->applyRetentionPolicy(
+                    $conversationDays,
+                    $auditDays,
+                    $usageDays
+                );
+                sendResponse($summary);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+            
+        case 'generate_compliance_report':
+            // Generate compliance report for a period
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $startDate = $_GET['start_date'] ?? date('Y-m-d', strtotime('-30 days'));
+            $endDate = $_GET['end_date'] ?? date('Y-m-d');
+            
+            // Validate date format
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate) || 
+                !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+                sendError('Invalid date format. Use YYYY-MM-DD', 400);
+            }
+            
+            require_once 'includes/ComplianceService.php';
+            $complianceService = new ComplianceService($db, $tenantId);
+            
+            try {
+                $report = $complianceService->generateComplianceReport($startDate, $endDate);
+                sendResponse($report);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+            
+        case 'set_pii_redaction':
+            // Enable/disable PII redaction for tenant
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $body = getRequestBody();
+            $enabled = $body['enabled'] ?? false;
+            
+            require_once 'includes/ComplianceService.php';
+            $complianceService = new ComplianceService($db, $tenantId);
+            
+            try {
+                $result = $complianceService->setPIIRedactionEnabled($enabled);
+                sendResponse([
+                    'success' => $result,
+                    'pii_redaction_enabled' => $enabled
+                ]);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+            
+        case 'get_pii_redaction_status':
+            // Check if PII redaction is enabled
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            require_once 'includes/ComplianceService.php';
+            $complianceService = new ComplianceService($db, $tenantId);
+            
+            try {
+                $enabled = $complianceService->isPIIRedactionEnabled();
+                sendResponse([
+                    'pii_redaction_enabled' => $enabled
+                ]);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
+            break;
+        
         default:
             sendError('Unknown action: ' . $action, 400);
     }

@@ -1,0 +1,290 @@
+# Default values for chatbot
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+## Global configuration
+global:
+  environment: production
+  timezone: UTC
+
+## Application configuration
+replicaCount: 2
+
+image:
+  repository: ghcr.io/suporterfid/gpt-chatbot-boilerplate
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+## Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+## Pod Security
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "80"
+  prometheus.io/path: "/metrics.php"
+
+podSecurityContext:
+  fsGroup: 33  # www-data
+  runAsNonRoot: true
+  runAsUser: 33
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false  # PHP needs to write to /tmp
+
+## Service configuration
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 80
+  annotations: {}
+
+## Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  hosts:
+    - host: chatbot.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: chatbot-tls
+      hosts:
+        - chatbot.example.com
+
+## Resource limits
+resources:
+  limits:
+    cpu: 1000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+## Autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+## Health checks
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+## Node selection
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - chatbot
+          topologyKey: kubernetes.io/hostname
+
+## Environment variables
+env:
+  ## OpenAI Configuration
+  OPENAI_API_KEY: ""  # Required - set via secret
+  OPENAI_MODEL: "gpt-4o-mini"
+  
+  ## Database Configuration
+  DB_TYPE: "mysql"
+  DB_HOST: "mysql"
+  DB_PORT: "3306"
+  DB_NAME: "chatbot"
+  DB_USER: "chatbot"
+  DB_PASSWORD: ""  # Required - set via secret
+  
+  ## Application Configuration
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  DEBUG_MODE: "false"
+  
+  ## Observability
+  OBSERVABILITY_ENABLED: "true"
+  TRACING_ENABLED: "true"
+  METRICS_ENABLED: "true"
+  
+  ## Rate Limiting
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_REQUESTS: "60"
+  RATE_LIMIT_WINDOW: "60"
+  
+  ## Usage Tracking
+  USAGE_TRACKING_ENABLED: "true"
+  QUOTA_ENFORCEMENT_ENABLED: "true"
+  
+  ## Backup
+  BACKUP_ENABLED: "true"
+  BACKUP_DIR: "/data/backups"
+  
+  ## Other
+  ADMIN_EMAIL: "admin@example.com"
+
+## Secrets (use external secrets or sealed secrets in production)
+secrets:
+  # These should be created via external-secrets or manually
+  # DO NOT commit real secrets to Git
+  openaiApiKey: ""  # base64 encoded
+  dbPassword: ""  # base64 encoded
+  adminToken: ""  # base64 encoded
+
+## Persistent Storage
+persistence:
+  enabled: true
+  storageClass: ""  # Use default storage class if empty
+  accessMode: ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+  
+  ## Mount paths
+  uploads:
+    mountPath: /data/uploads
+    subPath: uploads
+  logs:
+    mountPath: /var/www/html/logs
+    subPath: logs
+  backups:
+    mountPath: /data/backups
+    subPath: backups
+
+## Worker configuration
+worker:
+  enabled: true
+  replicaCount: 2
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  env:
+    WORKER_SLEEP: "5"
+    WORKER_MAX_JOBS: "10"
+
+## MySQL database (optional, use external DB in production)
+mysql:
+  enabled: true
+  auth:
+    rootPassword: ""  # Set this
+    database: chatbot
+    username: chatbot
+    password: ""  # Set this
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      limits:
+        memory: 2Gi
+        cpu: 1000m
+      requests:
+        memory: 1Gi
+        cpu: 500m
+
+## Redis (optional, for rate limiting and caching)
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    password: ""  # Set this
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+    resources:
+      limits:
+        memory: 512Mi
+        cpu: 250m
+      requests:
+        memory: 256Mi
+        cpu: 100m
+
+## Monitoring
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    path: /metrics.php
+  prometheusRule:
+    enabled: true
+    rules:
+      - alert: ChatbotHighErrorRate
+        expr: rate(chatbot_api_errors_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+      - alert: ChatbotHighLatency
+        expr: histogram_quantile(0.95, rate(chatbot_api_request_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency detected"
+
+## Backup CronJob
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention: 7  # days
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  offsite:
+    enabled: false
+    destination: "s3://your-bucket/backups/"
+    awsAccessKeyId: ""
+    awsSecretAccessKey: ""
+
+## Maintenance mode
+maintenanceMode:
+  enabled: false
+  message: "System is under maintenance. Please try again later."
