@@ -204,7 +204,7 @@ cat /data/backups/latest/backup.sha256
 
 ### Restore Procedures
 
-**Full System Restore**: See [DR_RUNBOOK.md](DR_RUNBOOK.md) - Scenario 1
+**Full System Restore**: See [ops/disaster_recovery.md](ops/disaster_recovery.md) - Complete System Failure
 
 **Database Restore**:
 ```bash
@@ -443,7 +443,7 @@ sqlite3 /data/database.sqlite "SELECT * FROM resource_permissions WHERE is_revok
 
 ### Security Incident Response
 
-**See [DR_RUNBOOK.md](DR_RUNBOOK.md) - Scenario 5**
+**See [ops/disaster_recovery.md](ops/disaster_recovery.md) - Security Breach Response**
 
 Quick actions:
 1. Isolate affected systems

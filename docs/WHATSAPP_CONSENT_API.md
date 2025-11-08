@@ -438,5 +438,5 @@ curl "https://your-domain.com/admin-api.php?action=get_consent_audit&id=consent_
 
 For questions or issues:
 - Review the [WhatsApp Onboarding Playbook](WHATSAPP_ONBOARDING_PLAYBOOK.md)
-- Check the [Implementation Summary](../IMPLEMENTATION_SUMMARY.md)
+- Check the [Implementation Report](IMPLEMENTATION_REPORT.md)
 - Open a GitHub issue for bugs or feature requests

@@ -779,7 +779,7 @@ echo json_encode($data, JSON_HEX_TAG | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_HEX_A
 
 ### Incident Response
 
-**See [DR_RUNBOOK.md](DR_RUNBOOK.md) - Scenario 5: Security Breach**
+**See [ops/disaster_recovery.md](ops/disaster_recovery.md) - Security Breach Response**
 
 **Key Steps**:
 1. Isolate affected systems
