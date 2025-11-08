@@ -390,7 +390,7 @@ class WhatsAppTemplateService {
             'content' => $content,
             'header' => $header,
             'footer' => $template['footer_text'],
-            'buttons' => $template['buttons'],
+            'buttons' => $template['buttons'] ?? null,
             'whatsapp_template_id' => $template['whatsapp_template_id']
         ];
     }
