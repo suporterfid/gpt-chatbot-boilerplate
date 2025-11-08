@@ -203,11 +203,10 @@ function runOnboarding($args) {
         $channelId = generateUuid();
         $now = gmdate('Y-m-d\TH:i:s\Z');
         
-        $stmt = $db->prepare("
+        $db->insert("
             INSERT INTO agent_channels (id, agent_id, channel, enabled, config_json, created_at, updated_at)
             VALUES (?, ?, 'whatsapp', 1, ?, ?, ?)
-        ");
-        $stmt->execute([$channelId, $agent['id'], json_encode($channelConfig), $now, $now]);
+        ", [$channelId, $agent['id'], json_encode($channelConfig), $now, $now]);
         
         success("WhatsApp channel configured");
         info("Webhook URL: https://yourdomain.com/channels/whatsapp/{$agent['id']}/webhook");

@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../includes/DB.php';
 require_once __DIR__ . '/../../includes/AgentService.php';
 require_once __DIR__ . '/../../includes/ChatHandler.php';
 require_once __DIR__ . '/../../includes/ChannelManager.php';
+require_once __DIR__ . '/../../includes/ConsentService.php';
 
 // CORS headers
 header('Access-Control-Allow-Origin: *');
@@ -63,6 +64,9 @@ try {
     $agentService = new AgentService($db);
     $chatHandler = new ChatHandler($config, $agentService);
     
+    // Get tenant ID from agent for proper consent scoping
+    $tenantId = null;
+    
     // Determine agent ID
     // Method 1: From URL path (/channels/whatsapp/{agentId}/webhook)
     $agentId = null;
@@ -113,6 +117,15 @@ try {
         exit();
     }
     
+    // Get agent to determine tenant ID for consent service
+    $agent = $agentService->getAgent($agentId);
+    if ($agent && isset($agent['tenant_id'])) {
+        $tenantId = $agent['tenant_id'];
+    }
+    
+    // Initialize consent service with tenant context
+    $consentService = new ConsentService($db, $tenantId);
+    
     // Verify webhook signature if secret is configured
     $webhookSecret = $channelConfig['zapi_webhook_secret'] ?? null;
     if ($webhookSecret) {
@@ -128,49 +141,62 @@ try {
     }
     
     // Process inbound message
-    $result = $channelManager->processInbound($agentId, 'whatsapp', $payload, function($message, $conversationId, $session) use ($chatHandler, $channelManager, $agentId, $channelConfig) {
+    $result = $channelManager->processInbound($agentId, 'whatsapp', $payload, function($message, $conversationId, $session) use ($chatHandler, $channelManager, $agentId, $channelConfig, $consentService) {
         
-        // Check for opt-out commands
+        $externalUserId = $message['from'];
         $text = trim($message['text'] ?? '');
-        if (strtoupper($text) === 'STOP' || strtoupper($text) === 'PARAR') {
-            // Update session metadata to mark as opted out
-            $metadata = $session['metadata'] ?? [];
-            $metadata['opt_out'] = true;
-            $channelManager->getSessionService()->updateMetadata($session['id'], $metadata);
-            
-            // Send confirmation
+        
+        // Process consent keywords (opt-in/opt-out)
+        $keywordResult = $consentService->processConsentKeyword(
+            $agentId, 
+            'whatsapp', 
+            $externalUserId, 
+            $text,
+            [
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null
+            ]
+        );
+        
+        if ($keywordResult['action'] === 'opt_out') {
+            // User opted out
             $channelManager->sendText(
                 $agentId,
                 'whatsapp',
-                $message['from'],
+                $externalUserId,
                 'You have been unsubscribed. Send START to re-subscribe.',
                 $conversationId
             );
-            
             return ['opt_out' => true];
         }
         
-        // Check if user is opted out
-        $metadata = $session['metadata'] ?? [];
-        if (!empty($metadata['opt_out'])) {
-            if (strtoupper($text) === 'START' || strtoupper($text) === 'INICIAR') {
-                // Re-subscribe
-                $metadata['opt_out'] = false;
-                $channelManager->getSessionService()->updateMetadata($session['id'], $metadata);
-                
-                $channelManager->sendText(
-                    $agentId,
-                    'whatsapp',
-                    $message['from'],
-                    'Welcome back! You have been re-subscribed.',
-                    $conversationId
-                );
-                
-                return ['opt_in' => true];
-            }
+        if ($keywordResult['action'] === 'opt_in') {
+            // User opted in
+            $channelManager->sendText(
+                $agentId,
+                'whatsapp',
+                $externalUserId,
+                'Welcome back! You have been re-subscribed.',
+                $conversationId
+            );
+            return ['opt_in' => true];
+        }
+        
+        // Check if user has granted consent
+        $hasConsent = $consentService->hasConsent($agentId, 'whatsapp', $externalUserId, 'service');
+        
+        if (!$hasConsent) {
+            // First contact - grant implicit consent
+            $consentService->grantConsent($agentId, 'whatsapp', $externalUserId, [
+                'consent_type' => 'service',
+                'consent_method' => 'first_contact',
+                'consent_text' => 'Implicit consent granted on first contact',
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'legal_basis' => 'legitimate_interest'
+            ]);
             
-            // User is opted out, don't process
-            return ['skipped' => true, 'reason' => 'User opted out'];
+            logWebhook("Granted first-contact consent for user: $externalUserId");
         }
         
         // Prepare file data if media is present
