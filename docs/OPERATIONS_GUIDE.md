@@ -851,7 +851,11 @@ iostat -x 1 5
 
 ### Related Documentation
 
-- [DR_RUNBOOK.md](DR_RUNBOOK.md) - Disaster recovery procedures
+- [ops/disaster_recovery.md](ops/disaster_recovery.md) - Disaster recovery procedures
+- [ops/backup_restore.md](ops/backup_restore.md) - Backup and restore procedures
+- [ops/incident_runbook.md](ops/incident_runbook.md) - Incident response runbook
+- [ops/logs.md](ops/logs.md) - Logging and log aggregation
+- [ops/secrets_management.md](ops/secrets_management.md) - Secrets management
 - [OBSERVABILITY.md](OBSERVABILITY.md) - Monitoring and logging details
 - [COMPLIANCE_OPERATIONS.md](COMPLIANCE_OPERATIONS.md) - GDPR/LGPD procedures
 - [BILLING_METERING.md](BILLING_METERING.md) - Billing operations
