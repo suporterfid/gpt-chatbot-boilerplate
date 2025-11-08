@@ -29,16 +29,14 @@ class WhatsAppTemplateService {
         $templateId = $this->generateUuid();
         $now = $this->now();
 
-        $stmt = $this->db->prepare("
+        $this->db->insert("
             INSERT INTO whatsapp_templates (
                 id, tenant_id, agent_id, template_name, template_category,
                 language_code, status, content_text, header_type, header_text,
                 header_media_url, footer_text, buttons_json, variables_json,
                 metadata_json, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-
-        $stmt->execute([
+        ", [
             $templateId,
             $this->tenantId,
             $data['agent_id'] ?? null,
@@ -102,8 +100,7 @@ class WhatsAppTemplateService {
         $params[] = $templateId;
 
         $sql = "UPDATE whatsapp_templates SET " . implode(', ', $updates) . " WHERE id = ?";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        $this->db->execute($sql, $params);
 
         return $this->getTemplate($templateId);
     }
@@ -123,13 +120,11 @@ class WhatsAppTemplateService {
 
         $now = $this->now();
 
-        $stmt = $this->db->prepare("
+        $this->db->execute("
             UPDATE whatsapp_templates
             SET status = 'pending', submitted_at = ?, updated_at = ?
             WHERE id = ?
-        ");
-
-        $stmt->execute([$now, $now, $templateId]);
+        ", [$now, $now, $templateId]);
 
         return $this->getTemplate($templateId);
     }
@@ -140,7 +135,7 @@ class WhatsAppTemplateService {
     public function approveTemplate($templateId, $whatsappTemplateId, $qualityScore = 'PENDING') {
         $now = $this->now();
 
-        $stmt = $this->db->prepare("
+        $this->db->execute("
             UPDATE whatsapp_templates
             SET status = 'approved', 
                 whatsapp_template_id = ?,
@@ -148,9 +143,7 @@ class WhatsAppTemplateService {
                 approved_at = ?,
                 updated_at = ?
             WHERE id = ?
-        ");
-
-        $stmt->execute([$whatsappTemplateId, $qualityScore, $now, $now, $templateId]);
+        ", [$whatsappTemplateId, $qualityScore, $now, $now, $templateId]);
 
         return $this->getTemplate($templateId);
     }
@@ -161,16 +154,14 @@ class WhatsAppTemplateService {
     public function rejectTemplate($templateId, $rejectionReason) {
         $now = $this->now();
 
-        $stmt = $this->db->prepare("
+        $this->db->execute("
             UPDATE whatsapp_templates
             SET status = 'rejected',
                 rejection_reason = ?,
                 rejected_at = ?,
                 updated_at = ?
             WHERE id = ?
-        ");
-
-        $stmt->execute([$rejectionReason, $now, $now, $templateId]);
+        ", [$rejectionReason, $now, $now, $templateId]);
 
         return $this->getTemplate($templateId);
     }
@@ -187,10 +178,7 @@ class WhatsAppTemplateService {
             $params[] = $this->tenantId;
         }
 
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        
-        $template = $stmt->fetch(PDO::FETCH_ASSOC);
+        $template = $this->db->getOne($sql, $params);
         if ($template) {
             $template = $this->hydrateTemplate($template);
         }
@@ -215,10 +203,7 @@ class WhatsAppTemplateService {
 
         $sql .= " ORDER BY created_at DESC LIMIT 1";
 
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        
-        $template = $stmt->fetch(PDO::FETCH_ASSOC);
+        $template = $this->db->getOne($sql, $params);
         if ($template) {
             $template = $this->hydrateTemplate($template);
         }
@@ -272,10 +257,7 @@ class WhatsAppTemplateService {
         $params[] = $limit;
         $params[] = $offset;
 
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-
-        $templates = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $templates = $this->db->query($sql, $params);
         return array_map([$this, 'hydrateTemplate'], $templates);
     }
 
@@ -293,8 +275,7 @@ class WhatsAppTemplateService {
             throw new Exception("Cannot delete approved or pending templates");
         }
 
-        $stmt = $this->db->prepare("DELETE FROM whatsapp_templates WHERE id = ?");
-        $stmt->execute([$templateId]);
+        $this->db->execute("DELETE FROM whatsapp_templates WHERE id = ?", [$templateId]);
 
         return ['success' => true, 'deleted' => $templateId];
     }
@@ -306,15 +287,13 @@ class WhatsAppTemplateService {
         $usageId = $this->generateUuid();
         $now = $this->now();
 
-        $stmt = $this->db->prepare("
+        $this->db->insert("
             INSERT INTO whatsapp_template_usage (
                 id, template_id, agent_id, channel, external_user_id,
                 conversation_id, variables_json, delivery_status,
                 sent_at, metadata_json
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-
-        $stmt->execute([
+        ", [
             $usageId,
             $templateId,
             $agentId,
@@ -360,8 +339,7 @@ class WhatsAppTemplateService {
         $params[] = $usageId;
 
         $sql = "UPDATE whatsapp_template_usage SET " . implode(', ', $updates) . " WHERE id = ?";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        $this->db->execute($sql, $params);
 
         return true;
     }
@@ -370,7 +348,7 @@ class WhatsAppTemplateService {
      * Get template usage statistics
      */
     public function getTemplateStats($templateId) {
-        $stmt = $this->db->prepare("
+        return $this->db->getOne("
             SELECT 
                 COUNT(*) as total_sent,
                 SUM(CASE WHEN delivery_status = 'delivered' THEN 1 ELSE 0 END) as delivered,
@@ -380,10 +358,7 @@ class WhatsAppTemplateService {
                 MAX(sent_at) as last_sent
             FROM whatsapp_template_usage
             WHERE template_id = ?
-        ");
-
-        $stmt->execute([$templateId]);
-        return $stmt->fetch(PDO::FETCH_ASSOC);
+        ", [$templateId]);
     }
 
     /**
@@ -415,7 +390,7 @@ class WhatsAppTemplateService {
             'content' => $content,
             'header' => $header,
             'footer' => $template['footer_text'],
-            'buttons' => $template['buttons'],
+            'buttons' => $template['buttons'] ?? null,
             'whatsapp_template_id' => $template['whatsapp_template_id']
         ];
     }
@@ -424,16 +399,14 @@ class WhatsAppTemplateService {
      * Increment template usage count
      */
     private function incrementUsageCount($templateId) {
-        $stmt = $this->db->prepare("
+        $now = $this->now();
+        $this->db->execute("
             UPDATE whatsapp_templates
             SET usage_count = usage_count + 1,
                 last_used_at = ?,
                 updated_at = ?
             WHERE id = ?
-        ");
-
-        $now = $this->now();
-        $stmt->execute([$now, $now, $templateId]);
+        ", [$now, $now, $templateId]);
     }
 
     /**

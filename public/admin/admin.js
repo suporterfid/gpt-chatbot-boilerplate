@@ -552,6 +552,8 @@ function navigateTo(page) {
         'agents': 'Agents',
         'prompts': 'Prompts',
         'vector-stores': 'Vector Stores',
+        'whatsapp-templates': 'WhatsApp Templates',
+        'consent-management': 'Consent Management',
         'jobs': 'Background Jobs',
         'tenants': 'Tenants',
         'billing': 'Billing & Usage',
@@ -572,6 +574,8 @@ function loadCurrentPage() {
         'agents': loadAgentsPage,
         'prompts': loadPromptsPage,
         'vector-stores': loadVectorStoresPage,
+        'whatsapp-templates': loadWhatsAppTemplatesPage,
+        'consent-management': loadConsentManagementPage,
         'jobs': loadJobsPage,
         'tenants': loadTenantsPage,
         'billing': loadBillingPage,
@@ -3014,6 +3018,680 @@ function formatDate(dateStr) {
         return date.toLocaleString();
     } catch {
         return dateStr;
+    }
+}
+
+// ==================== WhatsApp Templates Page ====================
+
+async function loadWhatsAppTemplatesPage() {
+    if (!checkToken()) return;
+    
+    const content = document.getElementById('content');
+    content.innerHTML = `
+        <div class="page-header">
+            <h2>WhatsApp Templates</h2>
+            <button class="btn btn-primary" onclick="showCreateTemplateModal()">
+                <span>➕</span> Create Template
+            </button>
+        </div>
+        
+        <div class="filters-bar">
+            <select id="template-status-filter" class="filter-select" onchange="filterTemplates()">
+                <option value="">All Status</option>
+                <option value="draft">Draft</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+            </select>
+            
+            <select id="template-category-filter" class="filter-select" onchange="filterTemplates()">
+                <option value="">All Categories</option>
+                <option value="MARKETING">Marketing</option>
+                <option value="UTILITY">Utility</option>
+                <option value="AUTHENTICATION">Authentication</option>
+                <option value="SERVICE">Service</option>
+            </select>
+            
+            <input type="text" id="template-search" class="filter-input" placeholder="Search templates..." onkeyup="filterTemplates()">
+        </div>
+        
+        <div id="templates-list" class="card">
+            <div class="loading">Loading templates...</div>
+        </div>
+    `;
+    
+    loadTemplates();
+}
+
+async function loadTemplates() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=list_templates`, {
+            headers: {
+                'Authorization': `Bearer ${getToken()}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load templates');
+        }
+        
+        const data = await response.json();
+        displayTemplates(data || []);
+    } catch (error) {
+        console.error('Error loading templates:', error);
+        document.getElementById('templates-list').innerHTML = `
+            <div class="error-message">Failed to load templates: ${error.message}</div>
+        `;
+    }
+}
+
+function displayTemplates(templates) {
+    const container = document.getElementById('templates-list');
+    
+    if (templates.length === 0) {
+        container.innerHTML = '<div class="empty-state">No templates found</div>';
+        return;
+    }
+    
+    const html = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Language</th>
+                    <th>Status</th>
+                    <th>Quality</th>
+                    <th>Usage</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${templates.map(t => `
+                    <tr data-template-id="${t.id}" data-status="${t.status}" data-category="${t.template_category}" data-name="${escapeHtml(t.template_name)}">
+                        <td><strong>${escapeHtml(t.template_name)}</strong></td>
+                        <td>${t.template_category}</td>
+                        <td>${t.language_code}</td>
+                        <td><span class="badge badge-${getStatusBadgeClass(t.status)}">${t.status}</span></td>
+                        <td>${t.quality_score || 'N/A'}</td>
+                        <td>${t.usage_count || 0}</td>
+                        <td>${formatDate(t.created_at)}</td>
+                        <td>
+                            <button class="btn btn-small" onclick="viewTemplate('${t.id}')">View</button>
+                            ${t.status === 'draft' ? `<button class="btn btn-small btn-primary" onclick="submitTemplate('${t.id}')">Submit</button>` : ''}
+                            ${t.status === 'draft' || t.status === 'rejected' ? `<button class="btn btn-small btn-danger" onclick="deleteTemplate('${t.id}')">Delete</button>` : ''}
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = html;
+}
+
+function getStatusBadgeClass(status) {
+    const classes = {
+        'draft': 'secondary',
+        'pending': 'warning',
+        'approved': 'success',
+        'rejected': 'danger',
+        'paused': 'warning',
+        'disabled': 'secondary'
+    };
+    return classes[status] || 'secondary';
+}
+
+function filterTemplates() {
+    const statusFilter = document.getElementById('template-status-filter').value;
+    const categoryFilter = document.getElementById('template-category-filter').value;
+    const searchText = document.getElementById('template-search').value.toLowerCase();
+    
+    const rows = document.querySelectorAll('#templates-list tbody tr');
+    rows.forEach(row => {
+        const status = row.dataset.status;
+        const category = row.dataset.category;
+        const name = row.dataset.name.toLowerCase();
+        
+        const statusMatch = !statusFilter || status === statusFilter;
+        const categoryMatch = !categoryFilter || category === categoryFilter;
+        const searchMatch = !searchText || name.includes(searchText);
+        
+        row.style.display = (statusMatch && categoryMatch && searchMatch) ? '' : 'none';
+    });
+}
+
+function showCreateTemplateModal() {
+    const modalContent = `
+        <form id="create-template-form" onsubmit="createTemplate(event)">
+            <div class="form-group">
+                <label for="template-name">Template Name *</label>
+                <input type="text" id="template-name" name="template_name" required placeholder="welcome_message">
+            </div>
+            
+            <div class="form-group">
+                <label for="template-category">Category *</label>
+                <select id="template-category" name="template_category" required>
+                    <option value="UTILITY">Utility</option>
+                    <option value="MARKETING">Marketing</option>
+                    <option value="AUTHENTICATION">Authentication</option>
+                    <option value="SERVICE">Service</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="template-language">Language *</label>
+                <select id="template-language" name="language_code" required>
+                    <option value="en">English</option>
+                    <option value="pt_BR">Portuguese (Brazil)</option>
+                    <option value="es">Spanish</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="template-content">Content *</label>
+                <textarea id="template-content" name="content_text" rows="5" required 
+                    placeholder="Hi {{1}}! Welcome to our service..."></textarea>
+                <small>Use {{1}}, {{2}}, etc. for variables</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="template-header">Header Text (Optional)</label>
+                <input type="text" id="template-header" name="header_text" placeholder="Welcome!">
+            </div>
+            
+            <div class="form-group">
+                <label for="template-footer">Footer Text (Optional)</label>
+                <input type="text" id="template-footer" name="footer_text" placeholder="Reply STOP to unsubscribe">
+            </div>
+            
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Template</button>
+            </div>
+        </form>
+    `;
+    
+    showModal('Create WhatsApp Template', modalContent);
+}
+
+async function createTemplate(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=create_template`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${getToken()}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to create template');
+        }
+        
+        showToast('Template created successfully', 'success');
+        closeModal();
+        loadTemplates();
+    } catch (error) {
+        console.error('Error creating template:', error);
+        showToast('Failed to create template: ' + error.message, 'error');
+    }
+}
+
+async function viewTemplate(templateId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=get_template&id=${templateId}`, {
+            headers: {
+                'Authorization': `Bearer ${getToken()}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load template');
+        }
+        
+        const template = await response.json();
+        
+        const modalContent = `
+            <div class="template-details">
+                <div class="detail-row">
+                    <strong>Name:</strong> ${escapeHtml(template.template_name)}
+                </div>
+                <div class="detail-row">
+                    <strong>Category:</strong> ${template.template_category}
+                </div>
+                <div class="detail-row">
+                    <strong>Language:</strong> ${template.language_code}
+                </div>
+                <div class="detail-row">
+                    <strong>Status:</strong> <span class="badge badge-${getStatusBadgeClass(template.status)}">${template.status}</span>
+                </div>
+                ${template.quality_score ? `
+                <div class="detail-row">
+                    <strong>Quality Score:</strong> ${template.quality_score}
+                </div>
+                ` : ''}
+                ${template.rejection_reason ? `
+                <div class="detail-row">
+                    <strong>Rejection Reason:</strong> <span style="color: var(--danger-color);">${escapeHtml(template.rejection_reason)}</span>
+                </div>
+                ` : ''}
+                <div class="detail-row">
+                    <strong>Usage Count:</strong> ${template.usage_count || 0}
+                </div>
+                ${template.header_text ? `
+                <div class="detail-row">
+                    <strong>Header:</strong> ${escapeHtml(template.header_text)}
+                </div>
+                ` : ''}
+                <div class="detail-row">
+                    <strong>Content:</strong>
+                    <pre style="margin-top: 0.5rem; padding: 1rem; background: var(--bg-secondary); border-radius: 4px; white-space: pre-wrap;">${escapeHtml(template.content_text)}</pre>
+                </div>
+                ${template.footer_text ? `
+                <div class="detail-row">
+                    <strong>Footer:</strong> ${escapeHtml(template.footer_text)}
+                </div>
+                ` : ''}
+                <div class="detail-row">
+                    <strong>Created:</strong> ${formatDate(template.created_at)}
+                </div>
+                ${template.submitted_at ? `
+                <div class="detail-row">
+                    <strong>Submitted:</strong> ${formatDate(template.submitted_at)}
+                </div>
+                ` : ''}
+                ${template.approved_at ? `
+                <div class="detail-row">
+                    <strong>Approved:</strong> ${formatDate(template.approved_at)}
+                </div>
+                ` : ''}
+            </div>
+        `;
+        
+        showModal('Template Details', modalContent);
+    } catch (error) {
+        console.error('Error viewing template:', error);
+        showToast('Failed to load template: ' + error.message, 'error');
+    }
+}
+
+async function submitTemplate(templateId) {
+    if (!confirm('Submit this template for WhatsApp approval?')) return;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=submit_template&id=${templateId}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${getToken()}`
+            }
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to submit template');
+        }
+        
+        showToast('Template submitted for approval', 'success');
+        loadTemplates();
+    } catch (error) {
+        console.error('Error submitting template:', error);
+        showToast('Failed to submit template: ' + error.message, 'error');
+    }
+}
+
+async function deleteTemplate(templateId) {
+    if (!confirm('Delete this template? This action cannot be undone.')) return;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=delete_template&id=${templateId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${getToken()}`
+            }
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to delete template');
+        }
+        
+        showToast('Template deleted successfully', 'success');
+        loadTemplates();
+    } catch (error) {
+        console.error('Error deleting template:', error);
+        showToast('Failed to delete template: ' + error.message, 'error');
+    }
+}
+
+// ==================== Consent Management Page ====================
+
+async function loadConsentManagementPage() {
+    if (!checkToken()) return;
+    
+    const content = document.getElementById('content');
+    content.innerHTML = `
+        <div class="page-header">
+            <h2>Consent Management</h2>
+            <button class="btn btn-primary" onclick="exportConsents()">
+                <span>📥</span> Export Consents
+            </button>
+        </div>
+        
+        <div class="filters-bar">
+            <select id="consent-status-filter" class="filter-select" onchange="filterConsents()">
+                <option value="">All Status</option>
+                <option value="granted">Granted</option>
+                <option value="withdrawn">Withdrawn</option>
+                <option value="pending">Pending</option>
+                <option value="denied">Denied</option>
+            </select>
+            
+            <select id="consent-type-filter" class="filter-select" onchange="filterConsents()">
+                <option value="">All Types</option>
+                <option value="service">Service</option>
+                <option value="marketing">Marketing</option>
+                <option value="analytics">Analytics</option>
+            </select>
+            
+            <select id="consent-channel-filter" class="filter-select" onchange="filterConsents()">
+                <option value="">All Channels</option>
+                <option value="whatsapp">WhatsApp</option>
+            </select>
+            
+            <input type="text" id="consent-search" class="filter-input" placeholder="Search by user ID..." onkeyup="filterConsents()">
+        </div>
+        
+        <div id="consents-list" class="card">
+            <div class="loading">Loading consents...</div>
+        </div>
+    `;
+    
+    loadConsents();
+}
+
+async function loadConsents() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=list_consents`, {
+            headers: {
+                'Authorization': `Bearer ${getToken()}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load consents');
+        }
+        
+        const data = await response.json();
+        displayConsents(data || []);
+    } catch (error) {
+        console.error('Error loading consents:', error);
+        document.getElementById('consents-list').innerHTML = `
+            <div class="error-message">Failed to load consents: ${error.message}</div>
+        `;
+    }
+}
+
+function displayConsents(consents) {
+    const container = document.getElementById('consents-list');
+    
+    if (consents.length === 0) {
+        container.innerHTML = '<div class="empty-state">No consent records found</div>';
+        return;
+    }
+    
+    const html = `
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>User ID</th>
+                    <th>Channel</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Method</th>
+                    <th>Granted At</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${consents.map(c => `
+                    <tr data-consent-id="${c.id}" data-status="${c.consent_status}" data-type="${c.consent_type}" data-channel="${c.channel}" data-user="${c.external_user_id}">
+                        <td><code>${escapeHtml(c.external_user_id)}</code></td>
+                        <td>${c.channel}</td>
+                        <td>${c.consent_type}</td>
+                        <td><span class="badge badge-${getConsentBadgeClass(c.consent_status)}">${c.consent_status}</span></td>
+                        <td>${c.consent_method}</td>
+                        <td>${formatDate(c.granted_at)}</td>
+                        <td>
+                            <button class="btn btn-small" onclick="viewConsent('${c.id}')">View</button>
+                            <button class="btn btn-small" onclick="viewConsentAudit('${c.id}')">Audit</button>
+                            ${c.consent_status === 'granted' ? `<button class="btn btn-small btn-danger" onclick="withdrawConsent('${c.id}')">Withdraw</button>` : ''}
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = html;
+}
+
+function getConsentBadgeClass(status) {
+    const classes = {
+        'granted': 'success',
+        'withdrawn': 'danger',
+        'pending': 'warning',
+        'denied': 'secondary'
+    };
+    return classes[status] || 'secondary';
+}
+
+function filterConsents() {
+    const statusFilter = document.getElementById('consent-status-filter').value;
+    const typeFilter = document.getElementById('consent-type-filter').value;
+    const channelFilter = document.getElementById('consent-channel-filter').value;
+    const searchText = document.getElementById('consent-search').value.toLowerCase();
+    
+    const rows = document.querySelectorAll('#consents-list tbody tr');
+    rows.forEach(row => {
+        const status = row.dataset.status;
+        const type = row.dataset.type;
+        const channel = row.dataset.channel;
+        const userId = row.dataset.user.toLowerCase();
+        
+        const statusMatch = !statusFilter || status === statusFilter;
+        const typeMatch = !typeFilter || type === typeFilter;
+        const channelMatch = !channelFilter || channel === channelFilter;
+        const searchMatch = !searchText || userId.includes(searchText);
+        
+        row.style.display = (statusMatch && typeMatch && channelMatch && searchMatch) ? '' : 'none';
+    });
+}
+
+async function viewConsent(consentId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=get_consent_by_id&id=${consentId}`, {
+            headers: {
+                'Authorization': `Bearer ${getToken()}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load consent');
+        }
+        
+        const consent = await response.json();
+        
+        const modalContent = `
+            <div class="consent-details">
+                <div class="detail-row">
+                    <strong>User ID:</strong> <code>${escapeHtml(consent.external_user_id)}</code>
+                </div>
+                <div class="detail-row">
+                    <strong>Channel:</strong> ${consent.channel}
+                </div>
+                <div class="detail-row">
+                    <strong>Type:</strong> ${consent.consent_type}
+                </div>
+                <div class="detail-row">
+                    <strong>Status:</strong> <span class="badge badge-${getConsentBadgeClass(consent.consent_status)}">${consent.consent_status}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Method:</strong> ${consent.consent_method}
+                </div>
+                <div class="detail-row">
+                    <strong>Legal Basis:</strong> ${consent.legal_basis || 'N/A'}
+                </div>
+                ${consent.consent_text ? `
+                <div class="detail-row">
+                    <strong>Consent Text:</strong>
+                    <div style="margin-top: 0.5rem; padding: 1rem; background: var(--bg-secondary); border-radius: 4px;">${escapeHtml(consent.consent_text)}</div>
+                </div>
+                ` : ''}
+                <div class="detail-row">
+                    <strong>Language:</strong> ${consent.consent_language}
+                </div>
+                <div class="detail-row">
+                    <strong>Granted At:</strong> ${formatDate(consent.granted_at)}
+                </div>
+                ${consent.withdrawn_at ? `
+                <div class="detail-row">
+                    <strong>Withdrawn At:</strong> ${formatDate(consent.withdrawn_at)}
+                </div>
+                ` : ''}
+                ${consent.expires_at ? `
+                <div class="detail-row">
+                    <strong>Expires At:</strong> ${formatDate(consent.expires_at)}
+                </div>
+                ` : ''}
+                ${consent.ip_address ? `
+                <div class="detail-row">
+                    <strong>IP Address:</strong> <code>${escapeHtml(consent.ip_address)}</code>
+                </div>
+                ` : ''}
+            </div>
+        `;
+        
+        showModal('Consent Details', modalContent);
+    } catch (error) {
+        console.error('Error viewing consent:', error);
+        showToast('Failed to load consent: ' + error.message, 'error');
+    }
+}
+
+async function viewConsentAudit(consentId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=get_consent_audit&id=${consentId}`, {
+            headers: {
+                'Authorization': `Bearer ${getToken()}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load consent audit');
+        }
+        
+        const auditLog = await response.json();
+        
+        const modalContent = `
+            <div class="audit-log">
+                ${auditLog.length > 0 ? `
+                    <table class="data-table" style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Action</th>
+                                <th>Previous Status</th>
+                                <th>New Status</th>
+                                <th>Reason</th>
+                                <th>Triggered By</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${auditLog.map(log => `
+                                <tr>
+                                    <td>${log.action}</td>
+                                    <td>${log.previous_status || 'N/A'}</td>
+                                    <td>${log.new_status}</td>
+                                    <td>${escapeHtml(log.reason || '')}</td>
+                                    <td>${log.triggered_by}</td>
+                                    <td>${formatDate(log.created_at)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                ` : '<p>No audit log entries found.</p>'}
+            </div>
+        `;
+        
+        showModal('Consent Audit Log', modalContent);
+    } catch (error) {
+        console.error('Error viewing consent audit:', error);
+        showToast('Failed to load consent audit: ' + error.message, 'error');
+    }
+}
+
+async function withdrawConsent(consentId) {
+    if (!confirm('Withdraw this consent? The user will no longer receive messages.')) return;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=withdraw_consent_by_id&id=${consentId}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${getToken()}`
+            }
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to withdraw consent');
+        }
+        
+        showToast('Consent withdrawn successfully', 'success');
+        loadConsents();
+    } catch (error) {
+        console.error('Error withdrawing consent:', error);
+        showToast('Failed to withdraw consent: ' + error.message, 'error');
+    }
+}
+
+async function exportConsents() {
+    try {
+        showToast('Preparing export...', 'info');
+        
+        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=export_consents`, {
+            headers: {
+                'Authorization': `Bearer ${getToken()}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to export consents');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `consents_export_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        showToast('Consents exported successfully', 'success');
+    } catch (error) {
+        console.error('Error exporting consents:', error);
+        showToast('Failed to export consents: ' + error.message, 'error');
     }
 }
 

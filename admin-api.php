@@ -3734,6 +3734,25 @@ try {
             sendResponse(['has_consent' => $hasConsent]);
             break;
             
+        case 'get_consent_by_id':
+            // Get specific consent record by ID
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $consentId = $_GET['id'] ?? '';
+            if (empty($consentId)) {
+                sendError('Consent ID required', 400);
+            }
+            
+            $consent = $consentService->getConsentById($consentId);
+            if (!$consent) {
+                sendError('Consent not found', 404);
+            }
+            sendResponse($consent);
+            break;
+            
         case 'get_consent_audit':
             // Get consent audit history
             if ($method !== 'GET') {
@@ -3741,7 +3760,7 @@ try {
             }
             requirePermission($authenticatedUser, 'read', $adminAuth);
             
-            $consentId = $_GET['consent_id'] ?? '';
+            $consentId = $_GET['id'] ?? $_GET['consent_id'] ?? '';
             if (empty($consentId)) {
                 sendError('consent_id required', 400);
             }
@@ -3749,6 +3768,42 @@ try {
             $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
             $history = $consentService->getConsentAuditHistory($consentId, $limit);
             sendResponse($history);
+            break;
+            
+        case 'withdraw_consent_by_id':
+            // Withdraw consent by ID
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $consentId = $_GET['id'] ?? '';
+            if (empty($consentId)) {
+                sendError('Consent ID required', 400);
+            }
+            
+            // Get consent first to extract info
+            $consent = $consentService->getConsentById($consentId);
+            if (!$consent) {
+                sendError('Consent not found', 404);
+            }
+            
+            try {
+                $result = $consentService->withdrawConsent(
+                    $consent['agent_id'],
+                    $consent['channel'],
+                    $consent['external_user_id'],
+                    $consent['consent_type'],
+                    [
+                        'reason' => 'Withdrawn by admin',
+                        'triggered_by' => 'admin',
+                        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null
+                    ]
+                );
+                sendResponse($result);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 400);
+            }
             break;
             
         // ===== WhatsApp Template Management Endpoints =====

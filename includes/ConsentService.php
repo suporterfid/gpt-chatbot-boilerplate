@@ -47,16 +47,14 @@ class ConsentService {
         }
 
         // Insert new consent record
-        $stmt = $this->db->prepare("
+        $this->db->insert("
             INSERT INTO user_consents (
                 id, tenant_id, agent_id, channel, external_user_id,
                 consent_type, consent_status, consent_method, consent_text,
                 consent_language, ip_address, user_agent, granted_at,
                 expires_at, legal_basis, metadata_json, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-
-        $stmt->execute([
+        ", [
             $consentId,
             $this->tenantId,
             $agentId,
@@ -180,9 +178,7 @@ class ConsentService {
 
         $sql .= " ORDER BY created_at DESC LIMIT 1";
 
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        return $this->db->getOne($sql, $params);
     }
 
     /**
@@ -202,9 +198,7 @@ class ConsentService {
 
         $sql .= " ORDER BY created_at DESC";
 
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $this->db->query($sql, $params);
     }
 
     /**
@@ -219,23 +213,19 @@ class ConsentService {
             $params[] = $this->tenantId;
         }
 
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        return $this->db->getOne($sql, $params);
     }
 
     /**
      * Get consent audit history
      */
     public function getConsentAuditHistory($consentId, $limit = 100) {
-        $stmt = $this->db->prepare("
+        return $this->db->query("
             SELECT * FROM consent_audit_log
             WHERE consent_id = ?
             ORDER BY created_at DESC
             LIMIT ?
-        ");
-        $stmt->execute([$consentId, $limit]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        ", [$consentId, $limit]);
     }
 
     /**
@@ -282,9 +272,7 @@ class ConsentService {
         $params[] = $limit;
         $params[] = $offset;
 
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $this->db->query($sql, $params);
     }
 
     /**
@@ -308,8 +296,7 @@ class ConsentService {
         );
 
         // Delete consent record
-        $stmt = $this->db->prepare("DELETE FROM user_consents WHERE id = ?");
-        $stmt->execute([$consentId]);
+        $this->db->execute("DELETE FROM user_consents WHERE id = ?", [$consentId]);
 
         return ['success' => true, 'deleted' => $consentId];
     }
@@ -373,8 +360,7 @@ class ConsentService {
         $params[] = $consentId;
 
         $sql = "UPDATE user_consents SET " . implode(', ', $setClauses) . " WHERE id = ?";
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute($params);
+        $this->db->execute($sql, $params);
 
         // Log audit entry
         $this->logConsentAudit($consentId, $action, $previousStatus, $newStatus, $reason, $triggeredBy, $ipAddress, $userAgent);
@@ -389,15 +375,13 @@ class ConsentService {
         $auditId = $this->generateUuid();
         $now = $this->now();
 
-        $stmt = $this->db->prepare("
+        $this->db->insert("
             INSERT INTO consent_audit_log (
                 id, consent_id, action, previous_status, new_status,
                 reason, triggered_by, ip_address, user_agent,
                 metadata_json, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-
-        $stmt->execute([
+        ", [
             $auditId,
             $consentId,
             $action,
