@@ -1,0 +1,18 @@
+apiVersion: v2
+name: chatbot
+description: GPT Chatbot Boilerplate - Multi-tenant AI chatbot platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - chatbot
+  - ai
+  - openai
+  - whatsapp
+  - multi-tenant
+home: https://github.com/suporterfid/gpt-chatbot-boilerplate
+sources:
+  - https://github.com/suporterfid/gpt-chatbot-boilerplate
+maintainers:
+  - name: Chatbot Team
+    email: support@example.com

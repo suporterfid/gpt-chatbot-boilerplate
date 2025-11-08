@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "chatbot.fullname" . }}
+  labels:
+    {{- include "chatbot.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "chatbot.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "chatbot.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: app
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "chatbot.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: {{ .Chart.Name }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+        livenessProbe:
+          {{- toYaml .Values.livenessProbe | nindent 12 }}
+        readinessProbe:
+          {{- toYaml .Values.readinessProbe | nindent 12 }}
+        resources:
+          {{- toYaml .Values.resources | nindent 12 }}
+        env:
+        - name: ENVIRONMENT
+          value: {{ .Values.global.environment }}
+        - name: TZ
+          value: {{ .Values.global.timezone }}
+        {{- range $key, $value := .Values.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chatbot.fullname" . }}
+              key: openai-api-key
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chatbot.fullname" . }}
+              key: db-password
+        - name: ADMIN_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chatbot.fullname" . }}
+              key: admin-token
+        {{- if .Values.persistence.enabled }}
+        volumeMounts:
+        - name: uploads
+          mountPath: {{ .Values.persistence.uploads.mountPath }}
+          {{- if .Values.persistence.uploads.subPath }}
+          subPath: {{ .Values.persistence.uploads.subPath }}
+          {{- end }}
+        - name: logs
+          mountPath: {{ .Values.persistence.logs.mountPath }}
+          {{- if .Values.persistence.logs.subPath }}
+          subPath: {{ .Values.persistence.logs.subPath }}
+          {{- end }}
+        - name: backups
+          mountPath: {{ .Values.persistence.backups.mountPath }}
+          {{- if .Values.persistence.backups.subPath }}
+          subPath: {{ .Values.persistence.backups.subPath }}
+          {{- end }}
+        {{- end }}
+      {{- if .Values.persistence.enabled }}
+      volumes:
+      - name: uploads
+        persistentVolumeClaim:
+          claimName: {{ include "chatbot.fullname" . }}-uploads
+      - name: logs
+        persistentVolumeClaim:
+          claimName: {{ include "chatbot.fullname" . }}-logs
+      - name: backups
+        persistentVolumeClaim:
+          claimName: {{ include "chatbot.fullname" . }}-backups
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
