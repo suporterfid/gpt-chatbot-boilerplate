@@ -5,6 +5,8 @@ Welcome to the GPT Chatbot Boilerplate documentation! This directory contains co
 ## 📚 Quick Start
 
 - **New to the project?** Start with the [main README](../README.md)
+- **Want to get started quickly?** See [QUICK_START.md](QUICK_START.md) for installation guide
+- **Curious about features?** Check [FEATURES.md](FEATURES.md) for complete feature list
 - **Want to deploy?** See [deployment.md](deployment.md) or use the [Installation Wizard](INSTALLATION_WIZARD.md)
 - **Need API reference?** Check [api.md](api.md)
 - **Want to customize?** Read [customization-guide.md](customization-guide.md)
@@ -12,6 +14,8 @@ Welcome to the GPT Chatbot Boilerplate documentation! This directory contains co
 ## 📖 Core Documentation
 
 ### Getting Started
+- [QUICK_START.md](QUICK_START.md) - **NEW:** Get up and running in 5 minutes (all installation methods)
+- [FEATURES.md](FEATURES.md) - **NEW:** Complete feature overview with descriptions
 - [deployment.md](deployment.md) - Complete deployment guide (Docker, cloud, production)
 - [INSTALLATION_WIZARD.md](INSTALLATION_WIZARD.md) - Web-based installation wizard guide
 - [api.md](api.md) - Complete API reference (HTTP, WebSocket, JavaScript)
@@ -101,6 +105,8 @@ Located in [ops/](ops/):
 ## 📋 Documentation by Use Case
 
 ### I want to...
+- **Get started quickly** → [QUICK_START.md](QUICK_START.md) - **START HERE**
+- **See all features** → [FEATURES.md](FEATURES.md)
 - **Deploy the chatbot** → [deployment.md](deployment.md)
 - **Create and manage agents** → [GUIA_CRIACAO_AGENTES.md](GUIA_CRIACAO_AGENTES.md) or [PHASE1_DB_AGENT.md](PHASE1_DB_AGENT.md)
 - **Integrate with WhatsApp** → [WHATSAPP_INTEGRATION.md](WHATSAPP_INTEGRATION.md)
