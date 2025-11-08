@@ -654,8 +654,8 @@ For EU tenants:
 
 - [Backup & Restore Guide](backup_restore.md) - General procedures
 - [Disaster Recovery Runbook](disaster_recovery.md) - DR scenarios
-- [Multi-Tenancy Design](../MULTI_TENANCY_DESIGN.md) - Architecture overview
-- [Multi-Tenancy Implementation](../../MULTI_TENANCY_IMPLEMENTATION_SUMMARY.md) - Implementation details
+- [Multi-Tenancy](../MULTI_TENANCY.md) - Architecture overview and implementation
+- [Multi-Tenancy Implementation Summary](../../MULTI_TENANCY_IMPLEMENTATION_SUMMARY.md) - Implementation details
 
 ## Revision History
 

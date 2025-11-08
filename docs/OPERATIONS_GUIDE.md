@@ -204,7 +204,7 @@ cat /data/backups/latest/backup.sha256
 
 ### Restore Procedures
 
-**Full System Restore**: See [DR_RUNBOOK.md](DR_RUNBOOK.md) - Scenario 1
+**Full System Restore**: See [ops/disaster_recovery.md](ops/disaster_recovery.md) - Complete System Failure
 
 **Database Restore**:
 ```bash
@@ -443,7 +443,7 @@ sqlite3 /data/database.sqlite "SELECT * FROM resource_permissions WHERE is_revok
 
 ### Security Incident Response
 
-**See [DR_RUNBOOK.md](DR_RUNBOOK.md) - Scenario 5**
+**See [ops/disaster_recovery.md](ops/disaster_recovery.md) - Security Breach Response**
 
 Quick actions:
 1. Isolate affected systems
@@ -851,7 +851,11 @@ iostat -x 1 5
 
 ### Related Documentation
 
-- [DR_RUNBOOK.md](DR_RUNBOOK.md) - Disaster recovery procedures
+- [ops/disaster_recovery.md](ops/disaster_recovery.md) - Disaster recovery procedures
+- [ops/backup_restore.md](ops/backup_restore.md) - Backup and restore procedures
+- [ops/incident_runbook.md](ops/incident_runbook.md) - Incident response runbook
+- [ops/logs.md](ops/logs.md) - Logging and log aggregation
+- [ops/secrets_management.md](ops/secrets_management.md) - Secrets management
 - [OBSERVABILITY.md](OBSERVABILITY.md) - Monitoring and logging details
 - [COMPLIANCE_OPERATIONS.md](COMPLIANCE_OPERATIONS.md) - GDPR/LGPD procedures
 - [BILLING_METERING.md](BILLING_METERING.md) - Billing operations

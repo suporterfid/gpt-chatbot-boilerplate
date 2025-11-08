@@ -1002,6 +1002,8 @@ bash scripts/smoke_test.sh
 
 ## 📚 Documentation
 
+> **📑 Full Documentation Index**: See [docs/README.md](docs/README.md) for a complete, categorized list of all documentation.
+
 ### Implementation & Feature Documentation
 
 For a comprehensive overview of the complete implementation across all phases:
