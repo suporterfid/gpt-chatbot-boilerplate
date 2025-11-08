@@ -152,7 +152,7 @@ class DB {
                 $result = $stmt->fetch();
                 return $result !== false;
             }
-            
+
             // For MySQL/other databases, try a simple query
             $result = $this->pdo->query("SELECT 1 FROM $tableName LIMIT 1");
             return true;
@@ -160,7 +160,48 @@ class DB {
             return false;
         }
     }
-    
+
+    /**
+     * Check if a column exists on a table (supports SQLite/MySQL)
+     */
+    public function columnExists($tableName, $columnName) {
+        try {
+            $databaseUrl = $this->config['database_url'] ?? '';
+
+            if (strpos($databaseUrl, 'sqlite:') === 0 || empty($databaseUrl)) {
+                $table = $this->normalizeIdentifier($tableName);
+                $stmt = $this->pdo->query("PRAGMA table_info(\"$table\")");
+
+                while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                    if (strcasecmp($row['name'], $columnName) === 0) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            $table = $this->normalizeIdentifier($tableName);
+            $stmt = $this->pdo->prepare("SHOW COLUMNS FROM $table LIKE ?");
+            $stmt->execute([$columnName]);
+            return $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+        } catch (PDOException $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Normalize identifier names for direct interpolation
+     */
+    private function normalizeIdentifier($identifier) {
+        // Allow only alphanumeric and underscore characters to avoid injection via migrations
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $identifier)) {
+            throw new InvalidArgumentException('Invalid identifier: ' . $identifier);
+        }
+
+        return $identifier;
+    }
+
     /**
      * Run migrations from a directory
      */
@@ -201,10 +242,26 @@ class DB {
             
             // Read and execute migration
             $sql = file_get_contents($file);
-            
+
+            // Skip ALTER TABLE ... ADD COLUMN statements that target existing columns (SQLite compatibility)
+            $sql = preg_replace_callback(
+                '/ALTER\s+TABLE\s+([\"`\[]?[A-Za-z0-9_]+[\"`\]]?)\s+ADD\s+COLUMN\s+([\"`\[]?[A-Za-z0-9_]+[\"`\]]?)([^;]*);/i',
+                function ($matches) {
+                    $table = trim($matches[1], "\"`[]");
+                    $column = trim($matches[2], "\"`[]");
+
+                    if ($this->columnExists($table, $column)) {
+                        return "-- Skipped: column $column already exists on $table;";
+                    }
+
+                    return $matches[0];
+                },
+                $sql
+            );
+
             try {
                 $this->pdo->exec($sql);
-                
+
                 // Record migration
                 $stmt = $this->pdo->prepare("INSERT INTO migrations (filename, executed_at) VALUES (?, ?)");
                 $stmt->execute([$filename, date('Y-m-d H:i:s')]);
