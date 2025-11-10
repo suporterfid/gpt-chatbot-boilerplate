@@ -94,22 +94,42 @@ async function showPromptBuilderModal(agentId, agentName) {
         .filter(g => g.mandatory)
         .map(g => g.key);
     
-    const modal = document.getElementById('prompt-builder-modal');
+    // Ensure modal exists
+    let modal = document.getElementById('prompt-builder-modal');
     if (!modal) {
         createPromptBuilderModal();
+        // Get the modal again after creation
+        modal = document.getElementById('prompt-builder-modal');
+    }
+    
+    if (!modal) {
+        console.error('Failed to create or find prompt-builder-modal');
+        showToast('Failed to open Prompt Builder', 'error');
+        return;
     }
     
     // Update modal title
-    document.getElementById('prompt-builder-agent-name').textContent = agentName;
+    const titleElement = document.getElementById('prompt-builder-agent-name');
+    if (titleElement) {
+        titleElement.textContent = agentName;
+    }
     
     // Reset form
-    document.getElementById('prompt-builder-idea').value = '';
-    document.getElementById('prompt-builder-language').value = 'en';
+    const ideaElement = document.getElementById('prompt-builder-idea');
+    if (ideaElement) {
+        ideaElement.value = '';
+    }
+    
+    const languageElement = document.getElementById('prompt-builder-language');
+    if (languageElement) {
+        languageElement.value = 'en';
+    }
+    
     renderGuardrailsCheckboxes();
     hideGeneratedPrompt();
     
     // Show modal
-    document.getElementById('prompt-builder-modal').style.display = 'flex';
+    modal.style.display = 'flex';
 }
 
 /**

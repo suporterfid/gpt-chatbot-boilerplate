@@ -385,6 +385,11 @@ function openModal(title, content) {
     modal.style.display = 'flex';
 }
 
+// Alias for openModal
+function showModal(title, content) {
+    openModal(title, content);
+}
+
 function closeModal() {
     document.getElementById('modal').style.display = 'none';
 }
@@ -392,6 +397,18 @@ function closeModal() {
 function formatDate(dateString) {
     const date = new Date(dateString);
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.toString().replace(/[&<>"']/g, m => map[m]);
 }
 
 // Token Management
@@ -857,11 +874,191 @@ async function handleCreateAgent(event) {
     }
 }
 
+async function handleUpdateAgent(event, id) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    const data = {
+        name: formData.get('name'),
+        description: formData.get('description'),
+        api_type: formData.get('api_type'),
+        model: formData.get('model') || null,
+        prompt_id: formData.get('prompt_id') || null,
+        prompt_version: formData.get('prompt_version') || null,
+        system_message: formData.get('system_message') || null,
+        temperature: parseFloat(formData.get('temperature')) || null,
+        top_p: parseFloat(formData.get('top_p')) || null,
+        max_output_tokens: parseInt(formData.get('max_output_tokens')) || null,
+        is_default: formData.get('is_default') === 'on',
+    };
+    
+    // Handle vector store IDs
+    const vectorStoreIds = formData.getAll('vector_store_ids');
+    if (vectorStoreIds.length > 0) {
+        data.vector_store_ids = vectorStoreIds;
+    } else {
+        const manualIds = formData.get('vector_store_ids');
+        if (manualIds) {
+            data.vector_store_ids = manualIds.split(',').map(s => s.trim()).filter(s => s);
+        }
+    }
+    
+    // Handle tools
+    const tools = [];
+    if (formData.get('enable_file_search') === 'on') {
+        tools.push({ type: 'file_search' });
+    }
+    if (tools.length > 0) {
+        data.tools = tools;
+    }
+    
+    try {
+        await api.updateAgent(id, data);
+        closeModal();
+        showToast('Agent updated successfully', 'success');
+        loadAgentsPage();
+    } catch (error) {
+        showToast('Failed to update agent: ' + error.message, 'error');
+    }
+}
+
 async function editAgent(id) {
     try {
         const agent = await api.getAgent(id);
-        // Similar modal to create, but with pre-filled values
-        showToast('Edit functionality coming soon', 'warning');
+        
+        // Load prompts, vector stores, and models for dropdowns
+        let prompts = [];
+        let vectorStores = [];
+        let models = [];
+        
+        try {
+            prompts = await api.listPrompts();
+            vectorStores = await api.listVectorStores();
+            models = await api.listModels();
+        } catch (error) {
+            console.error('Error loading resources:', error);
+        }
+        
+        const promptOptions = prompts.map(p => `<option value="${p.openai_prompt_id || ''}" ${agent.prompt_id === p.openai_prompt_id ? 'selected' : ''}>${p.name}</option>`).join('');
+        const vectorStoreOptions = vectorStores.map(vs => `<option value="${vs.openai_store_id || ''}" ${agent.vector_store_ids && agent.vector_store_ids.includes(vs.openai_store_id) ? 'selected' : ''}>${vs.name}</option>`).join('');
+        
+        // Build model options with priority sorting
+        const buildModelOptions = (modelsData) => {
+            if (!modelsData || !modelsData.data || modelsData.data.length === 0) {
+                return '';
+            }
+            
+            // Priority map for model prefixes
+            const getPriority = (modelId) => {
+                if (modelId.startsWith('gpt-4')) return 1;
+                if (modelId.startsWith('gpt-3.5')) return 2;
+                return 3;
+            };
+            
+            const sortedModels = modelsData.data.sort((a, b) => {
+                const priorityDiff = getPriority(a.id) - getPriority(b.id);
+                return priorityDiff !== 0 ? priorityDiff : a.id.localeCompare(b.id);
+            });
+            
+            return sortedModels.map(m => `<option value="${m.id}" ${agent.model === m.id ? 'selected' : ''}>${m.id}</option>`).join('');
+        };
+        
+        const modelOptions = buildModelOptions(models);
+        
+        // Build model input field (dropdown or text fallback)
+        const modelInputHtml = modelOptions 
+            ? `<select name="model" class="form-select"><option value="">Use default</option>${modelOptions}</select>`
+            : `<input type="text" name="model" class="form-input" placeholder="e.g., gpt-4o, gpt-4o-mini" value="${agent.model || ''}" />`;
+        
+        // Check if file_search tool is enabled
+        const hasFileSearch = agent.tools && agent.tools.some(t => t.type === 'file_search');
+        
+        const content = `
+            <form id="agent-form" onsubmit="handleUpdateAgent(event, '${id}')">
+                <div class="form-group">
+                    <label class="form-label">Name *</label>
+                    <input type="text" name="name" class="form-input" value="${agent.name || ''}" required />
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea name="description" class="form-textarea">${agent.description || ''}</textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">API Type *</label>
+                    <select name="api_type" class="form-select">
+                        <option value="responses" ${agent.api_type === 'responses' ? 'selected' : ''}>Responses API</option>
+                        <option value="chat" ${agent.api_type === 'chat' ? 'selected' : ''}>Chat Completions API</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Model</label>
+                    ${modelInputHtml}
+                    <small class="form-help">Select a model or leave as default</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Prompt ID</label>
+                    ${promptOptions ? `<select name="prompt_id" class="form-select"><option value="">Select Prompt</option>${promptOptions}</select>` : `<input type="text" name="prompt_id" class="form-input" value="${agent.prompt_id || ''}" />`}
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Prompt Version</label>
+                    <input type="text" name="prompt_version" class="form-input" value="${agent.prompt_version || ''}" />
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">System Message</label>
+                    <textarea name="system_message" class="form-textarea" placeholder="You are a helpful assistant...">${agent.system_message || ''}</textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Temperature (0-2)</label>
+                    <input type="number" name="temperature" class="form-input" step="0.1" min="0" max="2" value="${agent.temperature !== null && agent.temperature !== undefined ? agent.temperature : '0.7'}" />
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Top P (0-1)</label>
+                    <input type="number" name="top_p" class="form-input" step="0.05" min="0" max="1" value="${agent.top_p !== null && agent.top_p !== undefined ? agent.top_p : '1'}" />
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Max Output Tokens</label>
+                    <input type="number" name="max_output_tokens" class="form-input" placeholder="e.g., 1024" value="${agent.max_output_tokens || ''}" />
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Vector Store IDs</label>
+                    ${vectorStoreOptions ? `<select name="vector_store_ids" class="form-select" multiple>${vectorStoreOptions}</select>` : `<input type="text" name="vector_store_ids" class="form-input" placeholder="vs_abc,vs_def" value="${agent.vector_store_ids ? agent.vector_store_ids.join(',') : ''}" />`}
+                    <small class="form-help">Select vector stores for file search</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-checkbox">
+                        <input type="checkbox" name="enable_file_search" ${hasFileSearch ? 'checked' : ''} />
+                        Enable File Search Tool
+                    </label>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-checkbox">
+                        <input type="checkbox" name="is_default" ${agent.is_default ? 'checked' : ''} />
+                        Set as Default Agent
+                    </label>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update Agent</button>
+                </div>
+            </form>
+        `;
+        
+        openModal('Edit Agent', content);
     } catch (error) {
         showToast('Failed to load agent: ' + error.message, 'error');
     }
