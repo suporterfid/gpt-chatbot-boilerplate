@@ -21,7 +21,7 @@ require_once 'includes/ResourceAuthService.php';
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
 // Handle preflight requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -54,7 +54,7 @@ function sendSSEEvent($type, $data = null, $id = null) {
     echo "event: $type\n";
 
     if ($data !== null) {
-        $jsonData = json_encode($data);
+        $jsonData = json_encode($data, JSON_UNESCAPED_UNICODE);
         echo "data: $jsonData\n";
     }
 
@@ -164,7 +164,7 @@ function requirePermission($user, $permission, $adminAuth) {
 // Send JSON response
 function sendResponse($data, $statusCode = 200) {
     http_response_code($statusCode);
-    echo json_encode(['data' => $data]);
+    echo json_encode(['data' => $data], JSON_UNESCAPED_UNICODE);
     exit();
 }
 
@@ -177,7 +177,7 @@ function sendError($message, $statusCode = 400, $code = null) {
             'code' => $code ?? 'ERROR',
             'status' => $statusCode
         ]
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
     exit();
 }
 
@@ -1599,13 +1599,19 @@ try {
             // Create ChatHandler with agent config
             $chatHandler = new ChatHandler($config, $agentService);
             
-            // Send start event
+            // Send start event with agent info
             echo "event: message\n";
             echo "data: " . json_encode([
                 'type' => 'start',
+                'agent' => [
+                    'id' => $agent['id'],
+                    'name' => $agent['name'],
+                    'api_type' => $agent['api_type']
+                ],
+                // Legacy fields for backward compatibility
                 'agent_id' => $id,
                 'agent_name' => $agent['name']
-            ]) . "\n\n";
+            ], JSON_UNESCAPED_UNICODE) . "\n\n";
             flush();
             
             try {
@@ -1636,7 +1642,7 @@ try {
                 echo "data: " . json_encode([
                     'type' => 'error',
                     'message' => $e->getMessage()
-                ]) . "\n\n";
+                ], JSON_UNESCAPED_UNICODE) . "\n\n";
                 flush();
             }
             
