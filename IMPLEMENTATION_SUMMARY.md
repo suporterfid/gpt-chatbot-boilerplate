@@ -57,6 +57,11 @@ This implementation adds complete WhatsApp Business integration via Z-API to the
   - Implements idempotency checks
   - Provides message statistics
 
+- **`ConsentService`** - Messaging compliance guardrails
+  - Tracks opt-in/opt-out state per user/tenant/channel
+  - Processes STOP/START keywords before invoking `ChatHandler`
+  - Shares consent context with outbound sending utilities
+
 ### 4. Webhook Endpoint
 
 - **`channels/whatsapp/webhook.php`** - Z-API webhook receiver
@@ -66,6 +71,7 @@ This implementation adds complete WhatsApp Business integration via Z-API to the
   - Handles media downloads
   - Supports opt-out/opt-in commands
   - Automatic response chunking
+  - Delegates messaging flow to `ChatHandler` for prompt/tool orchestration
 
 ### 5. Admin API Extensions
 
@@ -76,6 +82,8 @@ Added 7 new endpoints:
 - `delete_agent_channel` - Remove channel config
 - `test_channel_send` - Send test message
 - `list_channel_sessions` - View active sessions
+
+All endpoints reuse `AdminAuth` + `ResourceAuthService` checks, guaranteeing tenant boundaries remain intact during omnichannel operations.
 
 ### 6. Admin UI Updates
 
@@ -96,6 +104,8 @@ Extended `config.php` and `.env.example` with:
 - `WHATSAPP_REPLY_CHUNK_SIZE`
 - `WHATSAPP_ALLOW_MEDIA`
 - `WHATSAPP_MAX_MEDIA_SIZE`
+
+The WhatsApp channel block in `config.php` centralizes these values so both the Admin UI and runtime webhook enforce identical limits.
 
 ### 8. Documentation
 
@@ -182,6 +192,8 @@ Webhook
   │   │   └── Database (sessions)
   │   └── ChannelMessageService
   │       └── Database (messages)
+  ├── ConsentService
+  │   └── Database (consent ledger)
   └── ChatHandler
       └── OpenAI API
 ```

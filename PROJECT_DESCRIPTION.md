@@ -105,6 +105,23 @@ Enable developers to quickly deploy intelligent chatbot interfaces with:
 - Chat-completions streaming mirror
 - Alternative transport for real-time messaging
 
+### 4. Channel Integrations & Consent
+
+#### `ChannelManager` & adapters (`includes/ChannelManager.php`, `includes/channels/WhatsAppZApi.php`)
+- Unified abstraction for omnichannel delivery (WhatsApp today, additional adapters pluggable)
+- Idempotent inbound processing backed by `channel_messages` storage
+- Automatic session management through `ChannelSessionService`
+
+#### Consent & compliance services (`includes/ConsentService.php`)
+- Keyword-driven opt-in/opt-out workflows used by the WhatsApp webhook
+- Tenant-aware consent ledger for auditability
+- Helper utilities consumed by webhooks and admin tooling
+
+#### `channels/whatsapp/webhook.php`
+- Secure ingress point for Z-API payloads with signature verification
+- Delegates to `ChatHandler` to reuse prompt/tooling logic
+- Applies consent guardrails before responses are dispatched
+
 ## Dual API Support
 
 ### Chat Completions API Mode
@@ -215,14 +232,20 @@ RESPONSES_VECTOR_STORE_IDS=vs_123,vs_456
 - Automatic tool result submission
 
 ### 🔐 Security
-- Token-based admin authentication
-- Role-Based Access Control
-- API key authentication with expiration
-- Rate limiting (IP-based)
-- Input sanitization
-- File type/size validation
-- CORS configuration
-- Webhook signature verification
+- Token-based admin authentication (`includes/AdminAuth.php`)
+- Role-Based Access Control integrated into every admin endpoint (`admin-api.php`)
+- API key authentication with expiration controls
+- Rate limiting (IP-based) wired through `ChatHandler`
+- Input sanitization and file validation for uploads
+- Configurable CORS headers (`chat-unified.php`, WhatsApp webhook)
+- Webhook signature verification for external channels
+- Resource-level authorization via `ResourceAuthService`
+
+### ☑️ Governance & Compliance
+- Resource sharing policies backed by `ResourceAuthService` and the `resource_permissions` table
+- Comprehensive audit logging powered by `AuditService`
+- Consent enforcement for messaging channels (`ConsentService`)
+- Configurable retention and cleanup scripts in `scripts/`
 
 ### 📊 Observability
 - Prometheus metrics (`/metrics.php`)
@@ -424,22 +447,22 @@ ChatBot.init({
 ## Operational Features
 
 ### Backup & Restore
-- Automated database backup script
-- 7-day rotation policy
-- Disaster recovery procedures
-- Point-in-time restore capability
+- Automated database backup cron targets (`scripts/db_backup.sh`, `scripts/backup_all.sh`)
+- Systemd unit files for scheduled runs (`scripts/chatbot-backup.service`, `scripts/chatbot-backup.timer`)
+- Disaster recovery helpers (`scripts/db_restore.sh`, `scripts/restore_all.sh`)
+- Integrity validation via smoke tests (`scripts/smoke_test.sh`)
 
 ### Monitoring
-- Prometheus metrics scraping
-- Alert rules for common issues
-- Health check endpoints
-- Log aggregation support (ELK, CloudWatch)
+- Prometheus metrics exposed via `metrics.php` and `includes/MetricsCollector.php`
+- Structured logging and tracing through `includes/ObservabilityMiddleware.php`
+- Health check endpoints served by admin API actions
+- Log aggregation ready formats (JSON logs, integrations documented in `docs/OBSERVABILITY.md`)
 
 ### Secrets Management
-- Admin token rotation procedures
-- API key expiration and renewal
-- Environment variable documentation
-- Vault integration guidelines
+- Admin token rotation procedures codified in `docs/SECURITY_MODEL.md`
+- API key expiration and renewal via admin endpoints
+- `.env` driven configuration surfaced through `config.php`
+- Vault / secret manager integration recommendations in documentation
 
 ### High Availability
 - Stateless design for horizontal scaling
