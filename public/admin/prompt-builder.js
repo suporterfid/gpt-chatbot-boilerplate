@@ -74,6 +74,43 @@ let promptBuilderState = {
     generatedPrompt: null
 };
 
+const promptBuilderHooks = {
+    onGenerationStart: null,
+    onPromptGenerated: null
+};
+
+function registerPromptBuilderHooks(hooks = {}) {
+    promptBuilderHooks.onGenerationStart = typeof hooks.onGenerationStart === 'function' ? hooks.onGenerationStart : null;
+    promptBuilderHooks.onPromptGenerated = typeof hooks.onPromptGenerated === 'function' ? hooks.onPromptGenerated : null;
+}
+
+async function requestPromptGeneration(agentId, ideaText, guardrails = [], language = 'en') {
+    if (promptBuilderHooks.onGenerationStart) {
+        try {
+            promptBuilderHooks.onGenerationStart({ agentId, ideaText, guardrails, language });
+        } catch (error) {
+            console.warn('Prompt Builder hook onGenerationStart failed', error);
+        }
+    }
+
+    const result = await api.generatePrompt(
+        agentId,
+        ideaText,
+        guardrails,
+        language
+    );
+
+    if (promptBuilderHooks.onPromptGenerated) {
+        try {
+            promptBuilderHooks.onPromptGenerated(result, { agentId, guardrails, language });
+        } catch (error) {
+            console.warn('Prompt Builder hook onPromptGenerated failed', error);
+        }
+    }
+
+    return result;
+}
+
 /**
  * Show Prompt Builder modal for an agent
  */
@@ -316,7 +353,7 @@ async function generatePromptSpec() {
     promptBuilderState.generating = true;
     
     try {
-        const result = await api.generatePrompt(
+        const result = await requestPromptGeneration(
             promptBuilderState.currentAgentId,
             ideaText,
             promptBuilderState.selectedGuardrails,
@@ -595,7 +632,7 @@ function closePromptBuilderModal() {
     if (modal) {
         modal.style.display = 'none';
     }
-    
+
     // Reset state
     promptBuilderState.currentAgentId = null;
     promptBuilderState.generatedPrompt = null;
@@ -608,3 +645,11 @@ window.addEventListener('click', (e) => {
         closePromptBuilderModal();
     }
 });
+
+// Expose integration hooks
+window.promptBuilder = window.promptBuilder || {};
+window.promptBuilder.registerHooks = registerPromptBuilderHooks;
+window.promptBuilder.generate = function(options = {}) {
+    const { agentId, ideaText, guardrails = [], language = 'en' } = options;
+    return requestPromptGeneration(agentId, ideaText, guardrails, language);
+};
