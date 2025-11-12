@@ -80,29 +80,29 @@ class ChannelManager {
      */
     public function getChannelAdapter(string $agentId, string $channel): ChannelInterface {
         $cacheKey = "{$agentId}:{$channel}";
-        
+
         if (isset($this->channels[$cacheKey])) {
             return $this->channels[$cacheKey];
         }
-        
+
         $config = $this->getChannelConfig($agentId, $channel);
-        
+
         if (!$config) {
             throw new Exception("Channel '$channel' not configured or disabled for agent '$agentId'", 404);
         }
-        
-        // Create adapter based on channel type
+
+        $adapter = $this->createAdapter($channel, $config);
+        $this->channels[$cacheKey] = $adapter;
+        return $adapter;
+    }
+
+    private function createAdapter(string $channel, array $config): ChannelInterface {
         switch ($channel) {
             case 'whatsapp':
-                $adapter = new WhatsAppZApi($config);
-                break;
-                
+                return new WhatsAppZApi($config);
             default:
                 throw new Exception("Unsupported channel: $channel", 400);
         }
-        
-        $this->channels[$cacheKey] = $adapter;
-        return $adapter;
     }
     
     /**
@@ -190,24 +190,32 @@ class ChannelManager {
         string $channel,
         string $externalUserId,
         string $text,
-        string $conversationId
+        string $conversationId,
+        array $options = []
     ): array {
         try {
-            $adapter = $this->getChannelAdapter($agentId, $channel);
-            
+            if (!empty($options['configOverride']) && is_array($options['configOverride'])) {
+                $adapter = $this->createAdapter($channel, $options['configOverride']);
+            } else {
+                $adapter = $this->getChannelAdapter($agentId, $channel);
+            }
+
             // Send message
-            $result = $adapter->sendText($externalUserId, $text);
-            
-            // Record outbound message
-            $messageId = $this->messageService->recordOutbound(
-                $agentId,
-                $channel,
-                $externalUserId,
-                $conversationId,
-                ['text' => $text],
-                $result['message_id'] ?? null
-            );
-            
+            $adapterOptions = $options['adapterOptions'] ?? [];
+            $result = $adapter->sendText($externalUserId, $text, $adapterOptions);
+
+            $messageId = null;
+            if (empty($options['skipPersistence'])) {
+                $messageId = $this->messageService->recordOutbound(
+                    $agentId,
+                    $channel,
+                    $externalUserId,
+                    $conversationId,
+                    ['text' => $text],
+                    $result['message_id'] ?? null
+                );
+            }
+
             return [
                 'success' => true,
                 'message_id' => $messageId,

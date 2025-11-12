@@ -148,6 +148,12 @@ body {
     padding: 1.5rem;
 }
 
+.card-subtitle {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
 /* Buttons */
 .btn {
     padding: 0.5rem 1rem;
@@ -280,6 +286,209 @@ tr:hover {
 .table-actions {
     display: flex;
     gap: 0.5rem;
+}
+
+.agent-filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.agent-card {
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    background: white;
+}
+
+.agent-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.agent-card-head h4 {
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+}
+
+.agent-card-head p {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.agent-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    justify-content: flex-end;
+}
+
+.agent-card-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem;
+    margin: 0;
+}
+
+.agent-card-meta dt {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin-bottom: 0.1rem;
+}
+
+.agent-card-meta dd {
+    margin: 0;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.agent-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.agent-summary {
+    border: 1px dashed var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    background-color: var(--bg-secondary);
+}
+
+.agent-summary-compact {
+    background-color: transparent;
+    border-style: solid;
+}
+
+.agent-summary-title {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.agent-summary-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+}
+
+.agent-summary-inline .agent-summary-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.agent-summary-row:last-child {
+    margin-bottom: 0;
+}
+
+.agent-summary-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.agent-summary-value {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+.agent-summary-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.agent-summary-empty {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.channel-badge,
+.vector-store-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    padding: 0.15rem 0.75rem;
+    border: 1px solid transparent;
+}
+
+.channel-badge-dot {
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 50%;
+    background-color: currentColor;
+}
+
+.channel-badge-icon {
+    font-size: 0.85rem;
+}
+
+.channel-badge.connected {
+    background-color: rgba(16, 185, 129, 0.12);
+    color: var(--success-color);
+    border-color: rgba(16, 185, 129, 0.4);
+}
+
+.channel-badge.disconnected {
+    background-color: rgba(107, 114, 128, 0.12);
+    color: var(--secondary-color);
+    border-color: rgba(107, 114, 128, 0.4);
+}
+
+.vector-store-badge {
+    background-color: rgba(79, 70, 229, 0.12);
+    color: var(--primary-color);
+    border-color: rgba(79, 70, 229, 0.35);
+}
+
+.validation-message {
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+}
+
+.validation-message.success {
+    color: var(--success-color);
+}
+
+.validation-message.error {
+    color: var(--danger-color);
+}
+
+.validation-message.validating {
+    color: var(--warning-color);
+}
+
+.card-loading {
+    display: flex;
+    justify-content: center;
+    padding: 2rem 0;
 }
 
 /* Badges */
@@ -547,13 +756,26 @@ tr:hover {
         left: -var(--sidebar-width);
         transition: left 0.3s;
     }
-    
+
     .sidebar.open {
         left: 0;
     }
-    
+
     .main-content {
         margin-left: 0;
+    }
+
+    .agent-card-head {
+        flex-direction: column;
+    }
+
+    .agent-card-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .agent-filters {
+        grid-template-columns: 1fr;
     }
 }
 
