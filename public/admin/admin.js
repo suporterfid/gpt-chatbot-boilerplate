@@ -9,6 +9,124 @@ const TOKEN_STORAGE_KEY = 'adminToken';
 let adminToken = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
 let currentPage = 'agents';
 
+const agentListState = {
+    filters: {
+        search: '',
+        apiType: 'all',
+        status: 'all'
+    },
+    agents: [],
+    vectorStoreMap: {},
+    isLoading: false,
+    lastError: null
+};
+
+const AgentSummaryComponent = (() => {
+    const CHANNEL_LABELS = {
+        whatsapp: 'WhatsApp'
+    };
+
+    const CHANNEL_ICONS = {
+        whatsapp: '📱'
+    };
+
+    function normalizeVectorStoreIds(value) {
+        if (!value) {
+            return [];
+        }
+        if (Array.isArray(value)) {
+            return value.filter(Boolean);
+        }
+        if (typeof value === 'string') {
+            return value.split(',').map(item => item.trim()).filter(Boolean);
+        }
+        return [];
+    }
+
+    function resolveVectorStores(agent, options) {
+        if (Array.isArray(agent.vectorStores) && agent.vectorStores.length) {
+            return agent.vectorStores;
+        }
+
+        const ids = normalizeVectorStoreIds(agent.vector_store_ids);
+        return ids.map(id => {
+            if (options?.vectorStoreLookup) {
+                const resolved = options.vectorStoreLookup(id);
+                if (resolved) {
+                    return resolved;
+                }
+            }
+            if (options?.vectorStoreMap && options.vectorStoreMap[id]) {
+                return options.vectorStoreMap[id];
+            }
+            return { openai_store_id: id, name: id };
+        });
+    }
+
+    function renderChannelBadges(channels = []) {
+        if (!channels || channels.length === 0) {
+            return '<span class="agent-summary-empty">Nenhum canal configurado</span>';
+        }
+
+        return `<div class="agent-summary-badges">${channels.map(channel => {
+            const enabled = Boolean(channel.enabled);
+            const icon = CHANNEL_ICONS[channel.channel] || '🔌';
+            const label = CHANNEL_LABELS[channel.channel] || channel.display_name || channel.channel || 'Canal';
+            const stateClass = enabled ? 'connected' : 'disconnected';
+            const stateLabel = enabled ? 'Conectado' : 'Desativado';
+            return `
+                <span class="channel-badge ${stateClass}" title="${stateLabel}">
+                    <span class="channel-badge-dot"></span>
+                    <span class="channel-badge-icon">${icon}</span>
+                    <span>${escapeHtml(label)}</span>
+                </span>
+            `;
+        }).join('')}</div>`;
+    }
+
+    function renderVectorStoreBadges(vectorStores = []) {
+        if (!vectorStores || vectorStores.length === 0) {
+            return '<span class="agent-summary-empty">Nenhum vector store associado</span>';
+        }
+
+        return `<div class="agent-summary-badges">${vectorStores.map(store => {
+            const name = store.name || store.display_name || store.openai_store_id || 'Vector store';
+            return `<span class="vector-store-badge">${escapeHtml(name)}</span>`;
+        }).join('')}</div>`;
+    }
+
+    function render(agent, options = {}) {
+        const channels = options.channels || agent.channels || [];
+        const vectorStores = options.vectorStores || resolveVectorStores(agent, options);
+        const title = options.title || 'Resumo do agente';
+        const classes = ['agent-summary'];
+        if (options.compact) {
+            classes.push('agent-summary-compact');
+        }
+        if (options.layout === 'inline') {
+            classes.push('agent-summary-inline');
+        }
+
+        return `
+            <div class="${classes.join(' ')}">
+                ${options.showTitle === false ? '' : `<div class="agent-summary-title">${title}</div>`}
+                <div class="agent-summary-row">
+                    <div class="agent-summary-label">Canais conectados</div>
+                    <div class="agent-summary-value">${renderChannelBadges(channels)}</div>
+                </div>
+                <div class="agent-summary-row">
+                    <div class="agent-summary-label">Vector stores</div>
+                    <div class="agent-summary-value">${renderVectorStoreBadges(vectorStores)}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    return { render };
+})();
+
+window.AgentSummaryComponent = AgentSummaryComponent;
+
 // API Client
 class AdminAPI {
     async request(action, options = {}) {
@@ -609,88 +727,262 @@ function loadCurrentPage() {
 // ==================== Agents Page ====================
 
 async function loadAgentsPage() {
-    const content = document.getElementById('content');
-    content.innerHTML = '<div class="spinner"></div>';
-    
+    agentListState.isLoading = true;
+    agentListState.lastError = null;
+    renderAgentsList();
+
     try {
-        const agents = await api.listAgents();
-        
-        let html = `
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Agents</h3>
-                    <button class="btn btn-primary" onclick="showCreateAgentModal()">Create Agent</button>
-                </div>
-                <div class="card-body">
-        `;
-        
-        if (agents.length === 0) {
-            html += `
+        const [agents, vectorStoresRaw] = await Promise.all([
+            api.listAgents(),
+            api.listVectorStores().catch(error => {
+                console.warn('Failed to load vector stores', error);
+                return [];
+            })
+        ]);
+
+        const vectorStoreMap = Array.isArray(vectorStoresRaw)
+            ? vectorStoresRaw.reduce((acc, store) => {
+                if (store && store.openai_store_id) {
+                    acc[store.openai_store_id] = store;
+                }
+                return acc;
+            }, {})
+            : {};
+
+        const enrichedAgents = await Promise.all(agents.map(async agent => {
+            let channels = [];
+            try {
+                channels = await api.listAgentChannels(agent.id);
+            } catch (error) {
+                console.warn('Failed to load channels for agent', agent.id, error);
+            }
+
+            const vectorStores = Array.isArray(agent.vector_store_ids)
+                ? agent.vector_store_ids.map(id => vectorStoreMap[id] || { openai_store_id: id, name: id })
+                : [];
+
+            return {
+                ...agent,
+                channels,
+                vectorStores
+            };
+        }));
+
+        agentListState.agents = enrichedAgents;
+        agentListState.vectorStoreMap = vectorStoreMap;
+    } catch (error) {
+        agentListState.lastError = error;
+        showToast('Failed to load agents: ' + error.message, 'error');
+    } finally {
+        agentListState.isLoading = false;
+        renderAgentsList();
+    }
+}
+
+function renderAgentsList() {
+    const content = document.getElementById('content');
+    if (!content) {
+        return;
+    }
+
+    const filters = agentListState.filters;
+
+    const filterControls = `
+        <div class="agent-filters">
+            <label class="filter-field">
+                <span>Buscar</span>
+                <input type="text" class="form-input" placeholder="Nome, descrição ou prompt" value="${escapeHtml(filters.search)}" oninput="handleAgentFilterChange('search', this.value)" />
+            </label>
+            <label class="filter-field">
+                <span>Tipo de API</span>
+                <select class="form-select" onchange="handleAgentFilterChange('apiType', this.value)">
+                    <option value="all" ${filters.apiType === 'all' ? 'selected' : ''}>Todos</option>
+                    <option value="responses" ${filters.apiType === 'responses' ? 'selected' : ''}>Responses API</option>
+                    <option value="chat" ${filters.apiType === 'chat' ? 'selected' : ''}>Chat Completions</option>
+                </select>
+            </label>
+            <label class="filter-field">
+                <span>Status</span>
+                <select class="form-select" onchange="handleAgentFilterChange('status', this.value)">
+                    <option value="all" ${filters.status === 'all' ? 'selected' : ''}>Todos</option>
+                    <option value="ready" ${filters.status === 'ready' ? 'selected' : ''}>Pronto</option>
+                    <option value="needs-channel" ${filters.status === 'needs-channel' ? 'selected' : ''}>Sem canal</option>
+                    <option value="draft" ${filters.status === 'draft' ? 'selected' : ''}>Rascunho</option>
+                    <option value="default" ${filters.status === 'default' ? 'selected' : ''}>Padrão</option>
+                </select>
+            </label>
+        </div>
+    `;
+
+    let bodyHtml = '';
+
+    if (agentListState.isLoading) {
+        bodyHtml = '<div class="card-loading"><div class="spinner"></div></div>';
+    } else if (agentListState.lastError) {
+        bodyHtml = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">${escapeHtml(agentListState.lastError.message || 'Erro ao carregar')}</div></div>`;
+    } else {
+        const filteredAgents = applyAgentFilters(agentListState.agents);
+
+        if (filteredAgents.length === 0) {
+            bodyHtml = `
                 <div class="empty-state">
                     <div class="empty-state-icon">🤖</div>
-                    <div class="empty-state-text">No agents yet</div>
-                    <button class="btn btn-primary mt-2" onclick="showCreateAgentModal()">Create Your First Agent</button>
+                    <div class="empty-state-text">${agentListState.agents.length === 0 ? 'Nenhum agente cadastrado' : 'Nenhum agente corresponde aos filtros atuais'}</div>
+                    <button class="btn btn-primary mt-2" onclick="showCreateAgentModal()">Criar agente</button>
                 </div>
             `;
         } else {
-            html += `
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Type</th>
-                                <th>Model</th>
-                                <th>Status</th>
-                                <th>Updated</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-            
-            agents.forEach(agent => {
-                const isDefault = agent.is_default ? '<span class="badge badge-primary">Default</span>' : '';
-                const apiType = agent.api_type === 'responses' ? 
-                    '<span class="badge badge-success">Responses</span>' : 
-                    '<span class="badge badge-warning">Chat</span>';
-                
-                html += `
-                    <tr>
-                        <td><strong>${agent.name}</strong></td>
-                        <td>${apiType}</td>
-                        <td>${agent.model || 'Default'}</td>
-                        <td>${isDefault}</td>
-                        <td>${formatDate(agent.updated_at)}</td>
-                        <td class="table-actions">
-                            <button class="btn btn-small btn-secondary" onclick="editAgent('${agent.id}')">Edit</button>
+            const cards = filteredAgents.map(agent => {
+                const statusMeta = getAgentStatusMeta(agent);
+                const apiTypeBadge = agent.api_type === 'responses'
+                    ? '<span class="badge badge-success">Responses API</span>'
+                    : '<span class="badge badge-warning">Chat API</span>';
+                const promptLabel = getAgentPromptLabel(agent);
+                const connectedChannels = (agent.channels || []).filter(channel => channel.enabled).length;
+                const totalChannels = (agent.channels || []).length;
+                const channelSummary = totalChannels === 0 ? 'Nenhum canal configurado' : `${connectedChannels}/${totalChannels} conectados`;
+                const updatedAt = agent.updated_at ? formatDate(agent.updated_at) : '—';
+                const summaryHtml = AgentSummaryComponent.render(agent, {
+                    showTitle: false,
+                    compact: true,
+                    vectorStoreMap: agentListState.vectorStoreMap
+                });
+
+                return `
+                    <article class="agent-card">
+                        <header class="agent-card-head">
+                            <div>
+                                <h4>${escapeHtml(agent.name)}</h4>
+                                <p>${escapeHtml(agent.description || 'Sem descrição')}</p>
+                            </div>
+                            <div class="agent-card-tags">
+                                ${statusMeta ? `<span class="badge ${statusMeta.badgeClass}">${escapeHtml(statusMeta.label)}</span>` : ''}
+                                ${agent.is_default ? '<span class="badge badge-primary">Padrão</span>' : ''}
+                                ${apiTypeBadge}
+                            </div>
+                        </header>
+                        <dl class="agent-card-meta">
+                            <div>
+                                <dt>Prompt ativo</dt>
+                                <dd>${escapeHtml(promptLabel)}</dd>
+                            </div>
+                            <div>
+                                <dt>Canais</dt>
+                                <dd>${escapeHtml(channelSummary)}</dd>
+                            </div>
+                            <div>
+                                <dt>Atualizado</dt>
+                                <dd>${escapeHtml(updatedAt)}</dd>
+                            </div>
+                        </dl>
+                        ${summaryHtml}
+                        <div class="agent-card-actions">
+                            <button class="btn btn-small btn-secondary" onclick="editAgent('${agent.id}')">Editar</button>
                             <button class="btn btn-small btn-purple" onclick="showPromptBuilderModal('${agent.id}', '${agent.name}')">✨ Prompt Builder</button>
-                            <button class="btn btn-small btn-info" onclick="manageChannels('${agent.id}', '${agent.name}')">Channels</button>
-                            <button class="btn btn-small btn-primary" onclick="testAgent('${agent.id}')">Test</button>
-                            ${!agent.is_default ? `<button class="btn btn-small btn-success" onclick="makeDefaultAgent('${agent.id}')">Make Default</button>` : ''}
-                            <button class="btn btn-small btn-danger" onclick="deleteAgent('${agent.id}', '${agent.name}')">Delete</button>
-                        </td>
-                    </tr>
+                            <button class="btn btn-small btn-info" onclick="manageChannels('${agent.id}', '${agent.name}')">Canais</button>
+                            <button class="btn btn-small btn-primary" onclick="testAgent('${agent.id}')">Testar</button>
+                            ${!agent.is_default ? `<button class="btn btn-small btn-success" onclick="makeDefaultAgent('${agent.id}')">Tornar padrão</button>` : ''}
+                            <button class="btn btn-small btn-danger" onclick="deleteAgent('${agent.id}', '${agent.name}')">Excluir</button>
+                        </div>
+                    </article>
                 `;
-            });
-            
-            html += `
-                        </tbody>
-                    </table>
-                </div>
-            `;
+            }).join('');
+
+            bodyHtml = `<div class="agent-grid">${cards}</div>`;
         }
-        
-        html += `
-                </div>
-            </div>
-        `;
-        
-        content.innerHTML = html;
-    } catch (error) {
-        content.innerHTML = `<div class="card"><div class="card-body">Error loading agents: ${error.message}</div></div>`;
-        showToast('Failed to load agents: ' + error.message, 'error');
     }
+
+    content.innerHTML = `
+        <div class="card agent-page-card">
+            <div class="card-header">
+                <div>
+                    <h3 class="card-title">Agentes</h3>
+                    <p class="card-subtitle">Visualize status, canais conectados e fontes de conhecimento</p>
+                </div>
+                <button class="btn btn-primary" onclick="showCreateAgentModal()">Criar agente</button>
+            </div>
+            <div class="card-body">
+                ${filterControls}
+                ${bodyHtml}
+            </div>
+        </div>
+    `;
+}
+
+function handleAgentFilterChange(filterKey, value) {
+    if (!(filterKey in agentListState.filters)) {
+        return;
+    }
+    const normalized = typeof value === 'string' ? value : '';
+    if (agentListState.filters[filterKey] === normalized) {
+        return;
+    }
+    agentListState.filters[filterKey] = normalized;
+    renderAgentsList();
+}
+
+function applyAgentFilters(list) {
+    const search = (agentListState.filters.search || '').toLowerCase();
+    const apiType = agentListState.filters.apiType;
+    const status = agentListState.filters.status;
+
+    return list.filter(agent => {
+        if (apiType !== 'all' && agent.api_type !== apiType) {
+            return false;
+        }
+
+        if (status !== 'all') {
+            const meta = getAgentStatusMeta(agent);
+            if (!meta || meta.value !== status) {
+                return false;
+            }
+        }
+
+        if (search) {
+            const haystack = [agent.name, agent.description, agent.prompt_id, agent.system_message]
+                .filter(Boolean)
+                .map(value => value.toLowerCase());
+            const matches = haystack.some(field => field.includes(search));
+            if (!matches) {
+                return false;
+            }
+        }
+
+        return true;
+    });
+}
+
+function getAgentStatusMeta(agent) {
+    if (!agent) {
+        return null;
+    }
+
+    if (agent.is_default) {
+        return { label: 'Padrão', value: 'default', badgeClass: 'badge-primary' };
+    }
+
+    const hasPrompt = Boolean(agent.prompt_id || agent.system_message);
+    const connectedChannels = (agent.channels || []).filter(channel => channel.enabled).length;
+
+    if (hasPrompt && connectedChannels > 0) {
+        return { label: 'Pronto', value: 'ready', badgeClass: 'badge-success' };
+    }
+
+    if (hasPrompt) {
+        return { label: 'Sem canal', value: 'needs-channel', badgeClass: 'badge-warning' };
+    }
+
+    return { label: 'Rascunho', value: 'draft', badgeClass: 'badge-secondary' };
+}
+
+function getAgentPromptLabel(agent) {
+    if (agent.prompt_id) {
+        return agent.prompt_version ? `${agent.prompt_id} · v${agent.prompt_version}` : agent.prompt_id;
+    }
+    if (agent.system_message) {
+        return 'System message personalizada';
+    }
+    return 'Não configurado';
 }
 
 function showCreateAgentModal() {
@@ -2546,7 +2838,7 @@ async function configureWhatsApp(agentId, channelId) {
     }
     
     const content = `
-        <form id="whatsapp-config-form" onsubmit="handleSaveWhatsAppConfig(event, '${agentId}')">
+        <form id="whatsapp-config-form" data-validation-status="idle" onsubmit="handleSaveWhatsAppConfig(event, '${agentId}')" oninput="resetWhatsAppValidationState(this)" onchange="resetWhatsAppValidationState(this)">
             <div class="form-group">
                 <label class="form-checkbox">
                     <input type="checkbox" name="enabled" ${config.enabled ? 'checked' : ''} />
@@ -2616,13 +2908,22 @@ async function configureWhatsApp(agentId, channelId) {
             
             <div class="form-group">
                 <label class="form-label">Allowed Media Types</label>
-                <input type="text" name="allowed_media_types" class="form-input" 
+                <input type="text" name="allowed_media_types" class="form-input"
                        value="${config.allowed_media_types.join(', ')}" />
                 <small class="form-help">Comma-separated MIME types</small>
             </div>
-            
+
+            <div class="form-group">
+                <label class="form-label">Número para teste das credenciais</label>
+                <input type="text" name="test_recipient" class="form-input" value="${config.whatsapp_business_number}" placeholder="+5511999999999" />
+                <small class="form-help">Usado ao validar as credenciais antes de salvar.</small>
+            </div>
+
+            <div class="validation-message" id="whatsapp-validation-status"></div>
+
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="manageChannels('${agentId}', 'Agent')">Back</button>
+                <button type="button" class="btn btn-outline" onclick="validateWhatsAppCredentialsFromForm('${agentId}')">Testar credenciais</button>
                 <button type="submit" class="btn btn-primary">Save Configuration</button>
             </div>
         </form>
@@ -2631,28 +2932,114 @@ async function configureWhatsApp(agentId, channelId) {
     openModal('Configure WhatsApp', content);
 }
 
-async function handleSaveWhatsAppConfig(event, agentId) {
-    event.preventDefault();
-    
-    const form = event.target;
+function resetWhatsAppValidationState(form) {
+    if (!form || form.dataset.validationStatus === 'idle') {
+        return;
+    }
+    form.dataset.validationStatus = 'idle';
+    const statusEl = form.querySelector('.validation-message');
+    if (statusEl) {
+        statusEl.textContent = '';
+        statusEl.className = 'validation-message';
+    }
+}
+
+function collectWhatsAppFormData(form) {
     const formData = new FormData(form);
-    
+    const normalizeNumber = value => (value || '').trim();
+    const allowedTypesInput = (formData.get('allowed_media_types') || '').split(',')
+        .map(item => item.trim())
+        .filter(Boolean);
+
     const data = {
         enabled: formData.get('enabled') === 'on',
-        whatsapp_business_number: formData.get('whatsapp_business_number'),
-        zapi_instance_id: formData.get('zapi_instance_id'),
-        zapi_token: formData.get('zapi_token'),
-        zapi_base_url: formData.get('zapi_base_url'),
-        zapi_timeout_ms: parseInt(formData.get('zapi_timeout_ms')),
-        zapi_retries: parseInt(formData.get('zapi_retries')),
-        reply_chunk_size: parseInt(formData.get('reply_chunk_size')),
+        whatsapp_business_number: normalizeNumber(formData.get('whatsapp_business_number')),
+        zapi_instance_id: normalizeNumber(formData.get('zapi_instance_id')),
+        zapi_token: normalizeNumber(formData.get('zapi_token')),
+        zapi_base_url: normalizeNumber(formData.get('zapi_base_url')) || 'https://api.z-api.io',
+        zapi_timeout_ms: parseInt(formData.get('zapi_timeout_ms'), 10) || 30000,
+        zapi_retries: parseInt(formData.get('zapi_retries'), 10) || 3,
+        reply_chunk_size: parseInt(formData.get('reply_chunk_size'), 10) || 4000,
         allow_media_upload: formData.get('allow_media_upload') === 'on',
-        max_media_size_bytes: parseInt(formData.get('max_media_size_bytes')),
-        allowed_media_types: formData.get('allowed_media_types').split(',').map(s => s.trim()).filter(s => s)
+        max_media_size_bytes: parseInt(formData.get('max_media_size_bytes'), 10) || 10485760,
+        allowed_media_types: allowedTypesInput,
+        test_recipient: normalizeNumber(formData.get('test_recipient')) || normalizeNumber(formData.get('whatsapp_business_number'))
     };
-    
+
+    return data;
+}
+
+async function validateWhatsAppCredentialsFromForm(agentId) {
+    const form = document.getElementById('whatsapp-config-form');
+    if (!form) {
+        return;
+    }
+    const data = collectWhatsAppFormData(form);
+    await validateWhatsAppConfig(agentId, data, form);
+}
+
+async function validateWhatsAppConfig(agentId, data, form) {
+    const statusEl = form.querySelector('.validation-message');
+    const testRecipient = data.test_recipient;
+    if (!testRecipient) {
+        if (statusEl) {
+            statusEl.textContent = 'Informe um número para teste antes de validar.';
+            statusEl.className = 'validation-message error';
+        }
+        showToast('Informe um número para teste antes de validar.', 'error');
+        return false;
+    }
+
+    if (statusEl) {
+        statusEl.textContent = 'Validando credenciais…';
+        statusEl.className = 'validation-message validating';
+    }
+
+    const payload = { ...data };
+    delete payload.test_recipient;
+
     try {
-        await api.upsertAgentChannel(agentId, 'whatsapp', data);
+        await api.testChannelSend(agentId, 'whatsapp', {
+            to: testRecipient,
+            message: 'Teste automático das credenciais do canal',
+            config_override: { ...payload, enabled: true },
+            validation_only: true
+        });
+        form.dataset.validationStatus = 'passed';
+        if (statusEl) {
+            statusEl.textContent = 'Credenciais validadas com sucesso';
+            statusEl.className = 'validation-message success';
+        }
+        showToast('Credenciais verificadas. Agora você pode salvar.', 'success');
+        return true;
+    } catch (error) {
+        form.dataset.validationStatus = 'failed';
+        if (statusEl) {
+            statusEl.textContent = `Falha na validação: ${error.message}`;
+            statusEl.className = 'validation-message error';
+        }
+        showToast('Falha ao validar credenciais: ' + error.message, 'error');
+        return false;
+    }
+}
+
+async function handleSaveWhatsAppConfig(event, agentId) {
+    event.preventDefault();
+
+    const form = event.target;
+    const data = collectWhatsAppFormData(form);
+    const payload = { ...data };
+    delete payload.test_recipient;
+
+    if (form.dataset.validationStatus !== 'passed') {
+        const validated = await validateWhatsAppConfig(agentId, data, form);
+        if (!validated) {
+            return;
+        }
+    }
+
+    try {
+        await api.upsertAgentChannel(agentId, 'whatsapp', payload);
         showToast('WhatsApp configuration saved successfully', 'success');
         closeModal();
         // Reopen the manage channels modal

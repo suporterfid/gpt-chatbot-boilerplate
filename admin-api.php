@@ -811,24 +811,38 @@ try {
             $data = getRequestBody();
             $to = $data['to'] ?? '';
             $message = $data['message'] ?? 'Test message from chatbot admin';
-            
+            $configOverride = isset($data['config_override']) && is_array($data['config_override'])
+                ? $data['config_override']
+                : null;
+            $validationOnly = !empty($data['validation_only']);
+
             if (empty($to)) {
                 sendError('Recipient (to) is required', 400);
             }
-            
+
             // Load channel manager
             require_once __DIR__ . '/includes/ChannelManager.php';
             $channelManager = new ChannelManager($db);
             
             try {
+                $options = [];
+                if ($configOverride) {
+                    $configOverride['enabled'] = true;
+                    $options['configOverride'] = $configOverride;
+                }
+                if ($validationOnly) {
+                    $options['skipPersistence'] = true;
+                }
+
                 $result = $channelManager->sendText(
                     $agentId,
                     $channel,
                     $to,
                     $message,
-                    'test_' . uniqid()
+                    'test_' . uniqid(),
+                    $options
                 );
-                
+
                 log_admin("Test message sent: agent=$agentId, channel=$channel, to=$to");
                 sendResponse($result);
             } catch (Exception $e) {

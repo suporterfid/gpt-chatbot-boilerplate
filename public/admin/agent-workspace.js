@@ -13,6 +13,7 @@
             models: []
         },
         data: getDefaultFormState(),
+        channels: [],
         promptBuilder: {
             lastGenerated: null,
             isGenerating: false,
@@ -126,6 +127,7 @@
         wizardState.stepIndex = 0;
         wizardState.activeTab = 'configure';
         wizardState.data = getDefaultFormState();
+        wizardState.channels = [];
         wizardState.promptBuilder.lastGenerated = null;
         wizardState.promptBuilder.isGenerating = false;
         resetTestSession(wizardState.agentId);
@@ -159,14 +161,31 @@
         const content = document.getElementById('content');
         content.innerHTML = '<div class="card"><div class="card-body"><div class="spinner"></div></div></div>';
 
-        Promise.all([
+        const resourcePromises = [
             api.listPrompts(),
             api.listVectorStores(),
             api.listModels()
-        ]).then(([prompts, vectorStores, models]) => {
+        ];
+
+        const shouldLoadChannels = Boolean(wizardState.agentId);
+        if (shouldLoadChannels) {
+            resourcePromises.push(
+                api.listAgentChannels(wizardState.agentId).catch(error => {
+                    console.warn('Failed to load channels for workspace', error);
+                    return [];
+                })
+            );
+        }
+
+        Promise.all(resourcePromises).then(results => {
+            const prompts = results[0];
+            const vectorStores = results[1];
+            const models = results[2];
+            const channels = shouldLoadChannels ? (results[3] || []) : [];
             wizardState.resources.prompts = prompts || [];
             wizardState.resources.vectorStores = vectorStores || [];
             wizardState.resources.models = models && Array.isArray(models.data) ? models.data : [];
+            wizardState.channels = channels;
 
             if (wizardState.mode === 'create' && !agentData) {
                 hydrateDraftFromStorage();
@@ -1274,6 +1293,20 @@
 
         const data = wizardState.data;
         const vectorStores = Array.isArray(data.vector_store_ids) ? data.vector_store_ids : (data.vector_store_ids || '').split(',').map(item => item.trim()).filter(Boolean);
+        if (window.AgentSummaryComponent && typeof window.AgentSummaryComponent.render === 'function') {
+            const lookup = id => wizardState.resources.vectorStores.find(store => (store.openai_store_id || '') === id);
+            const summaryPayload = {
+                ...data,
+                channels: wizardState.channels
+            };
+            container.innerHTML = window.AgentSummaryComponent.render(summaryPayload, {
+                title: 'Resumo do agente',
+                layout: 'stacked',
+                vectorStoreLookup: lookup,
+                compact: false
+            });
+            return;
+        }
 
         container.innerHTML = `
             <dl class="wizard-summary-list">
