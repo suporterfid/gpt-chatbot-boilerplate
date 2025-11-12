@@ -20,6 +20,30 @@ class LeadScorer {
      * @return array ['score' => 0..100, 'rationale' => [...], 'qualified' => bool]
      */
     public function score($entities, $intent) {
+        $mode = strtolower($this->config['scoring']['mode'] ?? 'rules');
+
+        if ($mode === 'ml') {
+            try {
+                $mlResult = $this->scoreML($entities, $intent);
+                if (is_array($mlResult)) {
+                    return $mlResult;
+                }
+            } catch (\Throwable $e) {
+                // Fallback to rules-based scoring if ML scoring fails
+            }
+        }
+
+        return $this->scoreWithRules($entities, $intent);
+    }
+
+    /**
+     * Rules-based scoring implementation
+     *
+     * @param array $entities
+     * @param array $intent
+     * @return array
+     */
+    private function scoreWithRules($entities, $intent) {
         $score = 0;
         $rationale = [];
         $weights = $this->getWeights();
@@ -200,14 +224,130 @@ class LeadScorer {
     }
     
     /**
-     * Score using ML model (future implementation)
-     * 
-     * @param array $payload
+     * Score using ML model endpoint
+     *
+     * @param array $entities
+     * @param array $intent
      * @return array
+     * @throws Exception
      */
-    public function scoreML($payload) {
-        // Stub for future ML implementation
-        // Would call external ML endpoint with lead data
-        throw new Exception('ML scoring not yet implemented');
+    public function scoreML($entities, $intent) {
+        $mlConfig = $this->config['ml'] ?? [];
+        $endpoint = $mlConfig['endpoint'] ?? '';
+        $apiKey = $mlConfig['api_key'] ?? '';
+
+        if (empty($endpoint)) {
+            throw new Exception('ML scoring endpoint is not configured');
+        }
+
+        if (empty($apiKey)) {
+            throw new Exception('ML scoring API key is not configured');
+        }
+
+        $payload = [
+            'entities' => $entities,
+            'intent' => [
+                'label' => $intent['intent'] ?? null,
+                'confidence' => $intent['confidence'] ?? null,
+            ],
+            'intent_signals' => $intent['signals'] ?? [],
+        ];
+
+        $headers = [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $apiKey,
+        ];
+
+        $response = null;
+        $statusCode = null;
+
+        $jsonPayload = json_encode($payload);
+        if ($jsonPayload === false) {
+            throw new Exception('Failed to encode ML scoring payload');
+        }
+
+        if (isset($mlConfig['http_client']) && is_callable($mlConfig['http_client'])) {
+            $result = $mlConfig['http_client']($endpoint, $payload, $headers);
+            if (is_array($result)) {
+                $response = $result['body'] ?? null;
+                $statusCode = $result['status'] ?? 200;
+            } else {
+                $response = $result;
+                $statusCode = 200;
+            }
+        } else {
+            if (!function_exists('curl_init')) {
+                throw new Exception('cURL extension is required for ML scoring');
+            }
+
+            $ch = curl_init($endpoint);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonPayload);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+            curl_setopt($ch, CURLOPT_TIMEOUT, (int)($mlConfig['timeout'] ?? 10));
+
+            $response = curl_exec($ch);
+            if ($response === false) {
+                $error = curl_error($ch);
+                curl_close($ch);
+                throw new Exception('Error calling ML scoring service: ' . $error);
+            }
+
+            $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+        }
+
+        if ($response === null) {
+            throw new Exception('Empty response from ML scoring service');
+        }
+
+        if ($statusCode < 200 || $statusCode >= 300) {
+            throw new Exception('ML scoring service returned HTTP ' . $statusCode);
+        }
+
+        $data = json_decode($response, true);
+        if (!is_array($data)) {
+            throw new Exception('Invalid JSON response from ML scoring service');
+        }
+
+        if (isset($data['data']) && is_array($data['data'])) {
+            $data = $data['data'];
+        }
+
+        if (!isset($data['score'])) {
+            throw new Exception('ML scoring response missing score value');
+        }
+
+        $score = (float)$data['score'];
+        $threshold = $data['threshold'] ?? ($this->config['score_threshold'] ?? 70);
+
+        $qualified = $data['qualified'] ?? null;
+        if ($qualified === null) {
+            $qualified = $score >= $threshold;
+        } else {
+            $qualified = filter_var($qualified, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($qualified === null) {
+                $qualified = $score >= $threshold;
+            }
+        }
+
+        $rationale = $data['rationale'] ?? [];
+        if (is_string($rationale)) {
+            $rationale = [
+                [
+                    'summary' => $rationale,
+                ]
+            ];
+        } elseif (!is_array($rationale)) {
+            $rationale = [$rationale];
+        }
+
+        return [
+            'score' => $score,
+            'qualified' => (bool)$qualified,
+            'rationale' => $rationale,
+            'threshold' => $threshold,
+        ];
     }
 }

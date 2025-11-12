@@ -39,6 +39,8 @@ class LeadScorerTest {
         $this->testQualifiedLead();
         $this->testUnqualifiedLead();
         $this->testICPFit();
+        $this->testMLScoringSuccess();
+        $this->testMLScoringFallback();
         
         echo "\n=================================\n";
         echo "Results: {$this->passed} passed, {$this->failed} failed\n";
@@ -189,13 +191,118 @@ class LeadScorerTest {
             'industry' => 'technology'
         ];
         $intent = ['intent' => 'medium', 'confidence' => 0.6];
-        
+
         $resultNonICP = $this->scorer->score($entitiesNonICP, $intent);
         $resultICP = $this->scorer->score($entitiesICP, $intent);
-        
+
         $this->assert(
             $resultICP['score'] > $resultNonICP['score'],
             "ICP-fit lead should score higher"
+        );
+        echo "\n";
+    }
+
+    private function testMLScoringSuccess() {
+        echo "Test: ML Scoring Success\n";
+
+        $mockClient = function ($endpoint, $payload, $headers) {
+            return [
+                'status' => 200,
+                'body' => json_encode([
+                    'score' => 85,
+                    'qualified' => true,
+                    'rationale' => [
+                        ['factor' => 'ml_model', 'points' => 85],
+                    ],
+                ]),
+            ];
+        };
+
+        $scorer = new LeadScorer([
+            'score_threshold' => 70,
+            'scoring' => [
+                'mode' => 'ml',
+            ],
+            'ml' => [
+                'endpoint' => 'https://ml.example.com/score',
+                'api_key' => 'secret',
+                'http_client' => $mockClient,
+            ],
+        ]);
+
+        $entities = [
+            'email' => 'ml@example.com',
+            'company' => 'ML Corp',
+        ];
+        $intent = [
+            'intent' => 'high',
+            'confidence' => 0.95,
+            'signals' => ['intent:demo_request'],
+        ];
+
+        $result = $scorer->score($entities, $intent);
+
+        $this->assert(
+            $result['score'] >= 80,
+            "Should return score from ML response"
+        );
+        $this->assert(
+            $result['qualified'] === true,
+            "Should use ML qualified flag"
+        );
+        $this->assert(
+            is_array($result['rationale']) && count($result['rationale']) === 1,
+            "Should normalize ML rationale into an array"
+        );
+        echo "\n";
+    }
+
+    private function testMLScoringFallback() {
+        echo "Test: ML Scoring Fallback to Rules\n";
+
+        $mockClient = function () {
+            throw new Exception('Simulated network failure');
+        };
+
+        $mlConfig = [
+            'score_threshold' => 70,
+            'scoring' => [
+                'mode' => 'ml',
+            ],
+            'ml' => [
+                'endpoint' => 'https://ml.example.com/score',
+                'api_key' => 'secret',
+                'http_client' => $mockClient,
+            ],
+        ];
+
+        $entities = [
+            'email' => 'fallback@example.com',
+            'role' => 'Developer',
+        ];
+        $intent = [
+            'intent' => 'medium',
+            'confidence' => 0.7,
+        ];
+
+        $fallbackScorer = new LeadScorer($mlConfig);
+        $fallbackResult = $fallbackScorer->score($entities, $intent);
+
+        $rulesScorer = new LeadScorer([
+            'score_threshold' => 70,
+            'scoring' => [
+                'mode' => 'rules',
+            ],
+        ]);
+        $expected = $rulesScorer->score($entities, $intent);
+
+        $this->assert(
+            $fallbackResult['score'] === $expected['score'],
+            "Should fallback to rules-based score when ML fails"
+        );
+        $this->assert(
+            $fallbackResult['qualified'] === $expected['qualified'],
+            "Should fallback to rules-based qualification when ML fails"
         );
         echo "\n";
     }
