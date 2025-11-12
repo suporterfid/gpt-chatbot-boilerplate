@@ -494,6 +494,23 @@ rm -rf "tenant_${TENANT_ID}_${TIMESTAMP}"
 echo "✓ Tenant backup complete: $BACKUP_DIR/tenant_${TENANT_ID}_${TIMESTAMP}.tar.gz"
 ```
 
+> **PostgreSQL deployments:** Set `ADMIN_DB_TYPE=postgres` and either provide a full `DATABASE_URL` or the discrete `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` variables. The export script will scope `PGPASSWORD` to each `psql` invocation and emits tenant-filtered `COPY ... FROM STDIN WITH CSV` statements so that restores can run through `psql` without manual editing. Custom schemas can be supplied via `DATABASE_URL?...&schema=analytics` or `PGSCHEMA`.
+
+**Manual smoke tests**
+
+```bash
+# SQLite demo tenant
+./scripts/tenant_backup.sh demo-tenant --export-only
+
+# PostgreSQL example (password read from DATABASE_URL)
+ADMIN_DB_TYPE=postgres \
+DATABASE_URL="postgres://chatbot:secret@db.example.com:5432/chatbot?schema=public" \
+./scripts/tenant_backup.sh demo-tenant
+
+# Inspect manifest to confirm record counts
+tar -tzf /data/backups/tenants/tenant_demo-tenant_*.tar.gz MANIFEST.txt
+```
+
 ### Integration with Existing Backup Monitoring
 
 Update monitoring to track tenant-level backup metrics:
