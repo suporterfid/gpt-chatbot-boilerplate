@@ -5,6 +5,7 @@
         mode: 'create',
         agentId: null,
         stepIndex: 0,
+        activeTab: 'configure',
         isLoading: false,
         resources: {
             prompts: [],
@@ -16,7 +17,8 @@
             lastGenerated: null,
             isGenerating: false,
             hooksRegistered: false
-        }
+        },
+        testSession: getDefaultTestSessionState()
     };
 
     const wizardSteps = [
@@ -64,6 +66,28 @@
         };
     }
 
+    function getDefaultTestSessionState() {
+        return {
+            agentId: null,
+            messages: [],
+            input: '',
+            isStreaming: false,
+            eventSource: null,
+            error: null,
+            statusNotice: null,
+            promptMeta: {
+                loading: false,
+                data: null,
+                error: null,
+                lastUpdated: null
+            },
+            feedback: null,
+            isUpdatingStatus: false,
+            isMakingDefault: false,
+            shouldFocusInput: false
+        };
+    }
+
     function escapeHtml(value) {
         if (value === undefined || value === null) {
             return '';
@@ -76,20 +100,49 @@
             .replace(/'/g, '&#39;');
     }
 
+    function closeTestStream() {
+        if (wizardState.testSession?.eventSource) {
+            try {
+                wizardState.testSession.eventSource.close();
+            } catch (error) {
+                console.warn('Failed to close test stream', error);
+            }
+        }
+        if (wizardState.testSession) {
+            wizardState.testSession.eventSource = null;
+            wizardState.testSession.isStreaming = false;
+        }
+    }
+
+    function resetTestSession(agentId = null) {
+        closeTestStream();
+        wizardState.testSession = {
+            ...getDefaultTestSessionState(),
+            agentId
+        };
+    }
+
     function resetWizardState() {
         wizardState.stepIndex = 0;
+        wizardState.activeTab = 'configure';
         wizardState.data = getDefaultFormState();
         wizardState.promptBuilder.lastGenerated = null;
         wizardState.promptBuilder.isGenerating = false;
+        resetTestSession(wizardState.agentId);
     }
 
     function openAgentWorkspace(options = {}) {
-        const { mode = 'create', agentId = null, agentData = null } = options;
+        const { mode = 'create', agentId = null, agentData = null, initialTab = 'configure' } = options;
 
         wizardState.mode = mode;
         wizardState.agentId = agentId || null;
         wizardState.isLoading = true;
         resetWizardState();
+
+        if (initialTab === 'test' && wizardState.agentId) {
+            wizardState.activeTab = 'test';
+            wizardState.testSession.shouldFocusInput = true;
+        }
 
         if (agentData) {
             wizardState.data = {
@@ -120,6 +173,9 @@
             }
 
             wizardState.isLoading = false;
+            if (wizardState.agentId) {
+                ensurePromptMetadataLoaded(true);
+            }
             renderWorkspace();
             ensurePromptBuilderIntegration();
         }).catch(error => {
@@ -159,7 +215,24 @@
             `;
         }).join('');
 
+        const tabs = [
+            { id: 'configure', label: 'Configurar' },
+            { id: 'test', label: 'Testar &amp; Publicar' }
+        ];
+
+        const tabsHtml = tabs.map(tab => {
+            const isActive = wizardState.activeTab === tab.id;
+            const isDisabled = tab.id === 'test' && !wizardState.agentId;
+            const classes = ['workspace-tab', isActive ? 'active' : ''];
+            return `
+                <button type="button" class="${classes.filter(Boolean).join(' ')}" data-tab="${tab.id}" ${isDisabled ? 'disabled' : ''}>${tab.label}</button>
+            `;
+        }).join('');
+
         const currentStep = wizardSteps[wizardState.stepIndex];
+        const mainContent = wizardState.activeTab === 'test'
+            ? renderTestPublishTab()
+            : renderConfigureTab(currentStep);
 
         content.innerHTML = `
             <div class="agent-workspace">
@@ -173,35 +246,621 @@
                     </div>
                 </aside>
                 <section class="wizard-content">
-                    <header class="wizard-step-header">
-                        <div>
-                            <div class="wizard-step-subtitle">Etapa ${wizardState.stepIndex + 1} de ${wizardSteps.length}</div>
-                            <h3 class="wizard-step-title">${currentStep.title}</h3>
-                            <p class="wizard-step-description">${currentStep.description}</p>
-                        </div>
-                    </header>
-                    <div class="wizard-step-body">
-                        ${currentStep.render()}
-                    </div>
-                    <footer class="wizard-footer">
-                        <button class="btn btn-secondary" data-action="previous" ${wizardState.stepIndex === 0 ? 'disabled' : ''}>Anterior</button>
-                        <div class="wizard-footer-actions">
-                            <button class="btn btn-outline" data-action="save-draft">Salvar rascunho</button>
-                            ${wizardState.stepIndex < wizardSteps.length - 1 ? `
-                                <button class="btn btn-primary" data-action="next">Próximo</button>
-                            ` : `
-                                <button class="btn btn-primary" data-action="publish">Publicar</button>
-                            `}
-                        </div>
-                    </footer>
+                    <div class="workspace-tabs">${tabsHtml}</div>
+                    <div class="workspace-tab-panel">${mainContent}</div>
                 </section>
             </div>
         `;
 
-        bindStepEvents();
-        bindFooterActions();
-        updateReviewSummary();
-        updatePromptBuilderPreview();
+        bindWorkspaceTabs();
+
+        if (wizardState.activeTab === 'test') {
+            bindTestPanelEvents();
+            updateTestConversationView();
+            updatePromptMetadataView();
+            updateTestStatusMessage();
+            focusTesterInputIfNeeded();
+        } else {
+            bindStepEvents();
+            bindFooterActions();
+            updateReviewSummary();
+            updatePromptBuilderPreview();
+        }
+    }
+
+    function renderConfigureTab(currentStep) {
+        return `
+            <div class="wizard-panel">
+                <header class="wizard-step-header">
+                    <div>
+                        <div class="wizard-step-subtitle">Etapa ${wizardState.stepIndex + 1} de ${wizardSteps.length}</div>
+                        <h3 class="wizard-step-title">${currentStep.title}</h3>
+                        <p class="wizard-step-description">${currentStep.description}</p>
+                    </div>
+                </header>
+                <div class="wizard-step-body">
+                    ${currentStep.render()}
+                </div>
+                <footer class="wizard-footer">
+                    <button class="btn btn-secondary" data-action="previous" ${wizardState.stepIndex === 0 ? 'disabled' : ''}>Anterior</button>
+                    <div class="wizard-footer-actions">
+                        <button class="btn btn-outline" data-action="save-draft">Salvar rascunho</button>
+                        ${wizardState.stepIndex < wizardSteps.length - 1 ? `
+                            <button class="btn btn-primary" data-action="next">Próximo</button>
+                        ` : `
+                            <button class="btn btn-primary" data-action="publish">Publicar</button>
+                        `}
+                    </div>
+                </footer>
+            </div>
+        `;
+    }
+
+    function renderTestPublishTab() {
+        if (!wizardState.agentId) {
+            return `
+                <div class="tester-panel">
+                    <div class="tester-empty-state">
+                        <h3>Teste indisponível</h3>
+                        <p class="text-muted">Publique o agente ou abra um existente para habilitar o painel de testes.</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        const session = wizardState.testSession;
+        const trimmedInput = (session.input || '').trim();
+        const agentStatus = wizardState.data && wizardState.data.status ? escapeHtml(wizardState.data.status) : null;
+        const isDefault = Boolean(wizardState.data && wizardState.data.is_default);
+        const isReady = (wizardState.data && typeof wizardState.data.status === 'string')
+            ? wizardState.data.status.toLowerCase() === 'ready'
+            : false;
+
+        return `
+            <div class="tester-panel">
+                <div class="tester-header">
+                    <div>
+                        <h3>Teste rápido</h3>
+                        <p class="text-muted">Envie mensagens para validar o comportamento do agente antes de marcar como pronto.</p>
+                    </div>
+                    <div class="tester-agent-status">
+                        ${agentStatus ? `<span class="badge tester-badge-status">${agentStatus}</span>` : ''}
+                        ${isDefault ? '<span class="badge badge-success">Padrão</span>' : ''}
+                    </div>
+                </div>
+
+                <div class="tester-card">
+                    <div class="tester-card-header">
+                        <h4>Prompt ativo</h4>
+                        <div class="tester-meta-actions">
+                            <button class="btn btn-small btn-outline" data-action="refresh-prompt-meta" ${session.promptMeta.loading ? 'disabled' : ''}>
+                                ${session.promptMeta.loading ? '<span class="spinner spinner-inline"></span>' : 'Atualizar metadados'}
+                            </button>
+                        </div>
+                    </div>
+                    <div id="tester-prompt-meta" class="tester-prompt-meta">
+                        ${buildPromptMetadataHtml()}
+                    </div>
+                </div>
+
+                <div class="tester-card tester-chat-card">
+                    <div class="tester-card-header">
+                        <h4>Histórico de teste</h4>
+                    </div>
+                    <div id="tester-chat-history" class="tester-chat-history">
+                        ${buildTestMessagesHtml()}
+                    </div>
+                </div>
+
+                <div class="tester-card tester-input-card">
+                    <label class="form-label" for="tester-input">Mensagem de teste</label>
+                    <textarea id="tester-input" class="form-textarea tester-input" rows="3" placeholder="Faça uma pergunta ou descreva um cenário">${escapeHtml(session.input)}</textarea>
+                    <div class="tester-input-actions">
+                        <button class="btn btn-secondary" data-action="reset-conversation" ${session.isStreaming || session.messages.length === 0 ? 'disabled' : ''}>Limpar conversa</button>
+                        <div class="tester-send-group">
+                            <div id="tester-status-message" class="tester-status-message">${buildStatusMessageHtml()}</div>
+                            <button class="btn btn-primary" data-action="send-test-message" ${session.isStreaming || !trimmedInput ? 'disabled' : ''}>
+                                ${session.isStreaming ? '<span class="spinner spinner-inline"></span> Enviando' : 'Enviar mensagem'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tester-card tester-publish-card">
+                    <div class="tester-card-header">
+                        <h4>Publicação</h4>
+                    </div>
+                    <p class="text-muted">Finalize a configuração marcando o agente como pronto ou definindo-o como padrão.</p>
+                    <div class="tester-publish-actions">
+                        <button class="btn btn-success" data-action="mark-ready" ${session.isUpdatingStatus || isReady ? 'disabled' : ''}>
+                            ${session.isUpdatingStatus ? '<span class="spinner spinner-inline"></span>' : ''} Marcar como pronto
+                        </button>
+                        <button class="btn btn-outline" data-action="make-default" ${isDefault || session.isMakingDefault ? 'disabled' : ''}>
+                            ${session.isMakingDefault ? '<span class="spinner spinner-inline"></span>' : ''} Definir como padrão
+                        </button>
+                    </div>
+                    <div id="tester-feedback" class="tester-feedback">${buildFeedbackHtml()}</div>
+                </div>
+            </div>
+        `;
+    }
+
+    function bindWorkspaceTabs() {
+        const tabs = document.querySelectorAll('.workspace-tabs [data-tab]');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', event => {
+                const target = event.currentTarget;
+                const tabId = target.dataset.tab;
+                if (!tabId || target.disabled) {
+                    return;
+                }
+                if (wizardState.activeTab === tabId) {
+                    return;
+                }
+                wizardState.activeTab = tabId;
+                if (tabId === 'test') {
+                    wizardState.testSession.shouldFocusInput = true;
+                    ensurePromptMetadataLoaded();
+                }
+                renderWorkspace();
+            });
+        });
+    }
+
+    function bindTestPanelEvents() {
+        const panel = document.querySelector('.tester-panel');
+        if (!panel) {
+            return;
+        }
+
+        const input = panel.querySelector('#tester-input');
+        if (input) {
+            input.addEventListener('input', handleTestInputChange);
+            input.addEventListener('keydown', handleTestInputKeydown);
+        }
+
+        panel.addEventListener('click', event => {
+            const actionElement = event.target?.closest?.('[data-action]');
+            if (!actionElement) {
+                return;
+            }
+
+            event.preventDefault();
+            const action = actionElement.dataset.action;
+
+            switch (action) {
+                case 'send-test-message':
+                    handleSendTestMessage();
+                    break;
+                case 'reset-conversation':
+                    handleResetTestConversation();
+                    break;
+                case 'refresh-prompt-meta':
+                    ensurePromptMetadataLoaded(true);
+                    break;
+                case 'mark-ready':
+                    handleMarkAsReady();
+                    break;
+                case 'make-default':
+                    handleMakeDefaultFromTest();
+                    break;
+                default:
+                    break;
+            }
+        });
+    }
+
+    function handleTestInputChange(event) {
+        wizardState.testSession.input = event.target.value;
+    }
+
+    function handleTestInputKeydown(event) {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            handleSendTestMessage();
+        }
+    }
+
+    function handleSendTestMessage() {
+        if (!wizardState.agentId || wizardState.testSession.isStreaming) {
+            return;
+        }
+
+        const message = (wizardState.testSession.input || '').trim();
+        if (!message) {
+            return;
+        }
+
+        const session = wizardState.testSession;
+        session.messages = [
+            ...session.messages,
+            { role: 'user', content: message },
+            { role: 'assistant', content: '', streaming: true }
+        ];
+        session.input = '';
+        session.isStreaming = true;
+        session.statusNotice = { type: 'info', message: 'Gerando resposta...' };
+        session.feedback = null;
+        session.shouldFocusInput = true;
+
+        renderWorkspace();
+
+        const assistantMessage = session.messages[session.messages.length - 1];
+        startTestStream(wizardState.agentId, assistantMessage, message);
+    }
+
+    function handleResetTestConversation() {
+        if (wizardState.testSession.isStreaming) {
+            return;
+        }
+
+        closeTestStream();
+        wizardState.testSession.messages = [];
+        wizardState.testSession.input = '';
+        wizardState.testSession.statusNotice = null;
+        wizardState.testSession.feedback = null;
+        wizardState.testSession.shouldFocusInput = true;
+        renderWorkspace();
+    }
+
+    function startTestStream(agentId, assistantMessage, userMessage) {
+        closeTestStream();
+
+        let url = '';
+        try {
+            url = api.testAgent(agentId);
+        } catch (error) {
+            wizardState.testSession.isStreaming = false;
+            wizardState.testSession.statusNotice = { type: 'error', message: error.message || 'Não foi possível iniciar o teste.' };
+            renderWorkspace();
+            return;
+        }
+
+        if (userMessage) {
+            url += (url.includes('?') ? '&' : '?') + 'message=' + encodeURIComponent(userMessage);
+        }
+
+        try {
+            const eventSource = new EventSource(url);
+            wizardState.testSession.eventSource = eventSource;
+
+            eventSource.addEventListener('message', event => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleTestStreamEvent(data, assistantMessage);
+                } catch (error) {
+                    console.error('Erro ao interpretar evento de teste', error);
+                }
+            });
+
+            eventSource.onerror = () => {
+                eventSource.close();
+                if (wizardState.testSession.eventSource === eventSource) {
+                    wizardState.testSession.eventSource = null;
+                }
+                wizardState.testSession.isStreaming = false;
+                wizardState.testSession.statusNotice = { type: 'error', message: 'Conexão interrompida durante o teste.' };
+                assistantMessage.streaming = false;
+                renderWorkspace();
+            };
+        } catch (error) {
+            console.error('Falha ao iniciar EventSource', error);
+            wizardState.testSession.isStreaming = false;
+            wizardState.testSession.statusNotice = { type: 'error', message: error.message || 'Não foi possível iniciar o teste.' };
+            assistantMessage.streaming = false;
+            renderWorkspace();
+        }
+    }
+
+    function handleTestStreamEvent(data, assistantMessage) {
+        if (!data || typeof data.type !== 'string') {
+            return;
+        }
+
+        switch (data.type) {
+            case 'start':
+                wizardState.testSession.statusNotice = {
+                    type: 'info',
+                    message: data.agent?.name ? `Testando ${data.agent.name}` : 'Teste iniciado'
+                };
+                updateTestStatusMessage();
+                break;
+            case 'chunk':
+                assistantMessage.content += data.content || '';
+                updateTestConversationView();
+                break;
+            case 'notice':
+                if (data.message || data.content) {
+                    wizardState.testSession.messages.push({
+                        role: 'system',
+                        content: data.message || data.content
+                    });
+                    updateTestConversationView();
+                }
+                break;
+            case 'tool_call':
+                wizardState.testSession.messages.push({
+                    role: 'system',
+                    content: `Tool call ${data.tool_name || ''}: ${JSON.stringify(data.arguments || {})}`
+                });
+                updateTestConversationView();
+                break;
+            case 'error':
+                wizardState.testSession.isStreaming = false;
+                wizardState.testSession.statusNotice = {
+                    type: 'error',
+                    message: data.message || 'Erro ao testar o agente.'
+                };
+                assistantMessage.streaming = false;
+                closeTestStream();
+                renderWorkspace();
+                break;
+            case 'done':
+                wizardState.testSession.isStreaming = false;
+                wizardState.testSession.statusNotice = {
+                    type: 'success',
+                    message: 'Resposta concluída.'
+                };
+                assistantMessage.streaming = false;
+                closeTestStream();
+                renderWorkspace();
+                break;
+            default:
+                break;
+        }
+    }
+
+    function buildTestMessagesHtml() {
+        const messages = wizardState.testSession.messages || [];
+        if (messages.length === 0) {
+            return '<div class="tester-empty-hint"><p class="text-muted">Nenhuma mensagem enviada ainda.</p></div>';
+        }
+
+        return messages.map(message => {
+            const role = message.role || 'assistant';
+            let roleClass = 'chat-bubble-assistant';
+            if (role === 'user') {
+                roleClass = 'chat-bubble-user';
+            } else if (role === 'system') {
+                roleClass = 'chat-bubble-system';
+            }
+            const streamingClass = message.streaming ? 'streaming' : '';
+            const content = escapeHtml(message.content || '').replace(/\n/g, '<br>');
+            return `
+                <div class="chat-row chat-row-${role}">
+                    <div class="chat-bubble ${roleClass} ${streamingClass}">
+                        ${content || '<span class="text-muted">...</span>'}
+                        ${message.streaming ? '<span class="chat-stream-indicator"><span class="spinner spinner-inline"></span></span>' : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function buildPromptMetadataHtml() {
+        if (!wizardState.agentId) {
+            return '<p class="text-muted">Disponível após publicar o agente.</p>';
+        }
+
+        const meta = wizardState.testSession.promptMeta;
+        if (meta.loading) {
+            return '<div class="tester-meta-loading"><span class="spinner spinner-inline"></span> Carregando metadados...</div>';
+        }
+
+        if (meta.error) {
+            return `<p class="text-danger">${escapeHtml(meta.error)}</p>`;
+        }
+
+        const payload = meta.data?.data || meta.data;
+        if (!payload) {
+            return '<p class="text-muted">Nenhum dado disponível.</p>';
+        }
+
+        const versions = Array.isArray(payload.versions) ? payload.versions : [];
+        if (versions.length === 0) {
+            return '<p class="text-muted">Nenhum prompt gerado pelo Prompt Builder ainda.</p>';
+        }
+
+        const activeVersionNumber = payload.active_version;
+        const activeVersion = versions.find(v => v.version === activeVersionNumber) || versions[0];
+        const guardrails = (activeVersion?.guardrails || []).map(item => {
+            if (typeof item === 'string') {
+                return item;
+            }
+            return item?.key || item?.title || '';
+        }).filter(Boolean);
+
+        const updatedAt = activeVersion?.updated_at || activeVersion?.created_at;
+        const formattedDate = updatedAt ? formatPromptDate(updatedAt) : '—';
+
+        return `
+            <dl class="tester-prompt-list">
+                <div>
+                    <dt>Versão ativa</dt>
+                    <dd>${activeVersionNumber ? `v${escapeHtml(String(activeVersionNumber))}` : '—'}</dd>
+                </div>
+                <div>
+                    <dt>Total de versões</dt>
+                    <dd>${versions.length}</dd>
+                </div>
+                <div>
+                    <dt>Atualizado em</dt>
+                    <dd>${escapeHtml(formattedDate)}</dd>
+                </div>
+                <div>
+                    <dt>Guardrails</dt>
+                    <dd>${guardrails.length ? escapeHtml(guardrails.join(', ')) : 'Sem guardrails registrados'}</dd>
+                </div>
+            </dl>
+        `;
+    }
+
+    function buildStatusMessageHtml() {
+        const session = wizardState.testSession;
+        if (session.isStreaming) {
+            return '<span class="tester-status tester-status-streaming"><span class="spinner spinner-inline"></span> Gerando resposta...</span>';
+        }
+        if (session.statusNotice && session.statusNotice.message) {
+            const typeClass = session.statusNotice.type ? `tester-status-${session.statusNotice.type}` : '';
+            return `<span class="tester-status ${typeClass}">${escapeHtml(session.statusNotice.message)}</span>`;
+        }
+        return '<span class="tester-status text-muted">Envie uma mensagem para iniciar o teste.</span>';
+    }
+
+    function buildFeedbackHtml() {
+        const feedback = wizardState.testSession.feedback;
+        if (!feedback || !feedback.message) {
+            return '';
+        }
+        const typeClass = feedback.type ? `is-${feedback.type}` : '';
+        return `<div class="tester-feedback-message ${typeClass}">${escapeHtml(feedback.message)}</div>`;
+    }
+
+    function updateTestConversationView() {
+        const container = document.getElementById('tester-chat-history');
+        if (!container) {
+            return;
+        }
+        container.innerHTML = buildTestMessagesHtml();
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function updatePromptMetadataView() {
+        const container = document.getElementById('tester-prompt-meta');
+        if (!container) {
+            return;
+        }
+        container.innerHTML = buildPromptMetadataHtml();
+    }
+
+    function updateTestStatusMessage() {
+        const container = document.getElementById('tester-status-message');
+        if (!container) {
+            return;
+        }
+        container.innerHTML = buildStatusMessageHtml();
+    }
+
+    function focusTesterInputIfNeeded() {
+        if (!wizardState.testSession.shouldFocusInput) {
+            return;
+        }
+        wizardState.testSession.shouldFocusInput = false;
+        setTimeout(() => {
+            const input = document.getElementById('tester-input');
+            if (input) {
+                input.focus();
+                const length = input.value.length;
+                try {
+                    input.setSelectionRange(length, length);
+                } catch (error) {
+                    // Some browsers may not support setSelectionRange on certain input types
+                }
+            }
+        }, 0);
+    }
+
+    function ensurePromptMetadataLoaded(force = false) {
+        if (!wizardState.agentId || typeof api?.listPromptVersions !== 'function') {
+            return;
+        }
+
+        const meta = wizardState.testSession.promptMeta;
+        if (!force && meta.data && !meta.error) {
+            return;
+        }
+
+        meta.loading = true;
+        meta.error = null;
+        if (wizardState.activeTab === 'test') {
+            updatePromptMetadataView();
+        }
+
+        api.listPromptVersions(wizardState.agentId).then(result => {
+            meta.loading = false;
+            meta.error = null;
+            meta.data = result;
+            meta.lastUpdated = Date.now();
+            if (wizardState.activeTab === 'test') {
+                updatePromptMetadataView();
+            }
+        }).catch(error => {
+            console.error('Falha ao carregar metadados do Prompt Builder', error);
+            meta.loading = false;
+            meta.error = error.message || 'Não foi possível carregar os metadados do prompt.';
+            if (wizardState.activeTab === 'test') {
+                updatePromptMetadataView();
+            }
+        });
+    }
+
+    async function handleMarkAsReady() {
+        if (!wizardState.agentId || wizardState.testSession.isUpdatingStatus) {
+            return;
+        }
+
+        wizardState.testSession.isUpdatingStatus = true;
+        wizardState.testSession.feedback = null;
+        renderWorkspace();
+
+        try {
+            const result = await api.updateAgent(wizardState.agentId, { status: 'ready' });
+            wizardState.testSession.feedback = { type: 'success', message: 'Agente marcado como pronto.' };
+            if (result && typeof result === 'object' && result.status) {
+                wizardState.data.status = result.status;
+            } else {
+                wizardState.data.status = 'ready';
+            }
+        } catch (error) {
+            console.error('Falha ao marcar agente como pronto', error);
+            wizardState.testSession.feedback = { type: 'error', message: error.message || 'Não foi possível atualizar o status.' };
+        } finally {
+            wizardState.testSession.isUpdatingStatus = false;
+            renderWorkspace();
+        }
+    }
+
+    async function handleMakeDefaultFromTest() {
+        if (!wizardState.agentId || wizardState.data.is_default || wizardState.testSession.isMakingDefault) {
+            return;
+        }
+
+        wizardState.testSession.isMakingDefault = true;
+        wizardState.testSession.feedback = null;
+        renderWorkspace();
+
+        try {
+            await api.makeDefaultAgent(wizardState.agentId);
+            wizardState.testSession.feedback = { type: 'success', message: 'Agente definido como padrão.' };
+            wizardState.data.is_default = true;
+        } catch (error) {
+            console.error('Falha ao definir agente como padrão', error);
+            wizardState.testSession.feedback = { type: 'error', message: error.message || 'Não foi possível definir como padrão.' };
+        } finally {
+            wizardState.testSession.isMakingDefault = false;
+            renderWorkspace();
+        }
+    }
+
+    function formatPromptDate(dateString) {
+        if (typeof formatDate === 'function') {
+            try {
+                return formatDate(dateString);
+            } catch (error) {
+                console.warn('Falha ao formatar data com formatDate', error);
+            }
+        }
+
+        try {
+            const date = new Date(dateString);
+            if (!Number.isNaN(date.getTime())) {
+                return date.toLocaleString();
+            }
+        } catch (error) {
+            console.warn('Falha ao interpretar data', error);
+        }
+
+        return dateString;
     }
 
     function renderIdentityStep() {
@@ -728,4 +1387,39 @@
     }
 
     window.openAgentWorkspace = openAgentWorkspace;
+
+    window.agentTester = window.agentTester || {};
+    window.agentTester.start = async function startAgentTester(agentId) {
+        if (!agentId) {
+            showToast('Selecione um agente válido para testar.', 'error');
+            return;
+        }
+
+        if (wizardState.agentId === agentId && !wizardState.isLoading) {
+            wizardState.activeTab = 'test';
+            wizardState.testSession.shouldFocusInput = true;
+            ensurePromptMetadataLoaded();
+            renderWorkspace();
+            return;
+        }
+
+        if (typeof api?.getAgent !== 'function') {
+            showToast('API de agentes indisponível.', 'error');
+            return;
+        }
+
+        try {
+            const agent = await api.getAgent(agentId);
+            openAgentWorkspace({
+                mode: 'edit',
+                agentId,
+                agentData: agent,
+                initialTab: 'test'
+            });
+            wizardState.testSession.shouldFocusInput = true;
+        } catch (error) {
+            console.error('Falha ao carregar agente para teste', error);
+            showToast('Não foi possível carregar o agente para teste: ' + (error.message || error), 'error');
+        }
+    };
 })();
