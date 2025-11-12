@@ -160,6 +160,51 @@ RETENTION_DAYS=14 ./scripts/db_backup.sh
 
 ---
 
+#### `tenant_backup.sh`
+**Purpose**: Export all records for a single tenant (GDPR requests, migrations, or partial restores)
+
+**Usage**:
+```bash
+# SQLite (default)
+./scripts/tenant_backup.sh tenant_123
+
+# PostgreSQL using DATABASE_URL (password automatically scoped to psql/pg_dump commands)
+ADMIN_DB_TYPE=postgres \
+DATABASE_URL="postgres://chatbot:secret@db.example.com:5432/chatbot" \
+./scripts/tenant_backup.sh tenant_123 --export-only
+
+# PostgreSQL using discrete PG* variables
+ADMIN_DB_TYPE=postgres \
+PGHOST=db.internal \
+PGPORT=5432 \
+PGUSER=chatbot \
+PGPASSWORD=secret \
+PGDATABASE=chatbot \
+./scripts/tenant_backup.sh tenant_123
+```
+
+**Features**:
+- Detects `ADMIN_DB_TYPE=sqlite` **or** `ADMIN_DB_TYPE=postgres`
+- Parses `DATABASE_URL` (including optional `schema`/`sslmode` query params) or falls back to discrete `PG*` env vars
+- Verifies tenant existence before exporting
+- Generates `COPY ... FROM STDIN WITH CSV` `.sql` files for each tenant-scoped table
+- Writes manifest entries with accurate record counts for SQLite and PostgreSQL
+- Archives the export into `tenants/tenant_<tenant>_<timestamp>.tar.gz`
+
+**Manual validation**:
+```bash
+# SQLite smoke test (uses bundled demo DB)
+./scripts/tenant_backup.sh demo-tenant --export-only
+
+# PostgreSQL connectivity check (requires running database)
+ADMIN_DB_TYPE=postgres DATABASE_URL=postgres://... ./scripts/tenant_backup.sh demo-tenant
+
+# Inspect the manifest
+tar -tzf /data/backups/tenants/tenant_demo-tenant_*.tar.gz | grep MANIFEST
+```
+
+---
+
 #### `db_restore.sh`
 **Purpose**: Safe database restoration from backup
 
