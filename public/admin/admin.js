@@ -911,70 +911,11 @@ async function makeDefaultAgent(id) {
     }
 }
 
-async function testAgent(id) {
-    const message = prompt('Enter a test message:', 'Hello, can you help me?');
-    if (!message) return;
-    
-    const content = `
-        <div class="form-group">
-            <label class="form-label">Test Message</label>
-            <div style="padding: 1rem; background: #f3f4f6; border-radius: 0.375rem; margin-bottom: 1rem;">
-                ${message}
-            </div>
-        </div>
-        
-        <div class="form-group">
-            <label class="form-label">Agent Response</label>
-            <div id="test-response" style="padding: 1rem; background: #f3f4f6; border-radius: 0.375rem; min-height: 100px; max-height: 400px; overflow-y: auto;">
-                <div class="spinner"></div> Streaming response...
-            </div>
-        </div>
-        
-        <div class="modal-footer">
-            <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-        </div>
-    `;
-    
-    openModal('Test Agent', content);
-    
-    // Start streaming response
-    const responseDiv = document.getElementById('test-response');
-    responseDiv.innerHTML = '';
-    
-    try {
-        const url = api.testAgent(id);
-        const eventSource = new EventSource(url);
-        
-        let fullResponse = '';
-        
-        eventSource.addEventListener('message', (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                
-                if (data.type === 'start') {
-                    responseDiv.innerHTML = `<div style="color: #6b7280; font-size: 0.875rem; margin-bottom: 0.5rem;">Testing agent: ${data.agent_name}</div>`;
-                } else if (data.type === 'chunk') {
-                    fullResponse += data.content || '';
-                    responseDiv.innerHTML += (data.content || '').replace(/\n/g, '<br>');
-                    responseDiv.scrollTop = responseDiv.scrollHeight;
-                } else if (data.type === 'done') {
-                    eventSource.close();
-                    responseDiv.innerHTML += '<div style="color: #10b981; font-size: 0.875rem; margin-top: 0.5rem;">✓ Response complete</div>';
-                } else if (data.type === 'error') {
-                    eventSource.close();
-                    responseDiv.innerHTML += `<div style="color: #ef4444;">Error: ${data.message}</div>`;
-                }
-            } catch (error) {
-                console.error('Error parsing SSE:', error);
-            }
-        });
-        
-        eventSource.onerror = () => {
-            eventSource.close();
-            responseDiv.innerHTML += '<div style="color: #ef4444;">Connection error</div>';
-        };
-    } catch (error) {
-        responseDiv.innerHTML = `<div style="color: #ef4444;">Error: ${error.message}</div>`;
+function testAgent(id) {
+    if (window.agentTester && typeof window.agentTester.start === 'function') {
+        window.agentTester.start(id);
+    } else {
+        showToast('Painel de teste indisponível no momento.', 'error');
     }
 }
 
