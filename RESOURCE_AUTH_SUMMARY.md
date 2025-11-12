@@ -108,6 +108,14 @@ Request → RBAC Check → Resource Check → Granted/Denied
    - GET /admin-api.php?action=list_resource_permissions
    - List all permissions for a resource
 
+## Integration Touchpoints
+
+- **`admin-api.php`** now calls `ResourceAuthService::requireResourceAccess()` ahead of every read/update/delete action for agents, prompts, vector stores, jobs, leads, and files to combine RBAC, tenant scoping, and explicit grants.
+- **`includes/AdminAuth.php`** supplies the baseline role permissions consumed by ResourceAuth, keeping legacy RBAC logic intact.
+- **`includes/AuditService.php`** captures `access_denied` events emitted by ResourceAuth so operators can investigate violations via `audit_events` and the admin API.
+- **Developer docs** (`docs/RESOURCE_AUTHORIZATION.md`, `docs/SECURITY_MODEL.md`) outline extension patterns and troubleshooting steps for the new service.
+- **Automated tests** (`tests/test_resource_authorization.php`, `tests/test_admin_api_resource_auth.php`, `tests/test_comprehensive_resource_auth.php`) enforce coverage for isolation, explicit grants, and audit logging across tenants.
+
 ## Resource Types Supported
 
 - `agent` - AI agent configurations

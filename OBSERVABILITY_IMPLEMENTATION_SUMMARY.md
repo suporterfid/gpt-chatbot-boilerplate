@@ -42,6 +42,7 @@ This implementation adds a production-ready observability and monitoring framewo
 - Error handling and recording
 - Context management (tenant, agent, user)
 - Helper methods for common operations
+- Activation controlled by the `observability.enabled` toggle in `config.php`
 
 ### 2. Integration Points
 
@@ -63,11 +64,13 @@ This implementation adds a production-ready observability and monitoring framewo
 - Latency measurement and recording
 - Success/failure tracking
 - Metrics collection for API calls
+- Uses `ObservabilityMiddleware::trackOpenAICall()` so streaming and synchronous requests share instrumentation
 
 #### metrics.php
 - Integration with MetricsCollector
 - Exposition of runtime metrics
 - Combined database and runtime metrics
+- Aggregates job queue and audit statistics directly from the database for Prometheus
 
 ### 3. Monitoring Stack
 
@@ -194,6 +197,8 @@ Added observability configuration:
     ],
 ]
 ```
+
+Environment variables (`OBSERVABILITY_ENABLED`, `TRACING_ENABLED`, `METRICS_ENABLED`, etc.) feed these defaults so deployments can dial instrumentation up or down without code changes.
 
 #### .env.example
 Added environment variables:
