@@ -269,7 +269,41 @@ class LeadRepository {
         
         return $id;
     }
-    
+
+    /**
+     * Count notified events created since the start of the current UTC day
+     *
+     * @param string|null $tenantId Optional tenant scope override
+     * @return int
+     */
+    public function countDailyNotifiedEvents($tenantId = null) {
+        $effectiveTenantId = $tenantId ?? $this->tenantId;
+
+        $startOfDay = (new DateTimeImmutable('now', new DateTimeZone('UTC')))
+            ->setTime(0, 0, 0)
+            ->format('Y-m-d H:i:s');
+
+        $sql = "SELECT COUNT(*) AS notification_count"
+             . " FROM lead_events le"
+             . " INNER JOIN leads l ON l.id = le.lead_id"
+             . " WHERE le.type = :type"
+             . " AND le.created_at >= :start_of_day";
+
+        $params = [
+            'type' => 'notified',
+            'start_of_day' => $startOfDay
+        ];
+
+        if ($effectiveTenantId !== null) {
+            $sql .= " AND l.tenant_id = :tenant_id";
+            $params['tenant_id'] = $effectiveTenantId;
+        }
+
+        $result = $this->db->getOne($sql, $params);
+
+        return (int)($result['notification_count'] ?? 0);
+    }
+
     /**
      * Add a score snapshot
      * 

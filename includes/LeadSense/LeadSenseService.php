@@ -59,6 +59,10 @@ class LeadSenseService {
         // Extract required data
         $agentId = $turnData['agent_id'] ?? null;
         $conversationId = $turnData['conversation_id'] ?? null;
+        $tenantId = $turnData['tenant_id'] ?? null;
+
+        // Ensure repository uses correct tenant context (or clears previous one)
+        $this->leadRepository->setTenantId($tenantId);
         $userMessage = $turnData['user_message'] ?? '';
         $assistantMessage = $turnData['assistant_message'] ?? '';
         
@@ -106,6 +110,7 @@ class LeadSenseService {
                 'qualified' => $scoreResult['qualified'],
                 'status' => 'new',
                 'source_channel' => $turnData['source_channel'] ?? 'web',
+                'tenant_id' => $tenantId,
                 'extras' => [
                     'intent_signals' => $intentResult['signals'] ?? [],
                     'intent_confidence' => $intentResult['confidence'] ?? 0,
@@ -187,7 +192,9 @@ class LeadSenseService {
     private function notifyQualifiedLead($leadId, $leadData, $scoreResult) {
         try {
             // Check daily notification limit
-            if ($this->hasReachedDailyLimit()) {
+            $tenantId = $leadData['tenant_id'] ?? $this->leadRepository->getTenantId();
+
+            if ($this->hasReachedDailyLimit($tenantId)) {
                 error_log("LeadSense: Daily notification limit reached");
                 return;
             }
@@ -216,13 +223,16 @@ class LeadSenseService {
      * 
      * @return bool
      */
-    private function hasReachedDailyLimit() {
+    private function hasReachedDailyLimit($tenantId = null) {
         $maxDaily = $this->config['max_daily_notifications'] ?? 100;
-        
-        // This is a simple in-memory check. For production, should use persistent storage
-        // For now, we'll just return false (no limit enforcement)
-        // TODO: Implement persistent daily counter
-        return false;
+
+        if ($maxDaily <= 0) {
+            return false;
+        }
+
+        $currentCount = $this->leadRepository->countDailyNotifiedEvents($tenantId);
+
+        return $currentCount >= $maxDaily;
     }
     
     /**
