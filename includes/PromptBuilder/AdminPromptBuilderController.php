@@ -134,7 +134,7 @@ class AdminPromptBuilderController
     {
         // Validate input
         if (empty($data['idea_text'])) {
-            throw new Exception('idea_text is required', 400);
+            throw new InvalidArgumentException('idea_text is required', 400);
         }
         
         $ideaText = trim($data['idea_text']);
@@ -377,23 +377,36 @@ class AdminPromptBuilderController
      */
     private function createService(): PromptBuilderService
     {
+        $promptBuilderConfig = $this->config['prompt_builder'] ?? [];
+
+        if (empty($promptBuilderConfig['enabled'])) {
+            throw new Exception('Prompt Builder is disabled by configuration', 409);
+        }
+
         $openaiConfig = [
             'api_key' => $this->config['openai']['api_key'],
             'organization' => $this->config['openai']['organization'] ?? '',
             'base_url' => $this->config['openai']['base_url'],
         ];
-        
+
+        if (empty($openaiConfig['api_key'])) {
+            throw new Exception(
+                'Prompt Builder requires an OpenAI API key. Set OPENAI_API_KEY before generating prompts.',
+                412
+            );
+        }
+
         $client = new OpenAIClient($openaiConfig);
         $loader = $this->createGuardrailLoader();
         $repo = $this->createRepository();
         $redactor = $this->createRedactor();
-        
+
         return new PromptBuilderService(
             $client,
             $loader,
             $repo,
             $redactor,
-            $this->config['prompt_builder'] ?? []
+            $promptBuilderConfig
         );
     }
 

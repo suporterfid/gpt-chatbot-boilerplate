@@ -113,19 +113,19 @@ class PromptBuilderService
         
         // Check minimum length
         if (strlen($ideaText) < 10) {
-            throw new Exception('Agent idea must be at least 10 characters long');
+            throw new InvalidArgumentException('Agent idea must be at least 10 characters long', 422);
         }
-        
+
         // Check maximum length
         $maxLength = $this->config['max_idea_length'] ?? 2000;
         if (strlen($ideaText) > $maxLength) {
-            throw new Exception("Agent idea must not exceed {$maxLength} characters");
+            throw new InvalidArgumentException("Agent idea must not exceed {$maxLength} characters", 422);
         }
-        
+
         // Validate guardrail keys are strings
         foreach ($guardrailKeys as $key) {
             if (!is_string($key) || trim($key) === '') {
-                throw new Exception('Invalid guardrail key');
+                throw new InvalidArgumentException('Invalid guardrail key', 422);
             }
         }
     }
@@ -257,8 +257,29 @@ PROMPT;
             return $this->client->createChatCompletion($payload);
         } catch (Exception $e) {
             error_log("Prompt Builder: OpenAI API error: " . $e->getMessage());
-            throw new Exception('Failed to generate prompt specification: ' . $e->getMessage());
+
+            $message = $this->normalizeOpenAIErrorMessage($e->getMessage());
+
+            throw new Exception($message, 424);
         }
+    }
+
+    /**
+     * Provide a human-friendly message for OpenAI dependency failures
+     */
+    private function normalizeOpenAIErrorMessage(string $rawMessage): string
+    {
+        $message = trim($rawMessage);
+
+        if ($message === '') {
+            return 'Failed to generate prompt specification due to an unexpected OpenAI error.';
+        }
+
+        if (stripos($message, 'api key') !== false || stripos($message, '401') !== false) {
+            return 'Failed to generate prompt specification: OpenAI rejected the credentials. Verify OPENAI_API_KEY.';
+        }
+
+        return 'Failed to generate prompt specification: ' . $message;
     }
 
     /**
