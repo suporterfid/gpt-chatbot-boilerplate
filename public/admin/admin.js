@@ -960,41 +960,33 @@ async function loadAgentsPage() {
     renderAgentsList();
 
     try {
-        const [agents, vectorStoresRaw] = await Promise.all([
-            api.listAgents(),
-            api.listVectorStores().catch(error => {
-                console.warn('Failed to load vector stores', error);
-                return [];
+        const agentsPromise = api.listAgents();
+        const vectorStoresPromise = api.listVectorStores().catch(error => {
+            console.warn('Failed to load vector stores', error);
+            return [];
+        });
+
+        const agents = await agentsPromise;
+
+        const [vectorStoresRaw, channelsByAgent] = await Promise.all([
+            vectorStoresPromise,
+            fetchAgentChannelsInBatches(agents).catch(error => {
+                console.warn('Failed to load agent channels in batch', error);
+                return {};
             })
         ]);
 
-        const vectorStoreMap = Array.isArray(vectorStoresRaw)
-            ? vectorStoresRaw.reduce((acc, store) => {
-                if (store && store.openai_store_id) {
-                    acc[store.openai_store_id] = store;
-                }
-                return acc;
-            }, {})
-            : {};
+        const vectorStoreMap = buildVectorStoreMap(vectorStoresRaw);
 
-        const enrichedAgents = await Promise.all(agents.map(async agent => {
-            let channels = [];
-            try {
-                channels = await api.listAgentChannels(agent.id);
-            } catch (error) {
-                console.warn('Failed to load channels for agent', agent.id, error);
-            }
-
-            const vectorStores = Array.isArray(agent.vector_store_ids)
-                ? agent.vector_store_ids.map(id => vectorStoreMap[id] || { openai_store_id: id, name: id })
-                : [];
-
+        const enrichedAgents = agents.map(agent => {
+            const channels = channelsByAgent[agent.id] || [];
+            const vectorStores = resolveAgentVectorStores(agent, vectorStoreMap);
             return {
                 ...agent,
                 channels,
                 vectorStores
             };
-        }));
+        });
 
         agentListState.agents = enrichedAgents;
         agentListState.vectorStoreMap = vectorStoreMap;
@@ -1005,6 +997,70 @@ async function loadAgentsPage() {
         agentListState.isLoading = false;
         renderAgentsList();
     }
+}
+
+async function fetchAgentChannelsInBatches(agents = [], batchSize = 5) {
+    if (!Array.isArray(agents) || agents.length === 0) {
+        return {};
+    }
+
+    const result = {};
+    const safeBatchSize = Math.max(1, Number(batchSize) || 5);
+
+    for (let index = 0; index < agents.length; index += safeBatchSize) {
+        const batch = agents.slice(index, index + safeBatchSize).filter(agent => agent && agent.id);
+        if (batch.length === 0) {
+            continue;
+        }
+
+        const responses = await Promise.allSettled(batch.map(agent => api.listAgentChannels(agent.id)));
+        responses.forEach((response, offset) => {
+            const agentId = batch[offset]?.id;
+            if (!agentId) {
+                return;
+            }
+
+            if (response.status === 'fulfilled') {
+                result[agentId] = Array.isArray(response.value) ? response.value : [];
+            } else {
+                console.warn('Failed to load channels for agent', agentId, response.reason);
+                result[agentId] = [];
+            }
+        });
+    }
+
+    return result;
+}
+
+function buildVectorStoreMap(vectorStoresRaw = []) {
+    if (!Array.isArray(vectorStoresRaw)) {
+        return {};
+    }
+
+    return vectorStoresRaw.reduce((acc, store) => {
+        if (store && store.openai_store_id) {
+            acc[store.openai_store_id] = store;
+        }
+        return acc;
+    }, {});
+}
+
+function resolveAgentVectorStores(agent, vectorStoreMap = {}) {
+    if (!agent) {
+        return [];
+    }
+
+    if (Array.isArray(agent.vectorStores) && agent.vectorStores.length > 0) {
+        return agent.vectorStores;
+    }
+
+    const ids = Array.isArray(agent.vector_store_ids)
+        ? agent.vector_store_ids
+        : typeof agent.vector_store_ids === 'string'
+            ? agent.vector_store_ids.split(',').map(item => item.trim()).filter(Boolean)
+            : [];
+
+    return ids.map(id => vectorStoreMap[id] || { openai_store_id: id, name: id });
 }
 
 function renderAgentsList() {
