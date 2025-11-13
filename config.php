@@ -321,7 +321,7 @@ $config = [
     // Admin Configuration
     'admin' => [
         'enabled' => filter_var($_ENV['ADMIN_ENABLED'] ?? getenv('ADMIN_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN),
-        'token' => $_ENV['ADMIN_TOKEN'] ?? getenv('ADMIN_TOKEN') ?: '',
+        'token' => trim($_ENV['ADMIN_TOKEN'] ?? getenv('ADMIN_TOKEN') ?: ''),
         'database_url' => $_ENV['DATABASE_URL'] ?? getenv('DATABASE_URL') ?: '',
         'database_path' => $_ENV['DATABASE_PATH'] ?? getenv('DATABASE_PATH') ?: __DIR__ . '/data/chatbot.db',
         'rate_limit_requests' => (int)($_ENV['ADMIN_RATE_LIMIT_REQUESTS'] ?? getenv('ADMIN_RATE_LIMIT_REQUESTS') ?: 300),
@@ -329,6 +329,10 @@ $config = [
         'session_ttl' => (int)($_ENV['ADMIN_SESSION_TTL'] ?? getenv('ADMIN_SESSION_TTL') ?: 86400),
         'session_cookie_name' => $_ENV['ADMIN_SESSION_COOKIE'] ?? getenv('ADMIN_SESSION_COOKIE') ?: 'admin_session',
         'jobs_enabled' => filter_var($_ENV['JOBS_ENABLED'] ?? getenv('JOBS_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
+        'bootstrap_defaults' => [
+            'email' => trim($_ENV['DEFAULT_ADMIN_EMAIL'] ?? getenv('DEFAULT_ADMIN_EMAIL') ?: ''),
+            'password' => $_ENV['DEFAULT_ADMIN_PASSWORD'] ?? getenv('DEFAULT_ADMIN_PASSWORD') ?: '',
+        ],
     ],
     
     // Channels Configuration (WhatsApp, Telegram, etc.)
