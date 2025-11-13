@@ -54,6 +54,7 @@
             name: '',
             description: '',
             is_default: false,
+            status: '',
             api_type: 'responses',
             model: '',
             temperature: '0.7',

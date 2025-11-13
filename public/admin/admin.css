@@ -1936,6 +1936,14 @@ code {
     gap: 0.5rem;
 }
 
+.prompt-versions-table tr.active {
+    background: rgba(16, 185, 129, 0.08);
+}
+
+.prompt-versions-table tr.active td {
+    font-weight: 600;
+}
+
 .prompt-versions-table .actions-cell .btn {
     flex: 0 1 auto;
 }

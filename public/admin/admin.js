@@ -224,7 +224,7 @@ class AdminAPI {
     }
 
     listPromptVersions(id) {
-        return this.request('list_prompt_versions', { params: `&id=${id}` });
+        return this.request('prompt_builder_list', { params: `&agent_id=${id}` });
     }
 
     createPromptVersion(id, data) {
@@ -1571,24 +1571,29 @@ async function handleCreatePrompt(event) {
 
 async function viewPromptVersions(id) {
     try {
-        const versions = await api.listPromptVersions(id);
-        
+        const response = await api.listPromptVersions(id);
+        const versions = Array.isArray(response) ? response : (response?.versions || []);
+        const activeVersion = Array.isArray(response) ? null : response?.active_version ?? null;
+
         let content = `
             <div class="form-group">
                 <label class="form-label">Versions</label>
                 <div style="max-height: 300px; overflow-y: auto;">
         `;
-        
+
         if (versions.length === 0) {
             content += '<p>No versions yet</p>';
         } else {
-            content += '<table style="width: 100%;"><thead><tr><th>Version</th><th>Created</th></tr></thead><tbody>';
+            content += '<table style="width: 100%;"><thead><tr><th>Version</th><th>Created</th><th>Status</th></tr></thead><tbody>';
             versions.forEach(v => {
-                content += `<tr><td>${v.version}</td><td>${formatDate(v.created_at)}</td></tr>`;
+                const createdAt = v.created_at ? formatDate(v.created_at) : '—';
+                const isActive = activeVersion !== null && String(v.version) === String(activeVersion);
+                const statusCell = isActive ? '<span class="status-pill status-pill--active">Active</span>' : '';
+                content += `<tr${isActive ? ' class="active"' : ''}><td>${v.version}</td><td>${createdAt}</td><td>${statusCell}</td></tr>`;
             });
             content += '</tbody></table>';
         }
-        
+
         content += `
                 </div>
             </div>
@@ -1596,7 +1601,7 @@ async function viewPromptVersions(id) {
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
             </div>
         `;
-        
+
         openModal('Prompt Versions', content);
     } catch (error) {
         showToast('Failed to load versions: ' + error.message, 'error');
