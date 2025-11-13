@@ -9,11 +9,12 @@
     
     window.AdminAPI = class extends originalAdminAPI {
         // Prompt Builder methods
-        async generatePrompt(agentId, ideaText, guardrails = [], language = 'en', variables = {}) {
+        async generatePrompt(agentId, ideaText, guardrails = [], language = 'en', variables = {}, requestOptions = {}) {
             return this.request('prompt_builder_generate', {
                 method: 'POST',
                 params: `&agent_id=${agentId}`,
-                body: { idea_text: ideaText, guardrails, language, variables }
+                body: { idea_text: ideaText, guardrails, language, variables },
+                signal: requestOptions.signal
             });
         }
 
@@ -79,10 +80,79 @@ let promptBuilderState = {
     guardrailsCatalog: [],
     selectedGuardrails: [],
     generating: false,
+    currentGenerationController: null,
+    versionsLoading: false,
     generatedPrompt: null,
     previouslyFocusedElement: null,
     focusTrapHandler: null
 };
+
+function setGeneratingState(isGenerating) {
+    promptBuilderState.generating = Boolean(isGenerating);
+
+    const modal = document.getElementById('prompt-builder-modal');
+    const progress = document.getElementById('prompt-builder-progress');
+    const cancelButton = document.getElementById('prompt-builder-cancel');
+    const modalContent = modal ? modal.querySelector('.prompt-builder-modal-content') : null;
+
+    if (progress) {
+        progress.classList.toggle('hidden', !promptBuilderState.generating);
+    }
+
+    if (cancelButton) {
+        cancelButton.classList.toggle('hidden', !promptBuilderState.generating);
+    }
+
+    if (modal) {
+        modal.setAttribute('aria-busy', promptBuilderState.generating ? 'true' : 'false');
+    }
+
+    if (modalContent) {
+        modalContent.classList.toggle('is-generating', promptBuilderState.generating);
+    }
+
+    const disableTargets = modal ? modal.querySelectorAll('[data-disable-while-generating]') : [];
+    disableTargets.forEach(element => {
+        if (promptBuilderState.generating) {
+            element.setAttribute('disabled', 'disabled');
+            element.setAttribute('aria-disabled', 'true');
+        } else {
+            element.removeAttribute('disabled');
+            element.removeAttribute('aria-disabled');
+        }
+    });
+
+    const generateButton = document.getElementById('generate-btn');
+    if (generateButton) {
+        const originalLabel = generateButton.dataset.originalLabel || generateButton.textContent.trim();
+        if (!generateButton.dataset.originalLabel) {
+            generateButton.dataset.originalLabel = originalLabel;
+        }
+
+        if (promptBuilderState.generating) {
+            generateButton.textContent = 'Generating...';
+        } else {
+            generateButton.textContent = generateButton.dataset.originalLabel || 'Generate Specification';
+        }
+    }
+}
+
+function cancelPromptGeneration(options = {}) {
+    if (!promptBuilderState.generating) {
+        return;
+    }
+
+    if (promptBuilderState.currentGenerationController) {
+        promptBuilderState.currentGenerationController.abort();
+        promptBuilderState.currentGenerationController = null;
+    }
+
+    if (!options.silent) {
+        showToast('Prompt generation cancelled.', 'info');
+    }
+
+    setGeneratingState(false);
+}
 
 const promptBuilderHooks = {
     onGenerationStart: null,
@@ -135,12 +205,15 @@ function attachPromptBuilderValidationHandlers() {
 
     const outputElement = document.getElementById('prompt-builder-output');
     if (outputElement && !outputElement.dataset.validationBound) {
-        outputElement.addEventListener('input', () => clearFieldError('prompt-builder-output'));
+        outputElement.addEventListener('input', () => {
+            clearFieldError('prompt-builder-output');
+            updateMarkdownPreview();
+        });
         outputElement.dataset.validationBound = 'true';
     }
 }
 
-async function requestPromptGeneration(agentId, ideaText, guardrails = [], language = 'en') {
+async function requestPromptGeneration(agentId, ideaText, guardrails = [], language = 'en', signal) {
     if (promptBuilderHooks.onGenerationStart) {
         try {
             promptBuilderHooks.onGenerationStart({ agentId, ideaText, guardrails, language });
@@ -153,7 +226,9 @@ async function requestPromptGeneration(agentId, ideaText, guardrails = [], langu
         agentId,
         ideaText,
         guardrails,
-        language
+        language,
+        {},
+        { signal }
     );
 
     if (promptBuilderHooks.onPromptGenerated) {
@@ -224,6 +299,11 @@ async function showPromptBuilderModal(agentId, agentName) {
     renderGuardrailsCheckboxes();
     hideGeneratedPrompt();
     attachPromptBuilderValidationHandlers();
+    promptBuilderState.generatedPrompt = null;
+    promptBuilderState.currentGenerationController = null;
+    setGeneratingState(false);
+    updateMarkdownPreview();
+    void loadPromptVersions();
 
     // Show modal
     modal.classList.add('open');
@@ -336,11 +416,31 @@ function createPromptBuilderModal() {
                     <button class="close-btn" type="button" onclick="closePromptBuilderModal()" aria-label="Close Prompt Builder">&times;</button>
                 </div>
                 <div class="modal-body">
+                    <div
+                        id="prompt-builder-progress"
+                        class="prompt-builder-progress hidden"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <div class="progress-indicator">
+                            <span class="spinner spinner-inline" aria-hidden="true"></span>
+                            <span class="progress-text">Generating specification...</span>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-link hidden"
+                            id="prompt-builder-cancel"
+                            onclick="cancelPromptGeneration()"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+
                     <!-- Step 1: Generate from Idea -->
                     <div id="prompt-builder-wizard">
                         <h3>Generate Agent Specification</h3>
                         <p class="text-muted">Describe your agent idea briefly. Our AI will generate a comprehensive specification with guardrails.</p>
-                        
+
                         <div class="form-group">
                             <label for="prompt-builder-idea">Agent Idea *</label>
                             <textarea
@@ -349,6 +449,7 @@ function createPromptBuilderModal() {
                                 rows="4"
                                 placeholder="e.g., A customer support agent that helps users with product questions, handles refunds, and escalates complex issues..."
                                 maxlength="2000"
+                                data-disable-while-generating="true"
                             ></textarea>
                             <small class="text-muted">Minimum 10 characters, maximum 2000 characters</small>
                             <p id="prompt-builder-idea-error" class="form-error-message hidden" role="alert"></p>
@@ -360,10 +461,10 @@ function createPromptBuilderModal() {
                                 <!-- Checkboxes will be rendered here -->
                             </div>
                         </div>
-                        
+
                         <div class="form-group">
                             <label for="prompt-builder-language">Language</label>
-                            <select id="prompt-builder-language" class="form-control">
+                            <select id="prompt-builder-language" class="form-control" data-disable-while-generating="true">
                                 <option value="en">English</option>
                                 <option value="pt">Portuguese (Português)</option>
                                 <option value="es">Spanish (Español)</option>
@@ -371,64 +472,67 @@ function createPromptBuilderModal() {
                                 <option value="de">German (Deutsch)</option>
                             </select>
                         </div>
-                        
-                        <button 
-                            id="generate-btn" 
-                            class="btn btn-primary" 
+
+                        <button
+                            id="generate-btn"
+                            class="btn btn-primary"
                             onclick="generatePromptSpec()"
+                            data-disable-while-generating="true"
                         >
                             Generate Specification
                         </button>
                     </div>
-                    
+
                     <!-- Step 2: Review & Edit Generated Prompt -->
                     <div id="prompt-builder-result" class="prompt-builder-section hidden">
                         <h3>Generated Specification</h3>
                         <p class="text-muted">Review and edit the specification below. You can save it as a new version or activate it immediately.</p>
-                        
+
                         <div class="result-metadata">
                             <span class="badge">Version: <span id="result-version"></span></span>
                             <span class="badge">Latency: <span id="result-latency"></span>ms</span>
                             <span class="badge">Guardrails: <span id="result-guardrails"></span></span>
                         </div>
-                        
+
                         <div class="form-group form-group-spaced">
                             <label>Specification (Markdown)</label>
-                            <textarea
-                                id="prompt-builder-output"
-                                class="form-control markdown-editor"
-                                rows="20"
-                            ></textarea>
+                            <div class="markdown-editor-wrapper" id="markdown-editor-wrapper">
+                                <textarea
+                                    id="prompt-builder-output"
+                                    class="form-control markdown-editor"
+                                    rows="20"
+                                    data-disable-while-generating="true"
+                                ></textarea>
+                                <div class="markdown-preview hidden" id="markdown-preview" role="region" aria-live="polite">
+                                    <div class="markdown-preview-header">Preview</div>
+                                    <div id="markdown-preview-content" class="markdown-content"></div>
+                                </div>
+                            </div>
                             <p id="prompt-builder-output-error" class="form-error-message hidden" role="alert"></p>
                         </div>
 
-                        <div class="markdown-preview hidden" id="markdown-preview">
-                            <label>Preview</label>
-                            <div id="markdown-preview-content" class="markdown-content"></div>
-                        </div>
-                        
                         <div class="btn-group">
-                            <button class="btn btn-secondary" onclick="toggleMarkdownPreview()">
+                            <button class="btn btn-secondary" onclick="toggleMarkdownPreview()" data-disable-while-generating="true">
                                 Toggle Preview
                             </button>
-                            <button class="btn btn-success" onclick="activateGeneratedPrompt()">
+                            <button class="btn btn-success" onclick="activateGeneratedPrompt()" data-disable-while-generating="true">
                                 Activate This Version
                             </button>
-                            <button class="btn btn-primary" onclick="saveGeneratedPromptManually()">
+                            <button class="btn btn-primary" onclick="saveGeneratedPromptManually()" data-disable-while-generating="true">
                                 Save as New Version
                             </button>
-                            <button class="btn btn-outline" onclick="startNewGeneration()">
+                            <button class="btn btn-outline" onclick="startNewGeneration()" data-disable-while-generating="true">
                                 Generate New
                             </button>
                         </div>
                     </div>
-                    
+
                     <!-- Version History -->
                     <div class="prompt-builder-history">
                         <h3>Version History</h3>
-                        <div id="prompt-versions-list">
-                            <button class="btn btn-secondary" onclick="loadPromptVersions()">Load Versions</button>
-                        </div>
+                        <p class="text-muted">Keep track of generated and manual prompt revisions.</p>
+                        <div id="prompt-versions-loading" class="prompt-versions-loading hidden" aria-live="polite"></div>
+                        <div id="prompt-versions-list" class="prompt-versions-list"></div>
                     </div>
                 </div>
             </div>
@@ -458,11 +562,11 @@ function renderGuardrailsCheckboxes() {
         html += `
             <div class="guardrail-item">
                 <label class="checkbox-label">
-                    <input 
-                        type="checkbox" 
+                    <input
+                        type="checkbox"
                         value="${guardrail.key}"
                         ${isChecked ? 'checked' : ''}
-                        ${isMandatory ? 'disabled' : ''}
+                        ${isMandatory ? 'disabled' : 'data-disable-while-generating="true"'}
                         onchange="toggleGuardrail('${guardrail.key}')"
                     />
                     <strong>${guardrail.title}</strong>
@@ -472,8 +576,9 @@ function renderGuardrailsCheckboxes() {
             </div>
         `;
     });
-    
+
     container.innerHTML = html;
+    setGeneratingState(promptBuilderState.generating);
 }
 
 /**
@@ -492,41 +597,53 @@ function toggleGuardrail(key) {
  * Generate prompt specification
  */
 async function generatePromptSpec() {
-    const ideaText = document.getElementById('prompt-builder-idea').value.trim();
-    const language = document.getElementById('prompt-builder-language').value;
+    if (promptBuilderState.generating) {
+        return;
+    }
+
+    const ideaElement = document.getElementById('prompt-builder-idea');
+    const languageElement = document.getElementById('prompt-builder-language');
+    const ideaText = ideaElement ? ideaElement.value.trim() : '';
+    const language = languageElement ? languageElement.value : 'en';
 
     // Validate
     clearFieldError('prompt-builder-idea');
     if (ideaText.length < 10) {
         setFieldError('prompt-builder-idea', 'Please provide at least 10 characters describing your agent idea.');
-        document.getElementById('prompt-builder-idea').focus();
+        if (ideaElement) {
+            ideaElement.focus();
+        }
         return;
     }
 
-    // Disable button and show loading
-    const btn = document.getElementById('generate-btn');
-    btn.disabled = true;
-    btn.textContent = 'Generating...';
-    
-    promptBuilderState.generating = true;
-    
+    const controller = new AbortController();
+    promptBuilderState.currentGenerationController = controller;
+    setGeneratingState(true);
+
     try {
         const result = await requestPromptGeneration(
             promptBuilderState.currentAgentId,
             ideaText,
             promptBuilderState.selectedGuardrails,
-            language
+            language,
+            controller.signal
         );
 
         promptBuilderState.generatedPrompt = result;
         showGeneratedPrompt(result);
+        toggleMarkdownPreview(true);
     } catch (error) {
-        showToast('Failed to generate prompt: ' + error.message, 'error');
-        console.error(error);
+        if (error && error.name === 'AbortError') {
+            console.debug('Prompt generation aborted');
+        } else {
+            showToast('Failed to generate prompt: ' + error.message, 'error');
+            console.error(error);
+        }
     } finally {
-        btn.disabled = false;
-        btn.textContent = 'Generate Specification';
-        promptBuilderState.generating = false;
+        if (promptBuilderState.currentGenerationController === controller) {
+            promptBuilderState.currentGenerationController = null;
+        }
+        setGeneratingState(false);
     }
 }
 
@@ -551,6 +668,7 @@ function showGeneratedPrompt(result) {
     document.getElementById('result-guardrails').textContent = result.applied_guardrails.join(', ');
     document.getElementById('prompt-builder-output').value = result.prompt_md;
     clearFieldError('prompt-builder-output');
+    updateMarkdownPreview();
     attachPromptBuilderValidationHandlers();
 }
 
@@ -561,6 +679,7 @@ function hideGeneratedPrompt() {
     const wizard = document.getElementById('prompt-builder-wizard');
     const resultSection = document.getElementById('prompt-builder-result');
     const preview = document.getElementById('markdown-preview');
+    const wrapper = document.getElementById('markdown-editor-wrapper');
 
     if (wizard) {
         wizard.classList.remove('hidden');
@@ -572,6 +691,10 @@ function hideGeneratedPrompt() {
 
     if (preview) {
         preview.classList.add('hidden');
+    }
+
+    if (wrapper) {
+        wrapper.classList.remove('preview-visible');
     }
 
     clearFieldError('prompt-builder-output');
@@ -589,46 +712,221 @@ function startNewGeneration() {
 /**
  * Toggle markdown preview
  */
-function toggleMarkdownPreview() {
+function toggleMarkdownPreview(force) {
     const preview = document.getElementById('markdown-preview');
-    const content = document.getElementById('markdown-preview-content');
-    const markdown = document.getElementById('prompt-builder-output').value;
+    const wrapper = document.getElementById('markdown-editor-wrapper');
 
-    if (preview.classList.contains('hidden')) {
-        // Simple markdown to HTML (basic implementation)
-        const html = markdownToHtml(markdown);
-        content.innerHTML = html;
-        preview.classList.remove('hidden');
-    } else {
-        preview.classList.add('hidden');
+    if (!preview || !wrapper) {
+        return;
+    }
+
+    const shouldShow = typeof force === 'boolean'
+        ? force
+        : preview.classList.contains('hidden');
+
+    preview.classList.toggle('hidden', !shouldShow);
+    wrapper.classList.toggle('preview-visible', shouldShow);
+
+    if (shouldShow) {
+        updateMarkdownPreview();
     }
 }
 
-/**
- * Simple markdown to HTML converter
- */
+function sanitizeUrl(url) {
+    if (!url || typeof url !== 'string') {
+        return '';
+    }
+
+    const trimmed = url.trim();
+    if (!trimmed) {
+        return '';
+    }
+
+    try {
+        const decoded = decodeURIComponent(trimmed);
+        if (/^(https?:|mailto:|tel:)/i.test(decoded)) {
+            return trimmed.replace(/"/g, '%22');
+        }
+    } catch (error) {
+        return '';
+    }
+
+    return '';
+}
+
 function markdownToHtml(markdown) {
-    let html = markdown;
-    
-    // Headers
-    html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-    html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-    html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-    
-    // Bold
-    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    
-    // Italic
-    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-    
-    // Lists
-    html = html.replace(/^\- (.*$)/gim, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-    
-    // Line breaks
-    html = html.replace(/\n/g, '<br>');
-    
-    return html;
+    if (typeof markdown !== 'string') {
+        return '';
+    }
+
+    const escaped = escapeHtml(markdown);
+    const lines = escaped.split(/\r?\n/);
+    const htmlParts = [];
+    let inUl = false;
+    let inOl = false;
+    let inBlockquote = false;
+    let inCodeBlock = false;
+    let codeBlockLang = '';
+    let codeBuffer = [];
+
+    const closeLists = () => {
+        if (inUl) {
+            htmlParts.push('</ul>');
+            inUl = false;
+        }
+        if (inOl) {
+            htmlParts.push('</ol>');
+            inOl = false;
+        }
+    };
+
+    const closeBlockquote = () => {
+        if (inBlockquote) {
+            htmlParts.push('</blockquote>');
+            inBlockquote = false;
+        }
+    };
+
+    const renderInline = (text) => {
+        let result = text;
+        result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        result = result.replace(/__(.+?)__/g, '<strong>$1</strong>');
+        result = result.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        result = result.replace(/_(.+?)_/g, '<em>$1</em>');
+        result = result.replace(/`([^`]+)`/g, '<code>$1</code>');
+        result = result.replace(/!\[([^\]]*)\]\(([^\)]+)\)/g, (match, alt, url) => {
+            const safeUrl = sanitizeUrl(url);
+            if (!safeUrl) {
+                return alt;
+            }
+            return `<img src="${safeUrl}" alt="${alt}">`;
+        });
+        result = result.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, (match, label, url) => {
+            const safeUrl = sanitizeUrl(url);
+            if (!safeUrl) {
+                return label;
+            }
+            return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+        });
+        return result;
+    };
+
+    const flushCodeBuffer = () => {
+        if (!inCodeBlock) {
+            return;
+        }
+
+        const languageAttr = codeBlockLang ? ` data-language="${codeBlockLang}"` : '';
+        htmlParts.push(`<pre><code${languageAttr}>${codeBuffer.join('\n')}</code></pre>`);
+        codeBuffer = [];
+        codeBlockLang = '';
+        inCodeBlock = false;
+    };
+
+    lines.forEach(rawLine => {
+        const line = rawLine;
+        const trimmed = line.trim();
+
+        if (trimmed.startsWith('```')) {
+            if (inCodeBlock) {
+                flushCodeBuffer();
+                return;
+            }
+
+            closeLists();
+            closeBlockquote();
+            inCodeBlock = true;
+            codeBlockLang = trimmed.slice(3).trim();
+            return;
+        }
+
+        if (inCodeBlock) {
+            codeBuffer.push(line);
+            return;
+        }
+
+        if (!trimmed) {
+            closeLists();
+            closeBlockquote();
+            htmlParts.push('<br>');
+            return;
+        }
+
+        const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+        if (headingMatch) {
+            const level = headingMatch[1].length;
+            closeLists();
+            closeBlockquote();
+            htmlParts.push(`<h${level}>${renderInline(headingMatch[2])}</h${level}>`);
+            return;
+        }
+
+        const blockquoteMatch = trimmed.match(/^>\s?(.*)$/);
+        if (blockquoteMatch) {
+            closeLists();
+            if (!inBlockquote) {
+                htmlParts.push('<blockquote>');
+                inBlockquote = true;
+            }
+            htmlParts.push(`<p>${renderInline(blockquoteMatch[1])}</p>`);
+            return;
+        }
+
+        closeBlockquote();
+
+        const orderedMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+        if (orderedMatch) {
+            if (!inOl) {
+                closeLists();
+                htmlParts.push('<ol>');
+                inOl = true;
+            }
+            htmlParts.push(`<li>${renderInline(orderedMatch[2])}</li>`);
+            return;
+        }
+
+        const unorderedMatch = trimmed.match(/^[-*+]\s+(.*)$/);
+        if (unorderedMatch) {
+            if (!inUl) {
+                closeLists();
+                htmlParts.push('<ul>');
+                inUl = true;
+            }
+            htmlParts.push(`<li>${renderInline(unorderedMatch[1])}</li>`);
+            return;
+        }
+
+        closeLists();
+        htmlParts.push(`<p>${renderInline(trimmed)}</p>`);
+    });
+
+    flushCodeBuffer();
+    closeLists();
+    closeBlockquote();
+
+    return htmlParts.join('\n');
+}
+
+function updateMarkdownPreview() {
+    const previewContent = document.getElementById('markdown-preview-content');
+    const preview = document.getElementById('markdown-preview');
+    const wrapper = document.getElementById('markdown-editor-wrapper');
+    const textarea = document.getElementById('prompt-builder-output');
+
+    if (!previewContent || !textarea) {
+        return;
+    }
+
+    const html = markdownToHtml(textarea.value || '');
+    if (html.trim()) {
+        previewContent.innerHTML = html;
+    } else {
+        previewContent.innerHTML = '<p class="text-muted preview-empty">Start typing to see the preview.</p>';
+    }
+
+    if (preview && wrapper) {
+        wrapper.classList.toggle('preview-visible', !preview.classList.contains('hidden'));
+    }
 }
 
 /**
@@ -693,56 +991,112 @@ async function saveGeneratedPromptManually() {
     }
 }
 
+function renderPromptVersionsLoadingState() {
+    return `
+        <div class="versions-loading-status">
+            <span class="spinner spinner-inline" aria-hidden="true"></span>
+            <span>Loading versions...</span>
+        </div>
+        <div class="versions-skeleton">
+            <div class="skeleton-bar skeleton-bar--header"></div>
+            <div class="skeleton-bar"></div>
+            <div class="skeleton-bar"></div>
+            <div class="skeleton-bar"></div>
+        </div>
+    `;
+}
+
 /**
  * Load prompt versions for current agent
  */
 async function loadPromptVersions() {
-    const container = document.getElementById('prompt-versions-list');
-    container.innerHTML = '<div class="spinner"></div>';
-    
+    const listContainer = document.getElementById('prompt-versions-list');
+    const loadingContainer = document.getElementById('prompt-versions-loading');
+
+    if (!listContainer) {
+        return null;
+    }
+
+    promptBuilderState.versionsLoading = true;
+
+    if (loadingContainer) {
+        loadingContainer.innerHTML = renderPromptVersionsLoadingState();
+        loadingContainer.classList.remove('hidden');
+    }
+
+    listContainer.classList.add('hidden');
+    listContainer.innerHTML = '';
+
     try {
         const data = await api.listPromptVersions(promptBuilderState.currentAgentId);
         const versions = data.versions || [];
         const activeVersion = data.active_version;
-        
+        const activeVersionNumber = Number.parseInt(activeVersion, 10);
+        const normalizedActiveVersion = activeVersion === undefined || activeVersion === null
+            ? null
+            : (Number.isFinite(activeVersionNumber) ? String(activeVersionNumber) : String(activeVersion));
+
         if (versions.length === 0) {
-            container.innerHTML = '<p class="text-muted">No versions yet. Generate your first specification above.</p>';
-            return;
+            listContainer.innerHTML = '<p class="text-muted">No versions yet. Generate your first specification above.</p>';
+            listContainer.classList.remove('hidden');
+            setGeneratingState(promptBuilderState.generating);
+            return data;
         }
-        
-        let html = '<table class="table"><thead><tr><th>Version</th><th>Created</th><th>Guardrails</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
-        
+
+        let html = '<table class="table prompt-versions-table"><thead><tr><th>Version</th><th>Created</th><th>Guardrails</th><th>Status</th><th class="actions-column">Actions</th></tr></thead><tbody>';
+
         versions.forEach(v => {
-            const isActive = v.version === activeVersion;
-            const guardrails = v.guardrails.map(g => g.key || g).join(', ');
-            
+            const versionNumber = Number.parseInt(v.version, 10);
+            const normalizedVersion = Number.isFinite(versionNumber) ? String(versionNumber) : String(v.version);
+            const callArgument = JSON.stringify(Number.isFinite(versionNumber) ? versionNumber : v.version);
+            const isActive = normalizedActiveVersion !== null && normalizedVersion === normalizedActiveVersion;
+            const guardrails = (v.guardrails || []).map(g => g.key || g).filter(Boolean).join(', ');
+            const createdAt = v.created_at ? new Date(v.created_at).toLocaleString() : '—';
+            const statusCell = isActive
+                ? '<span class="status-pill status-pill--active">Active</span>'
+                : '<span class="status-pill status-pill--inactive">Inactive</span>';
+
             html += `
-                <tr ${isActive ? 'class="active-version"' : ''}>
-                    <td><strong>v${v.version}</strong></td>
-                    <td>${new Date(v.created_at).toLocaleString()}</td>
-                    <td><small>${guardrails}</small></td>
+                <tr class="prompt-version-row ${isActive ? 'active-version' : ''}" ${isActive ? 'aria-current="true"' : ''}>
                     <td>
-                        ${isActive ? '<span class="badge badge-success">Active</span>' : ''}
+                        <div class="version-label">
+                            <strong>v${escapeHtml(normalizedVersion)}</strong>
+                        </div>
                     </td>
-                    <td>
-                        <button class="btn btn-sm" onclick="viewPromptVersion(${v.version})">View</button>
-                        ${!isActive ? `<button class="btn btn-sm btn-success" onclick="activatePromptVersionById(${v.version})">Activate</button>` : ''}
-                        ${!isActive ? `<button class="btn btn-sm btn-danger" onclick="deletePromptVersionById(${v.version})">Delete</button>` : ''}
+                    <td>${escapeHtml(createdAt)}</td>
+                    <td><small>${guardrails ? escapeHtml(guardrails) : '—'}</small></td>
+                    <td>${statusCell}</td>
+                    <td class="actions-cell">
+                        <button class="btn btn-sm" onclick="viewPromptVersion(${callArgument})" data-disable-while-generating="true">View</button>
+                        ${!isActive ? `<button class="btn btn-sm btn-success" onclick="activatePromptVersionById(${callArgument})" data-disable-while-generating="true">Activate</button>` : ''}
+                        ${!isActive ? `<button class="btn btn-sm btn-danger" onclick="deletePromptVersionById(${callArgument})" data-disable-while-generating="true">Delete</button>` : ''}
                     </td>
                 </tr>
             `;
         });
-        
+
         html += '</tbody></table>';
-        
+
         if (activeVersion) {
-            html += `<button class="btn btn-secondary" onclick="deactivateCurrentPrompt()">Deactivate Current Prompt</button>`;
+            html += '<button class="btn btn-secondary" onclick="deactivateCurrentPrompt()" data-disable-while-generating="true">Deactivate Current Prompt</button>';
         }
-        
-        container.innerHTML = html;
+
+        listContainer.innerHTML = html;
+        listContainer.classList.remove('hidden');
+        setGeneratingState(promptBuilderState.generating);
+        return data;
     } catch (error) {
-        container.innerHTML = '<p class="text-danger">Failed to load versions</p>';
+        listContainer.innerHTML = `<p class="text-error">Failed to load versions: ${escapeHtml(error.message || 'Unknown error')}</p>`;
+        listContainer.classList.remove('hidden');
         console.error(error);
+        setGeneratingState(promptBuilderState.generating);
+        return null;
+    } finally {
+        promptBuilderState.versionsLoading = false;
+        if (loadingContainer) {
+            loadingContainer.classList.add('hidden');
+            loadingContainer.innerHTML = '';
+        }
     }
 }
 
@@ -771,6 +1125,7 @@ async function viewPromptVersion(version) {
 
         promptBuilderState.generatedPrompt = data;
         clearFieldError('prompt-builder-output');
+        updateMarkdownPreview();
         attachPromptBuilderValidationHandlers();
         return data;
     } catch (error) {
@@ -860,6 +1215,8 @@ async function deactivateCurrentPrompt() {
  * Close Prompt Builder modal
  */
 function closePromptBuilderModal() {
+    cancelPromptGeneration({ silent: true });
+
     const modal = document.getElementById('prompt-builder-modal');
     if (modal) {
         modal.classList.remove('open');
