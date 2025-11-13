@@ -3,6 +3,7 @@
 // Configuration
 const API_BASE = window.location.origin;
 const API_ENDPOINT = `${API_BASE}/admin-api.php`;
+const API_BASE_URL = API_BASE;
 const TOKEN_STORAGE_KEY = 'adminToken';
 
 // State
