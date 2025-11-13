@@ -94,6 +94,52 @@ function registerPromptBuilderHooks(hooks = {}) {
     promptBuilderHooks.onPromptGenerated = typeof hooks.onPromptGenerated === 'function' ? hooks.onPromptGenerated : null;
 }
 
+function setFieldError(fieldId, message = '') {
+    const field = document.getElementById(fieldId);
+    const errorElement = document.getElementById(`${fieldId}-error`);
+    const formGroup = field ? field.closest('.form-group') : null;
+
+    if (!field || !errorElement) {
+        return;
+    }
+
+    if (message) {
+        field.classList.add('is-invalid');
+        field.setAttribute('aria-invalid', 'true');
+        if (formGroup) {
+            formGroup.classList.add('has-error');
+        }
+        errorElement.textContent = message;
+        errorElement.classList.remove('hidden');
+    } else {
+        field.classList.remove('is-invalid');
+        field.removeAttribute('aria-invalid');
+        if (formGroup) {
+            formGroup.classList.remove('has-error');
+        }
+        errorElement.textContent = '';
+        errorElement.classList.add('hidden');
+    }
+}
+
+function clearFieldError(fieldId) {
+    setFieldError(fieldId);
+}
+
+function attachPromptBuilderValidationHandlers() {
+    const ideaElement = document.getElementById('prompt-builder-idea');
+    if (ideaElement && !ideaElement.dataset.validationBound) {
+        ideaElement.addEventListener('input', () => clearFieldError('prompt-builder-idea'));
+        ideaElement.dataset.validationBound = 'true';
+    }
+
+    const outputElement = document.getElementById('prompt-builder-output');
+    if (outputElement && !outputElement.dataset.validationBound) {
+        outputElement.addEventListener('input', () => clearFieldError('prompt-builder-output'));
+        outputElement.dataset.validationBound = 'true';
+    }
+}
+
 async function requestPromptGeneration(agentId, ideaText, guardrails = [], language = 'en') {
     if (promptBuilderHooks.onGenerationStart) {
         try {
@@ -160,21 +206,25 @@ async function showPromptBuilderModal(agentId, agentName) {
     if (titleElement) {
         titleElement.textContent = agentName;
     }
-    
+
     // Reset form
     const ideaElement = document.getElementById('prompt-builder-idea');
     if (ideaElement) {
         ideaElement.value = '';
     }
-    
+
     const languageElement = document.getElementById('prompt-builder-language');
     if (languageElement) {
         languageElement.value = 'en';
     }
-    
+
+    clearFieldError('prompt-builder-idea');
+    clearFieldError('prompt-builder-output');
+
     renderGuardrailsCheckboxes();
     hideGeneratedPrompt();
-    
+    attachPromptBuilderValidationHandlers();
+
     // Show modal
     modal.classList.add('open');
     modal.setAttribute('aria-hidden', 'false');
@@ -293,16 +343,17 @@ function createPromptBuilderModal() {
                         
                         <div class="form-group">
                             <label for="prompt-builder-idea">Agent Idea *</label>
-                            <textarea 
-                                id="prompt-builder-idea" 
-                                class="form-control" 
+                            <textarea
+                                id="prompt-builder-idea"
+                                class="form-control"
                                 rows="4"
                                 placeholder="e.g., A customer support agent that helps users with product questions, handles refunds, and escalates complex issues..."
                                 maxlength="2000"
                             ></textarea>
                             <small class="text-muted">Minimum 10 characters, maximum 2000 characters</small>
+                            <p id="prompt-builder-idea-error" class="form-error-message hidden" role="alert"></p>
                         </div>
-                        
+
                         <div class="form-group">
                             <label>Guardrails</label>
                             <div id="guardrails-list" class="guardrails-container">
@@ -348,6 +399,7 @@ function createPromptBuilderModal() {
                                 class="form-control markdown-editor"
                                 rows="20"
                             ></textarea>
+                            <p id="prompt-builder-output-error" class="form-error-message hidden" role="alert"></p>
                         </div>
 
                         <div class="markdown-preview hidden" id="markdown-preview">
@@ -442,13 +494,15 @@ function toggleGuardrail(key) {
 async function generatePromptSpec() {
     const ideaText = document.getElementById('prompt-builder-idea').value.trim();
     const language = document.getElementById('prompt-builder-language').value;
-    
+
     // Validate
+    clearFieldError('prompt-builder-idea');
     if (ideaText.length < 10) {
-        alert('Please provide at least 10 characters describing your agent idea.');
+        setFieldError('prompt-builder-idea', 'Please provide at least 10 characters describing your agent idea.');
+        document.getElementById('prompt-builder-idea').focus();
         return;
     }
-    
+
     // Disable button and show loading
     const btn = document.getElementById('generate-btn');
     btn.disabled = true;
@@ -463,11 +517,11 @@ async function generatePromptSpec() {
             promptBuilderState.selectedGuardrails,
             language
         );
-        
+
         promptBuilderState.generatedPrompt = result;
         showGeneratedPrompt(result);
     } catch (error) {
-        alert('Failed to generate prompt: ' + error.message);
+        showToast('Failed to generate prompt: ' + error.message, 'error');
         console.error(error);
     } finally {
         btn.disabled = false;
@@ -496,6 +550,8 @@ function showGeneratedPrompt(result) {
     document.getElementById('result-latency').textContent = result.latency_ms || 'N/A';
     document.getElementById('result-guardrails').textContent = result.applied_guardrails.join(', ');
     document.getElementById('prompt-builder-output').value = result.prompt_md;
+    clearFieldError('prompt-builder-output');
+    attachPromptBuilderValidationHandlers();
 }
 
 /**
@@ -517,6 +573,8 @@ function hideGeneratedPrompt() {
     if (preview) {
         preview.classList.add('hidden');
     }
+
+    clearFieldError('prompt-builder-output');
 }
 
 /**
@@ -525,6 +583,7 @@ function hideGeneratedPrompt() {
 function startNewGeneration() {
     hideGeneratedPrompt();
     promptBuilderState.generatedPrompt = null;
+    clearFieldError('prompt-builder-output');
 }
 
 /**
@@ -577,22 +636,29 @@ function markdownToHtml(markdown) {
  */
 async function activateGeneratedPrompt() {
     if (!promptBuilderState.generatedPrompt) return;
-    
-    if (!confirm('Activate this version? It will be used for all future conversations with this agent.')) {
+
+    const confirmed = await showConfirmationDialog({
+        title: 'Activate generated prompt',
+        message: 'Activate this version? It will be used for all future conversations with this agent.',
+        confirmLabel: 'Activate',
+        tone: 'primary'
+    });
+
+    if (!confirmed) {
         return;
     }
-    
+
     try {
         await api.activatePromptVersion(
             promptBuilderState.currentAgentId,
             promptBuilderState.generatedPrompt.version
         );
-        
-        alert('Prompt version activated successfully!');
+
+        showToast('Prompt version activated successfully!', 'success');
         closePromptBuilderModal();
         loadCurrentPage(); // Refresh the agents page
     } catch (error) {
-        alert('Failed to activate prompt: ' + error.message);
+        showToast('Failed to activate prompt: ' + error.message, 'error');
         console.error(error);
     }
 }
@@ -602,24 +668,27 @@ async function activateGeneratedPrompt() {
  */
 async function saveGeneratedPromptManually() {
     const editedPrompt = document.getElementById('prompt-builder-output').value;
-    
+
+    clearFieldError('prompt-builder-output');
     if (!editedPrompt || editedPrompt.trim().length < 10) {
-        alert('Prompt is too short');
+        setFieldError('prompt-builder-output', 'Prompt is too short');
+        document.getElementById('prompt-builder-output').focus();
         return;
     }
-    
+
     try {
         const result = await api.saveManualPrompt(
             promptBuilderState.currentAgentId,
             editedPrompt,
             promptBuilderState.selectedGuardrails
         );
-        
-        alert(`Saved as version ${result.version}`);
+
+        showToast(`Saved as version ${result.version}`, 'success');
         promptBuilderState.generatedPrompt = result;
-        loadPromptVersions();
+        await loadPromptVersions();
+        clearFieldError('prompt-builder-output');
     } catch (error) {
-        alert('Failed to save prompt: ' + error.message);
+        showToast('Failed to save prompt: ' + error.message, 'error');
         console.error(error);
     }
 }
@@ -699,11 +768,15 @@ async function viewPromptVersion(version) {
         document.getElementById('result-latency').textContent = 'N/A';
         document.getElementById('result-guardrails').textContent = data.guardrails.map(g => g.key || g).join(', ');
         document.getElementById('prompt-builder-output').value = data.prompt_md;
-        
+
         promptBuilderState.generatedPrompt = data;
+        clearFieldError('prompt-builder-output');
+        attachPromptBuilderValidationHandlers();
+        return data;
     } catch (error) {
-        alert('Failed to load version: ' + error.message);
+        showToast('Failed to load version: ' + error.message, 'error');
         console.error(error);
+        throw error;
     }
 }
 
@@ -711,14 +784,22 @@ async function viewPromptVersion(version) {
  * Activate a version by ID
  */
 async function activatePromptVersionById(version) {
-    if (!confirm(`Activate version ${version}?`)) return;
-    
+    const confirmed = await showConfirmationDialog({
+        title: 'Activate prompt version',
+        message: `Activate version ${version}?`,
+        confirmLabel: 'Activate',
+        tone: 'primary'
+    });
+
+    if (!confirmed) return;
+
     try {
         await api.activatePromptVersion(promptBuilderState.currentAgentId, version);
-        alert('Version activated!');
-        loadPromptVersions();
+        showToast('Version activated!', 'success');
+        await loadPromptVersions();
+        await viewPromptVersion(version).catch(() => {});
     } catch (error) {
-        alert('Failed to activate: ' + error.message);
+        showToast('Failed to activate: ' + error.message, 'error');
         console.error(error);
     }
 }
@@ -727,14 +808,25 @@ async function activatePromptVersionById(version) {
  * Delete a version by ID
  */
 async function deletePromptVersionById(version) {
-    if (!confirm(`Delete version ${version}? This cannot be undone.`)) return;
-    
+    const confirmed = await showConfirmationDialog({
+        title: 'Delete prompt version',
+        message: `Delete version ${version}? This cannot be undone.`,
+        confirmLabel: 'Delete',
+        tone: 'danger'
+    });
+
+    if (!confirmed) return;
+
     try {
         await api.deletePromptVersion(promptBuilderState.currentAgentId, version);
-        alert('Version deleted');
-        loadPromptVersions();
+        showToast('Version deleted', 'success');
+        await loadPromptVersions();
+
+        if (promptBuilderState.generatedPrompt && promptBuilderState.generatedPrompt.version === version) {
+            startNewGeneration();
+        }
     } catch (error) {
-        alert('Failed to delete: ' + error.message);
+        showToast('Failed to delete: ' + error.message, 'error');
         console.error(error);
     }
 }
@@ -743,16 +835,23 @@ async function deletePromptVersionById(version) {
  * Deactivate current prompt
  */
 async function deactivateCurrentPrompt() {
-    if (!confirm('Deactivate the current prompt? The agent will use its system_message instead.')) return;
-    
+    const confirmed = await showConfirmationDialog({
+        title: 'Deactivate prompt',
+        message: 'Deactivate the current prompt? The agent will use its system_message instead.',
+        confirmLabel: 'Deactivate',
+        tone: 'danger'
+    });
+
+    if (!confirmed) return;
+
     try {
         await api.deactivatePrompt(promptBuilderState.currentAgentId);
-        alert('Prompt deactivated');
-        loadPromptVersions();
+        showToast('Prompt deactivated', 'success');
+        await loadPromptVersions();
         closePromptBuilderModal();
         loadCurrentPage();
     } catch (error) {
-        alert('Failed to deactivate: ' + error.message);
+        showToast('Failed to deactivate: ' + error.message, 'error');
         console.error(error);
     }
 }
