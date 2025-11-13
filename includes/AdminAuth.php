@@ -344,12 +344,38 @@ class AdminAuth {
     
     /**
      * Deactivate user
-     * 
+     *
      * @param string $userId User ID
      */
     public function deactivateUser($userId) {
         $sql = "UPDATE admin_users SET is_active = 0, updated_at = ? WHERE id = ?";
         $this->db->execute($sql, [date('Y-m-d H:i:s'), $userId]);
+    }
+
+    /**
+     * Activate user
+     *
+     * @param string $userId User ID
+     */
+    public function activateUser($userId) {
+        $sql = "UPDATE admin_users SET is_active = 1, updated_at = ? WHERE id = ?";
+        $this->db->execute($sql, [date('Y-m-d H:i:s'), $userId]);
+    }
+
+    /**
+     * Update user password
+     *
+     * @param string $userId User ID
+     * @param string $password Plain text password
+     */
+    public function updateUserPassword($userId, $password) {
+        if (!is_string($password) || $password === '') {
+            throw new Exception('Password cannot be empty');
+        }
+
+        $passwordHash = password_hash($password, PASSWORD_BCRYPT);
+        $sql = "UPDATE admin_users SET password_hash = ?, updated_at = ?, is_active = 1 WHERE id = ?";
+        $this->db->execute($sql, [$passwordHash, date('Y-m-d H:i:s'), $userId]);
     }
     
     /**
