@@ -330,8 +330,8 @@ class AdminAPI {
             searchParams.set('token', token);
         }
 
-        const queryString = searchParams.toString();
-        const url = `${API_ENDPOINT}?action=export_audit_data${queryString ? `&${queryString}` : ''}`;
+        const query = searchParams.toString();
+        const url = `${API_ENDPOINT}?action=export_audit_data${query ? '&' + query : ''}`;
 
         window.open(url, '_blank');
     }
