@@ -303,6 +303,39 @@ class AdminAPI {
         return this.request('list_audit_log', { params: `&limit=${limit}` });
     }
 
+    listAuditConversations(params = {}) {
+        const searchParams = new URLSearchParams(params);
+        const queryString = searchParams.toString();
+        return this.request('list_audit_conversations', { params: queryString ? `&${queryString}` : '' });
+    }
+
+    getAuditConversation(conversationId, decrypt = false) {
+        if (!conversationId) {
+            throw new Error('conversationId is required');
+        }
+
+        const searchParams = new URLSearchParams({
+            conversation_id: conversationId,
+            decrypt: decrypt ? 'true' : 'false'
+        });
+
+        return this.request('get_audit_conversation', { params: `&${searchParams.toString()}` });
+    }
+
+    exportAuditData(params = {}) {
+        const searchParams = new URLSearchParams(params);
+        const token = getStoredToken();
+
+        if (token) {
+            searchParams.set('token', token);
+        }
+
+        const queryString = searchParams.toString();
+        const url = `${API_ENDPOINT}?action=export_audit_data${queryString ? `&${queryString}` : ''}`;
+
+        window.open(url, '_blank');
+    }
+
     // Utility
     health() {
         return this.request('health');
@@ -3455,26 +3488,6 @@ document.addEventListener('DOMContentLoaded', function() {
         testConnection();
     }
 });
-
-// ========== Audit Conversations API Methods ==========
-
-// Extend API class (already instantiated as 'api')
-api.listAuditConversations = function(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    return this.request('list_audit_conversations', { params: query ? '&' + query : '' });
-};
-
-api.getAuditConversation = function(conversationId, decrypt = false) {
-    return this.request('get_audit_conversation', { 
-        params: `&conversation_id=${encodeURIComponent(conversationId)}&decrypt=${decrypt}` 
-    });
-};
-
-api.exportAuditData = function(params = {}) {
-    const query = new URLSearchParams(params).toString();
-    const url = `${this.baseUrl}?action=export_audit_data${query ? '&' + query : ''}`;
-    window.open(url, '_blank');
-};
 
 // ========== Audit Conversations Page ==========
 
