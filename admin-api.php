@@ -2060,21 +2060,26 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
-            
+
             // Require manage_users permission
             requirePermission($authenticatedUser, 'manage_users', $adminAuth);
-            
+
             $data = getRequestBody();
             $email = $data['email'] ?? '';
             $password = $data['password'] ?? '';
             $role = $data['role'] ?? AdminAuth::ROLE_ADMIN;
-            
+            $tenantId = $data['tenant_id'] ?? null;
+
+            if ($tenantId === '') {
+                $tenantId = null;
+            }
+
             if (empty($email) || empty($password)) {
                 sendError('Email and password are required', 400);
             }
-            
+
             try {
-                $user = $adminAuth->createUser($email, $password, $role);
+                $user = $adminAuth->createUser($email, $password, $role, $tenantId);
                 log_admin("User created: $email (role: $role)");
                 sendResponse($user, 201);
             } catch (Exception $e) {

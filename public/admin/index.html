@@ -39,6 +39,10 @@
                     <span class="nav-icon">🏢</span>
                     Tenants
                 </a>
+                <a href="#users" class="nav-link" data-page="users" data-super-admin-only="true">
+                    <span class="nav-icon">🧑‍🤝‍🧑</span>
+                    Users
+                </a>
                 <a href="#billing" class="nav-link" data-page="billing">
                     <span class="nav-icon">💳</span>
                     Billing
@@ -60,6 +64,12 @@
                     Jobs
                 </a>
             </nav>
+            <div class="sidebar-footer">
+                <a href="#logout" class="nav-link nav-link-logout" id="logout-link" role="button">
+                    <span class="nav-icon">🚪</span>
+                    Logout
+                </a>
+            </div>
         </aside>
 
         <!-- Main Content Area -->
@@ -71,8 +81,11 @@
                 </div>
                 <div class="header-right">
                     <span class="status-indicator" id="status-indicator">●</span>
-                    <span id="status-text">Connected</span>
-                    <button type="button" class="btn btn-small btn-secondary" id="change-token-button">Change token</button>
+                    <span id="status-text">Offline</span>
+                    <div class="user-session" id="current-user-pill">
+                        <span class="user-session-label">Signed in as</span>
+                        <span class="user-session-value" id="current-user-email">Guest</span>
+                    </div>
                 </div>
             </header>
 
@@ -99,19 +112,22 @@
     <!-- Toast Notifications -->
     <div class="toast-container" id="toast-container"></div>
 
-    <!-- Token Setup Modal (shown on first load) -->
-    <div class="token-modal" id="token-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="token-modal-title">
-        <div class="token-modal-content">
-            <h2 id="token-modal-title">Admin authentication required</h2>
-            <p>Please enter your admin token to continue.</p>
-            <form id="token-form">
-                <label class="sr-only" for="token-input">Admin token</label>
-                <input type="password" id="token-input" name="token" placeholder="Enter admin token" autocomplete="off" required />
-                <div class="token-modal-actions">
-                    <button type="submit" class="btn btn-primary">Continue</button>
-                </div>
+    <!-- Login Modal -->
+    <div class="login-modal" id="login-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
+        <div class="login-modal-content">
+            <h2 id="login-modal-title">Sign in to GPT Admin</h2>
+            <p class="login-modal-subtitle">Enter your credentials to manage agents, tenants and more.</p>
+            <form id="login-form" novalidate>
+                <label class="form-label" for="login-email">Email</label>
+                <input type="email" id="login-email" name="email" class="form-input" placeholder="you@example.com" autocomplete="username" required />
+
+                <label class="form-label" for="login-password">Password</label>
+                <input type="password" id="login-password" name="password" class="form-input" placeholder="••••••••" autocomplete="current-password" required />
+
+                <p class="login-error" id="login-error" role="alert" aria-live="assertive"></p>
+
+                <button type="submit" class="btn btn-primary btn-full" id="login-submit">Sign in</button>
             </form>
-            <p class="token-help">This value should match the <code>ADMIN_TOKEN</code> from your server configuration.</p>
         </div>
     </div>
 

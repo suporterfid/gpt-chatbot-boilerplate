@@ -4,11 +4,16 @@
 const API_BASE = window.location.origin;
 const API_ENDPOINT = `${API_BASE}/admin-api.php`;
 const API_BASE_URL = API_BASE;
-const TOKEN_STORAGE_KEY = 'adminToken';
 
 // State
-let adminToken = localStorage.getItem(TOKEN_STORAGE_KEY) || '';
 let currentPage = 'agents';
+const authState = {
+    user: null,
+    session: null,
+    isAuthenticating: false,
+    lastError: null
+};
+let isLoginModalVisible = false;
 
 const agentListState = {
     filters: {
@@ -18,6 +23,13 @@ const agentListState = {
     },
     agents: [],
     vectorStoreMap: {},
+    isLoading: false,
+    lastError: null
+};
+
+const usersPageState = {
+    users: [],
+    tenants: [],
     isLoading: false,
     lastError: null
 };
@@ -129,46 +141,101 @@ const AgentSummaryComponent = (() => {
 window.AgentSummaryComponent = AgentSummaryComponent;
 
 // API Client
+class APIError extends Error {
+    constructor(message, options = {}) {
+        super(message);
+        this.name = 'APIError';
+        this.status = options.status;
+        this.code = options.code;
+        this.payload = options.payload;
+    }
+}
+
 class AdminAPI {
     async request(action, options = {}) {
         const url = `${API_ENDPOINT}?action=${action}${options.params || ''}`;
-        const headers = {
-            'Content-Type': 'application/json',
-        };
-
-        const token = getStoredToken();
-
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-            headers['X-Admin-Token'] = token;
-        }
-
+        const headers = { ...(options.headers || {}) };
         const config = {
             method: options.method || 'GET',
             headers,
+            credentials: 'include'
         };
-
-        if (options.body) {
-            config.body = JSON.stringify(options.body);
-        }
 
         if (options.signal) {
             config.signal = options.signal;
         }
 
+        if (options.body !== undefined && options.body !== null) {
+            if (options.body instanceof FormData) {
+                config.body = options.body;
+            } else if (config.method === 'GET') {
+                // ignore
+            } else {
+                config.body = JSON.stringify(options.body);
+                if (!config.headers['Content-Type']) {
+                    config.headers['Content-Type'] = 'application/json';
+                }
+            }
+        }
+
+        if (!config.headers['Accept']) {
+            config.headers['Accept'] = 'application/json';
+        }
+
         try {
             const response = await fetch(url, config);
-            const data = await response.json();
+            const text = await response.text();
+            let data = null;
 
-            if (!response.ok) {
-                throw new Error(data.error?.message || 'Request failed');
+            if (text) {
+                try {
+                    data = JSON.parse(text);
+                } catch (parseError) {
+                    throw new APIError('Invalid JSON response', {
+                        status: response.status,
+                        payload: text
+                    });
+                }
             }
 
-            return data.data;
+            if (!response.ok) {
+                const message = data?.error?.message || `Request failed with status ${response.status}`;
+                const apiError = new APIError(message, {
+                    status: response.status,
+                    code: data?.error?.code,
+                    payload: data
+                });
+
+                if (response.status === 401) {
+                    handleUnauthorized(apiError);
+                }
+
+                throw apiError;
+            }
+
+            return data?.data ?? data;
         } catch (error) {
             console.error('API Error:', error);
             throw error;
         }
+    }
+
+    // Authentication
+    login(email, password) {
+        return this.request('login', {
+            method: 'POST',
+            body: { email, password }
+        });
+    }
+
+    logout() {
+        return this.request('logout', {
+            method: 'POST'
+        });
+    }
+
+    currentUser() {
+        return this.request('current_user');
     }
 
     // Agents
@@ -197,9 +264,7 @@ class AdminAPI {
     }
 
     testAgent(id) {
-        const token = getStoredToken();
-        const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
-        return `${API_ENDPOINT}?action=test_agent&id=${id}${tokenParam}`;
+        return `${API_ENDPOINT}?action=test_agent&id=${id}`;
     }
 
     // Prompts
@@ -371,7 +436,7 @@ class AdminAPI {
         if (channel) params += `&channel=${channel}`;
         return this.request('list_channel_sessions', { params });
     }
-    
+
     // Tenants
     listTenants(filters = {}) {
         let params = '';
@@ -406,6 +471,23 @@ class AdminAPI {
     
     getTenantStats(id) {
         return this.request('get_tenant_stats', { params: `&id=${id}` });
+    }
+
+    // Users (RBAC)
+    listUsers() {
+        return this.request('list_users');
+    }
+
+    createUser(data) {
+        return this.request('create_user', { method: 'POST', body: data });
+    }
+
+    updateUserRole(id, role) {
+        return this.request('update_user_role', { method: 'POST', params: `&id=${id}`, body: { role } });
+    }
+
+    deactivateUser(id) {
+        return this.request('deactivate_user', { method: 'POST', params: `&id=${id}` });
     }
     
     // Billing & Usage
@@ -778,172 +860,302 @@ function escapeHtml(text) {
     return text.toString().replace(/[&<>"']/g, m => map[m]);
 }
 
-// Token Management
-function getStoredToken() {
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
-    if (token) {
-        return token;
+const SUPER_ADMIN_ROLE = 'super-admin';
+
+function updateStatusIndicator(message, state = 'online') {
+    const indicator = document.getElementById('status-indicator');
+    const statusText = document.getElementById('status-text');
+
+    if (!indicator || !statusText) {
+        return;
     }
 
-    const legacyToken = localStorage.getItem('admin_token');
-    if (legacyToken) {
-        setStoredToken(legacyToken);
-        localStorage.removeItem('admin_token');
-        return legacyToken;
+    indicator.classList.remove('error', 'offline', 'pending');
+
+    if (state === 'error') {
+        indicator.classList.add('error');
+    } else if (state === 'offline') {
+        indicator.classList.add('offline');
+    } else if (state === 'pending') {
+        indicator.classList.add('pending');
     }
 
-    return '';
+    statusText.textContent = message;
 }
 
-function getAdminAuthHeaders(extra = {}) {
-    const headers = { ...extra };
-    const token = getStoredToken();
+function updateRoleVisibility(role) {
+    document.body.classList.toggle('is-super-admin', role === SUPER_ADMIN_ROLE);
 
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-        headers['X-Admin-Token'] = token;
+    const superAdminLinks = document.querySelectorAll('[data-super-admin-only="true"]');
+    superAdminLinks.forEach(link => {
+        if (role === SUPER_ADMIN_ROLE) {
+            link.classList.remove('is-hidden');
+        } else {
+            link.classList.add('is-hidden');
+        }
+    });
+}
+
+function setAuthenticatedUser(user, session = null) {
+    authState.user = user || null;
+    authState.session = session || null;
+
+    const emailElement = document.getElementById('current-user-email');
+
+    if (user) {
+        document.body.classList.add('is-authenticated');
+        if (emailElement) {
+            emailElement.textContent = user.email || 'Unknown user';
+        }
+        updateStatusIndicator('Connected', 'online');
+        updateRoleVisibility(user.role);
+    } else {
+        document.body.classList.remove('is-authenticated');
+        if (emailElement) {
+            emailElement.textContent = 'Guest';
+        }
+        updateStatusIndicator('Sign in required', 'offline');
+        updateRoleVisibility(null);
+    }
+}
+
+function handleUnauthorized(error) {
+    const hadUser = Boolean(authState.user);
+    authState.lastError = error;
+    setAuthenticatedUser(null, null);
+
+    if (hadUser) {
+        showToast('Your session has expired. Please sign in again.', 'warning');
     }
 
-    return headers;
+    if (!isLoginModalVisible) {
+        const message = error?.status === 401 ? '' : (error?.message || 'Authentication required');
+        showLoginModal(message);
+    }
 }
 
-function setStoredToken(token) {
-    localStorage.setItem(TOKEN_STORAGE_KEY, token);
-    adminToken = token;
-}
-
-function clearStoredToken() {
-    localStorage.removeItem(TOKEN_STORAGE_KEY);
-    adminToken = '';
-}
-
-function showTokenModal() {
-    const modal = document.getElementById('token-modal');
-    const form = document.getElementById('token-form');
-    const input = document.getElementById('token-input');
+function showLoginModal(message = '') {
+    const modal = document.getElementById('login-modal');
+    const form = document.getElementById('login-form');
+    const emailInput = document.getElementById('login-email');
+    const passwordInput = document.getElementById('login-password');
+    const errorElement = document.getElementById('login-error');
 
     if (!modal) {
         return;
     }
 
-    if (form) {
+    if (form && !isLoginModalVisible) {
         form.reset();
     }
 
+    if (errorElement) {
+        errorElement.textContent = message;
+    }
+
     modal.style.display = 'flex';
+    isLoginModalVisible = true;
 
     requestAnimationFrame(() => {
-        if (input) {
-            input.focus();
+        if (emailInput && !emailInput.value) {
+            emailInput.focus();
+        } else if (passwordInput) {
+            passwordInput.focus();
         }
     });
 }
 
-function hideTokenModal() {
-    const modal = document.getElementById('token-modal');
+function hideLoginModal() {
+    const modal = document.getElementById('login-modal');
+    const errorElement = document.getElementById('login-error');
+
     if (modal) {
         modal.style.display = 'none';
     }
-}
 
-function checkToken() {
-    adminToken = getStoredToken();
-    if (!adminToken) {
-        const indicator = document.getElementById('status-indicator');
-        const statusText = document.getElementById('status-text');
-
-        if (indicator) {
-            indicator.classList.add('error');
-        }
-
-        if (statusText) {
-            statusText.textContent = 'Token required';
-        }
-
-        showTokenModal();
-        return false;
+    if (errorElement) {
+        errorElement.textContent = '';
     }
-    return true;
+
+    isLoginModalVisible = false;
 }
 
-function saveToken(event) {
+async function refreshCurrentUser({ silent = false } = {}) {
+    authState.isAuthenticating = true;
+
+    if (!silent) {
+        updateStatusIndicator('Checking session...', 'pending');
+    }
+
+    try {
+        const data = await api.currentUser();
+        setAuthenticatedUser(data?.user || null, data?.session || null);
+        return authState.user;
+    } catch (error) {
+        if (error instanceof APIError && error.status === 401) {
+            setAuthenticatedUser(null, null);
+            if (!silent) {
+                showLoginModal();
+            }
+        } else {
+            updateStatusIndicator('Connection error', 'error');
+            authState.lastError = error;
+            if (!silent) {
+                showToast('Failed to validate session: ' + error.message, 'error');
+            }
+        }
+        throw error;
+    } finally {
+        authState.isAuthenticating = false;
+    }
+}
+
+async function handleLoginSubmit(event) {
     if (event) {
         event.preventDefault();
     }
 
-    const input = document.getElementById('token-input');
-    const token = input ? input.value.trim() : '';
+    const form = document.getElementById('login-form');
+    if (!form) {
+        return;
+    }
 
-    if (!token) {
-        showToast('Please enter a valid token', 'error');
-        if (input) {
-            input.focus();
+    const formData = new FormData(form);
+    const email = (formData.get('email') || '').toString().trim();
+    const password = (formData.get('password') || '').toString();
+    const errorElement = document.getElementById('login-error');
+    const submitButton = document.getElementById('login-submit');
+
+    if (!email || !password) {
+        if (errorElement) {
+            errorElement.textContent = 'Email and password are required.';
         }
         return;
     }
 
-    setStoredToken(token);
-    api = new AdminAPI();
+    if (errorElement) {
+        errorElement.textContent = '';
+    }
 
-    hideTokenModal();
+    if (submitButton) {
+        submitButton.disabled = true;
+    }
 
-    // Test the token
-    testConnection();
-}
+    updateStatusIndicator('Signing in...', 'pending');
 
-async function testConnection() {
     try {
-        await api.health();
-        document.getElementById('status-indicator').classList.remove('error');
-        document.getElementById('status-text').textContent = 'Connected';
-        showToast('Successfully connected to admin API', 'success');
-        
-        // Hide super-admin only features for non-super-admins
-        // Try to access tenant list - if it fails with 403, user is not super-admin
-        try {
-            await api.listTenants();
-            // User is super-admin, show all features
-        } catch (error) {
-            if (error.message.includes('403') || error.message.includes('super-admin')) {
-                // Hide super-admin only navigation items
-                const superAdminLinks = document.querySelectorAll('[data-super-admin-only="true"]');
-                superAdminLinks.forEach(link => link.style.display = 'none');
-            }
-        }
-        
+        const data = await api.login(email, password);
+        setAuthenticatedUser(data?.user || null, data?.session || null);
+        hideLoginModal();
+        showToast('Welcome back!', 'success');
+
+        const initialPage = window.location.hash.substring(1) || 'agents';
+        navigateTo(initialPage);
         loadCurrentPage();
     } catch (error) {
-        document.getElementById('status-indicator').classList.add('error');
-        document.getElementById('status-text').textContent = 'Error';
-        showToast('Failed to connect: ' + error.message, 'error');
+        if (error instanceof APIError && error.status === 401) {
+            if (errorElement) {
+                errorElement.textContent = 'Invalid email or password.';
+            }
+        } else if (errorElement) {
+            errorElement.textContent = error.message || 'Unable to sign in.';
+        }
 
-        // Clear token if authentication failed
-        if (error.message.includes('token') || error.message.includes('401') || error.message.includes('403')) {
-            clearStoredToken();
-            showTokenModal();
+        updateStatusIndicator('Sign in required', 'offline');
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
         }
     }
+}
+
+async function handleLogout(event) {
+    if (event) {
+        event.preventDefault();
+    }
+
+    try {
+        await api.logout();
+    } catch (error) {
+        console.warn('Logout request failed', error);
+    }
+
+    window.location.hash = '#agents';
+    currentPage = 'agents';
+    setAuthenticatedUser(null, null);
+    showLoginModal();
+    showToast('You have been signed out.', 'info');
+}
+
+async function initializeAuthentication() {
+    updateStatusIndicator('Checking session...', 'pending');
+
+    try {
+        const user = await refreshCurrentUser({ silent: true });
+        if (user) {
+            const initialPage = window.location.hash.substring(1) || 'agents';
+            navigateTo(initialPage);
+            loadCurrentPage();
+        } else {
+            showLoginModal();
+        }
+    } catch (error) {
+        if (!(error instanceof APIError && error.status === 401)) {
+            console.error('Failed to bootstrap authentication', error);
+        }
+        showLoginModal();
+    }
+}
+
+function authFetch(url, options = {}) {
+    const headers = {
+        Accept: 'application/json',
+        ...(options.headers || {})
+    };
+
+    return fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include'
+    }).then(response => {
+        if (response.status === 401) {
+            handleUnauthorized(new APIError('Authentication required', { status: 401 }));
+        }
+        return response;
+    });
 }
 
 // Page Management
 function navigateTo(page) {
-    // Clear any existing intervals when navigating away from jobs page
+    if (page === 'logout') {
+        handleLogout();
+        return;
+    }
+
+    if (!authState.user) {
+        showLoginModal();
+        return;
+    }
+
+    if (page === 'users' && authState.user.role !== SUPER_ADMIN_ROLE) {
+        showToast('Only super-admins can access Users.', 'warning');
+        page = 'agents';
+    }
+
     if (currentPage === 'jobs' && jobsRefreshInterval) {
         clearInterval(jobsRefreshInterval);
         jobsRefreshInterval = null;
     }
-    
+
     currentPage = page;
-    
-    // Update navigation
-    document.querySelectorAll('.nav-link').forEach(link => {
-        link.classList.remove('active');
-        if (link.dataset.page === page) {
-            link.classList.add('active');
-        }
+    if (window.location.hash !== `#${page}`) {
+        window.location.hash = `#${page}`;
+    }
+
+    document.querySelectorAll('.nav-link[data-page]').forEach(link => {
+        link.classList.toggle('active', link.dataset.page === page);
     });
-    
-    // Update title
+
     const titles = {
         'agents': 'Agents',
         'prompts': 'Prompts',
@@ -952,20 +1164,26 @@ function navigateTo(page) {
         'consent-management': 'Consent Management',
         'jobs': 'Background Jobs',
         'tenants': 'Tenants',
+        'users': 'Users',
         'billing': 'Billing & Usage',
         'audit': 'Audit Log',
         'audit-conversations': 'Audit Trails',
         'settings': 'Settings'
     };
-    document.getElementById('page-title').textContent = titles[page] || page;
-    
-    // Load page content
+
+    const pageTitle = document.getElementById('page-title');
+    if (pageTitle) {
+        pageTitle.textContent = titles[page] || page;
+    }
+
     loadCurrentPage();
 }
 
 function loadCurrentPage() {
-    if (!checkToken()) return;
-    
+    if (!authState.user) {
+        return;
+    }
+
     const pages = {
         'agents': loadAgentsPage,
         'prompts': loadPromptsPage,
@@ -974,14 +1192,16 @@ function loadCurrentPage() {
         'consent-management': loadConsentManagementPage,
         'jobs': loadJobsPage,
         'tenants': loadTenantsPage,
+        'users': loadUsersPage,
         'billing': loadBillingPage,
         'audit': loadAuditPage,
         'audit-conversations': loadAuditConversationsPage,
         'settings': loadSettingsPage
     };
-    
-    if (pages[currentPage]) {
-        pages[currentPage]();
+
+    const loader = pages[currentPage];
+    if (typeof loader === 'function') {
+        loader();
     }
 }
 
@@ -2953,7 +3173,8 @@ async function loadSettingsPage() {
     
     try {
         const health = await api.health();
-        
+        const sessionEmail = escapeHtml(authState.user?.email || '');
+
         const html = `
             <div class="card">
                 <div class="card-header">
@@ -3044,41 +3265,28 @@ async function loadSettingsPage() {
                     </div>
                 </div>
             ` : ''}
-            
+
             <div class="card">
                 <div class="card-header">
-                    <h3 class="card-title">Admin Token</h3>
+                    <h3 class="card-title">Sessions</h3>
                 </div>
                 <div class="card-body">
-                    <p>Current token is configured and active.</p>
-                    <button class="btn btn-secondary mt-2" onclick="changeToken()">Change Token</button>
-                    <p class="form-help mt-1">You will need to re-enter your admin token after changing it.</p>
+                    <p>Authentication uses email and password. Use the logout option below to end your current session.</p>
+                    ${sessionEmail ? `<p class="form-help">Signed in as <strong>${sessionEmail}</strong>.</p>` : ''}
+                    <button class="btn btn-secondary mt-2" data-action="logout-now">Sign out</button>
                 </div>
             </div>
         `;
-        
+
         content.innerHTML = html;
+        const logoutNowButton = content.querySelector('[data-action="logout-now"]');
+        if (logoutNowButton) {
+            logoutNowButton.addEventListener('click', handleLogout);
+        }
     } catch (error) {
         content.innerHTML = `<div class="card"><div class="card-body">Error loading settings: ${error.message}</div></div>`;
         showToast('Failed to load settings: ' + error.message, 'error');
     }
-}
-
-function changeToken() {
-    clearStoredToken();
-    const indicator = document.getElementById('status-indicator');
-    const statusText = document.getElementById('status-text');
-
-    if (indicator) {
-        indicator.classList.add('error');
-    }
-
-    if (statusText) {
-        statusText.textContent = 'Token required';
-    }
-
-    showToast('Admin token cleared. Please enter a new token.', 'info');
-    showTokenModal();
 }
 
 // ==================== Channel Management ====================
@@ -3452,41 +3660,31 @@ async function deleteChannelConfig(agentId, channel) {
 // ==================== Initialization ====================
 
 document.addEventListener('DOMContentLoaded', function() {
-    const tokenForm = document.getElementById('token-form');
-    if (tokenForm) {
-        tokenForm.addEventListener('submit', saveToken);
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLoginSubmit);
     }
 
-    const changeTokenButton = document.getElementById('change-token-button');
-    if (changeTokenButton) {
-        changeTokenButton.addEventListener('click', () => changeToken());
-    }
-
-    // Setup navigation
-    document.querySelectorAll('.nav-link').forEach(link => {
-        link.addEventListener('click', function(e) {
-            e.preventDefault();
+    document.querySelectorAll('.nav-link[data-page]').forEach(link => {
+        link.addEventListener('click', function(event) {
+            event.preventDefault();
             const page = this.dataset.page;
-            window.location.hash = page;
             navigateTo(page);
         });
     });
-    
-    // Handle hash navigation
+
+    const logoutLink = document.getElementById('logout-link');
+    if (logoutLink) {
+        logoutLink.addEventListener('click', handleLogout);
+    }
+
     window.addEventListener('hashchange', function() {
         const page = window.location.hash.substring(1) || 'agents';
         navigateTo(page);
     });
-    
-    // Check initial token
-    if (checkToken()) {
-        // Load initial page
-        const initialPage = window.location.hash.substring(1) || 'agents';
-        navigateTo(initialPage);
-        
-        // Test connection
-        testConnection();
-    }
+
+    updateRoleVisibility(authState.user?.role || null);
+    initializeAuthentication();
 });
 
 // ========== Audit Conversations Page ==========
@@ -3674,8 +3872,6 @@ function formatDate(dateStr) {
 // ==================== WhatsApp Templates Page ====================
 
 async function loadWhatsAppTemplatesPage() {
-    if (!checkToken()) return;
-    
     const content = document.getElementById('content');
     content.innerHTML = `
         <div class="page-header">
@@ -3715,10 +3911,8 @@ async function loadWhatsAppTemplatesPage() {
 
 async function loadTemplates() {
     try {
-        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=list_templates`, {
-            headers: getAdminAuthHeaders()
-        });
-        
+        const response = await authFetch(`${API_BASE_URL}/admin-api.php?action=list_templates`);
+
         if (!response.ok) {
             throw new Error('Failed to load templates');
         }
@@ -3872,11 +4066,11 @@ async function createTemplate(event) {
     const data = Object.fromEntries(formData.entries());
     
     try {
-        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=create_template`, {
+        const response = await authFetch(`${API_BASE_URL}/admin-api.php?action=create_template`, {
             method: 'POST',
-            headers: getAdminAuthHeaders({
+            headers: {
                 'Content-Type': 'application/json'
-            }),
+            },
             body: JSON.stringify(data)
         });
         
@@ -3896,9 +4090,7 @@ async function createTemplate(event) {
 
 async function viewTemplate(templateId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=get_template&id=${templateId}`, {
-            headers: getAdminAuthHeaders()
-        });
+        const response = await authFetch(`${API_BASE_URL}/admin-api.php?action=get_template&id=${templateId}`);
         
         if (!response.ok) {
             throw new Error('Failed to load template');
@@ -3972,11 +4164,10 @@ async function viewTemplate(templateId) {
 
 async function submitTemplate(templateId) {
     if (!confirm('Submit this template for WhatsApp approval?')) return;
-    
+
     try {
-        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=submit_template&id=${templateId}`, {
-            method: 'POST',
-            headers: getAdminAuthHeaders()
+        const response = await authFetch(`${API_BASE_URL}/admin-api.php?action=submit_template&id=${templateId}`, {
+            method: 'POST'
         });
         
         if (!response.ok) {
@@ -3994,11 +4185,10 @@ async function submitTemplate(templateId) {
 
 async function deleteTemplate(templateId) {
     if (!confirm('Delete this template? This action cannot be undone.')) return;
-    
+
     try {
-        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=delete_template&id=${templateId}`, {
-            method: 'DELETE',
-            headers: getAdminAuthHeaders()
+        const response = await authFetch(`${API_BASE_URL}/admin-api.php?action=delete_template&id=${templateId}`, {
+            method: 'DELETE'
         });
         
         if (!response.ok) {
@@ -4017,8 +4207,6 @@ async function deleteTemplate(templateId) {
 // ==================== Consent Management Page ====================
 
 async function loadConsentManagementPage() {
-    if (!checkToken()) return;
-    
     const content = document.getElementById('content');
     content.innerHTML = `
         <div class="page-header">
@@ -4062,9 +4250,7 @@ async function loadConsentManagementPage() {
 
 async function loadConsents() {
     try {
-        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=list_consents`, {
-            headers: getAdminAuthHeaders()
-        });
+        const response = await authFetch(`${API_BASE_URL}/admin-api.php?action=list_consents`);
         
         if (!response.ok) {
             throw new Error('Failed to load consents');
@@ -4158,9 +4344,7 @@ function filterConsents() {
 
 async function viewConsent(consentId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=get_consent_by_id&id=${consentId}`, {
-            headers: getAdminAuthHeaders()
-        });
+        const response = await authFetch(`${API_BASE_URL}/admin-api.php?action=get_consent_by_id&id=${consentId}`);
         
         if (!response.ok) {
             throw new Error('Failed to load consent');
@@ -4227,9 +4411,7 @@ async function viewConsent(consentId) {
 
 async function viewConsentAudit(consentId) {
     try {
-        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=get_consent_audit&id=${consentId}`, {
-            headers: getAdminAuthHeaders()
-        });
+        const response = await authFetch(`${API_BASE_URL}/admin-api.php?action=get_consent_audit&id=${consentId}`);
         
         if (!response.ok) {
             throw new Error('Failed to load consent audit');
@@ -4279,9 +4461,8 @@ async function withdrawConsent(consentId) {
     if (!confirm('Withdraw this consent? The user will no longer receive messages.')) return;
     
     try {
-        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=withdraw_consent_by_id&id=${consentId}`, {
-            method: 'POST',
-            headers: getAdminAuthHeaders()
+        const response = await authFetch(`${API_BASE_URL}/admin-api.php?action=withdraw_consent_by_id&id=${consentId}`, {
+            method: 'POST'
         });
         
         if (!response.ok) {
@@ -4300,10 +4481,8 @@ async function withdrawConsent(consentId) {
 async function exportConsents() {
     try {
         showToast('Preparing export...', 'info');
-        
-        const response = await fetch(`${API_BASE_URL}/admin-api.php?action=export_consents`, {
-            headers: getAdminAuthHeaders()
-        });
+
+        const response = await authFetch(`${API_BASE_URL}/admin-api.php?action=export_consents`);
         
         if (!response.ok) {
             throw new Error('Failed to export consents');
@@ -4323,6 +4502,435 @@ async function exportConsents() {
     } catch (error) {
         console.error('Error exporting consents:', error);
         showToast('Failed to export consents: ' + error.message, 'error');
+    }
+}
+
+// ==================== Users Page ====================
+
+function getTenantDisplayName(tenant) {
+    if (!tenant) {
+        return '—';
+    }
+    return tenant.name || tenant.display_name || tenant.slug || tenant.id || '—';
+}
+
+function buildTenantMap(tenants = []) {
+    const map = new Map();
+    tenants.forEach(tenant => {
+        if (tenant && tenant.id) {
+            map.set(tenant.id, getTenantDisplayName(tenant));
+        }
+    });
+    return map;
+}
+
+function renderUsersPage() {
+    const content = document.getElementById('content');
+    if (!content) {
+        return;
+    }
+
+    if (usersPageState.isLoading && usersPageState.users.length === 0) {
+        content.innerHTML = `
+            <div class="card">
+                <div class="card-body">
+                    <div class="card-loading"><div class="spinner"></div></div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    if (usersPageState.lastError && usersPageState.users.length === 0) {
+        content.innerHTML = `
+            <div class="card">
+                <div class="card-body">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <div class="empty-state-text">${escapeHtml(usersPageState.lastError.message || 'Failed to load users')}</div>
+                        <button class="btn btn-primary mt-2" data-action="refresh-users">Try again</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        requestAnimationFrame(attachUsersPageEvents);
+        return;
+    }
+
+    const tenants = usersPageState.tenants || [];
+    const tenantMap = buildTenantMap(tenants);
+    const currentUserId = authState.user?.id;
+
+    let usersTableContent = '';
+
+    if (usersPageState.isLoading && usersPageState.users.length > 0) {
+        usersTableContent = '<div class="card-loading"><div class="spinner"></div></div>';
+    } else if (!usersPageState.users || usersPageState.users.length === 0) {
+        usersTableContent = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🧑‍🤝‍🧑</div>
+                <div class="empty-state-text">No users registered yet.</div>
+            </div>
+        `;
+    } else {
+        const rows = usersPageState.users.map(user => {
+            const tenantLabel = user.role === SUPER_ADMIN_ROLE
+                ? '<span class="badge badge-secondary">All tenants</span>'
+                : escapeHtml(tenantMap.get(user.tenant_id) || '—');
+
+            const statusClass = user.is_active ? 'active' : 'inactive';
+            const statusLabel = user.is_active ? 'Active' : 'Deactivated';
+            const canDeactivate = user.is_active && user.id !== currentUserId;
+            const disableRoleChange = user.id === currentUserId;
+
+            const roleOptions = [
+                { value: 'viewer', label: 'Viewer' },
+                { value: 'admin', label: 'Admin' },
+                { value: 'super-admin', label: 'Super Admin' }
+            ].map(option => `
+                <option value="${option.value}" ${user.role === option.value ? 'selected' : ''}>${option.label}</option>
+            `).join('');
+
+            const createdAt = user.created_at ? formatDate(user.created_at) : '—';
+
+            return `
+                <tr data-user-id="${user.id}">
+                    <td>
+                        <div class="user-email">${escapeHtml(user.email)}</div>
+                        <div class="user-meta">${user.role === SUPER_ADMIN_ROLE ? 'Global access' : 'Tenant scoped'}</div>
+                    </td>
+                    <td>
+                        <select class="form-select user-role-select" data-user-role-select="true" data-user-id="${user.id}" data-original-role="${user.role}" data-user-email="${escapeHtml(user.email)}" ${disableRoleChange ? 'disabled' : ''}>
+                            ${roleOptions}
+                        </select>
+                    </td>
+                    <td>${tenantLabel}</td>
+                    <td><span class="user-status-pill ${statusClass}">${statusLabel}</span></td>
+                    <td>${escapeHtml(createdAt)}</td>
+                    <td>
+                        ${canDeactivate ? `<button class="btn btn-small btn-danger" data-action="deactivate-user" data-user-id="${user.id}" data-user-email="${escapeHtml(user.email)}">Deactivate</button>` : '<span class="text-muted">—</span>'}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        usersTableContent = `
+            <div class="table-wrapper">
+                <table class="data-table users-table">
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Tenant</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    const tenantOptions = tenants.map(tenant => `
+        <option value="${tenant.id}">${escapeHtml(getTenantDisplayName(tenant))}</option>
+    `).join('');
+
+    const errorMessage = usersPageState.lastError && usersPageState.users.length > 0
+        ? `<div class="users-inline-error">${escapeHtml(usersPageState.lastError.message || 'Some data may be outdated.')} <button type="button" class="btn btn-small btn-secondary" data-action="refresh-users">Refresh</button></div>`
+        : '';
+
+    content.innerHTML = `
+        <div class="users-page">
+            <div class="page-header">
+                <h2>Users</h2>
+                <div class="page-actions">
+                    <button class="btn btn-secondary" data-action="refresh-users">Refresh</button>
+                </div>
+            </div>
+            ${errorMessage}
+            <div class="users-grid">
+                <section class="card users-card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Team members</h3>
+                            <p class="card-subtitle">Manage access to the admin workspace.</p>
+                        </div>
+                        <button class="btn btn-small btn-secondary" data-action="refresh-users">Refresh</button>
+                    </div>
+                    <div class="card-body">
+                        ${usersTableContent}
+                    </div>
+                </section>
+                <section class="card create-user-card">
+                    <div class="card-header">
+                        <div>
+                            <h3>Create user</h3>
+                            <p class="card-subtitle">Invite a new admin or viewer for a tenant.</p>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <form id="create-user-form" class="create-user-form">
+                            <div class="form-group">
+                                <label class="form-label" for="create-user-email">Email</label>
+                                <input type="email" id="create-user-email" name="email" class="form-input" placeholder="admin@example.com" required autocomplete="off" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="create-user-role">Role</label>
+                                <select id="create-user-role" name="role" class="form-select" required>
+                                    <option value="admin" selected>Admin</option>
+                                    <option value="viewer">Viewer</option>
+                                    <option value="super-admin">Super Admin</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="create-user-tenant-group">
+                                <label class="form-label" for="create-user-tenant">Tenant</label>
+                                <select id="create-user-tenant" name="tenant_id" class="form-select">
+                                    <option value="">Select a tenant</option>
+                                    ${tenantOptions}
+                                </select>
+                                <small class="form-help">Required for admins and viewers.</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="create-user-password">Password</label>
+                                <input type="password" id="create-user-password" name="password" class="form-input" placeholder="Temporary password" required />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="create-user-password-confirm">Confirm password</label>
+                                <input type="password" id="create-user-password-confirm" name="password_confirm" class="form-input" placeholder="Repeat password" required />
+                            </div>
+                            <p class="form-error" id="create-user-error" aria-live="assertive"></p>
+                            <button type="submit" class="btn btn-primary btn-full" id="create-user-submit">Create user</button>
+                        </form>
+                    </div>
+                </section>
+            </div>
+        </div>
+    `;
+
+    requestAnimationFrame(attachUsersPageEvents);
+}
+
+function attachUsersPageEvents() {
+    const form = document.getElementById('create-user-form');
+    if (form) {
+        form.addEventListener('submit', handleCreateUserSubmit);
+    }
+
+    const roleSelect = document.getElementById('create-user-role');
+    if (roleSelect) {
+        roleSelect.addEventListener('change', event => toggleCreateUserTenantField(event.target.value));
+        toggleCreateUserTenantField(roleSelect.value);
+    }
+
+    document.querySelectorAll('[data-user-role-select="true"]').forEach(select => {
+        select.addEventListener('change', handleUserRoleChange);
+    });
+
+    document.querySelectorAll('[data-action="deactivate-user"]').forEach(button => {
+        button.addEventListener('click', handleDeactivateUserClick);
+    });
+
+    document.querySelectorAll('[data-action="refresh-users"]').forEach(button => {
+        button.addEventListener('click', () => loadUsersPage());
+    });
+}
+
+function toggleCreateUserTenantField(role) {
+    const tenantGroup = document.getElementById('create-user-tenant-group');
+    const tenantSelect = document.getElementById('create-user-tenant');
+
+    if (!tenantGroup || !tenantSelect) {
+        return;
+    }
+
+    const requireTenant = role !== SUPER_ADMIN_ROLE;
+    tenantGroup.classList.toggle('is-disabled', !requireTenant);
+    tenantSelect.required = requireTenant;
+
+    if (!requireTenant) {
+        tenantSelect.value = '';
+    }
+}
+
+async function loadUsersPage() {
+    if (!authState.user || authState.user.role !== SUPER_ADMIN_ROLE) {
+        const content = document.getElementById('content');
+        if (content) {
+            content.innerHTML = `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🔒</div>
+                            <div class="empty-state-text">Users management is limited to super-admins.</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        return;
+    }
+
+    usersPageState.isLoading = true;
+    renderUsersPage();
+
+    try {
+        const [users, tenants] = await Promise.all([
+            api.listUsers(),
+            api.listTenants()
+        ]);
+        usersPageState.users = Array.isArray(users) ? users : [];
+        usersPageState.tenants = Array.isArray(tenants) ? tenants : [];
+        usersPageState.lastError = null;
+    } catch (error) {
+        usersPageState.lastError = error;
+        console.error('Failed to load users:', error);
+        showToast('Failed to load users: ' + error.message, 'error');
+    } finally {
+        usersPageState.isLoading = false;
+        renderUsersPage();
+    }
+}
+
+async function handleCreateUserSubmit(event) {
+    event.preventDefault();
+
+    const form = event.target;
+    const formData = new FormData(form);
+    const email = (formData.get('email') || '').toString().trim();
+    const role = (formData.get('role') || 'admin').toString();
+    const tenantIdRaw = (formData.get('tenant_id') || '').toString();
+    const password = (formData.get('password') || '').toString();
+    const passwordConfirm = (formData.get('password_confirm') || '').toString();
+    const errorElement = document.getElementById('create-user-error');
+    const submitButton = document.getElementById('create-user-submit');
+
+    if (errorElement) {
+        errorElement.textContent = '';
+    }
+
+    if (!email || !password) {
+        if (errorElement) {
+            errorElement.textContent = 'Email and password are required.';
+        }
+        return;
+    }
+
+    if (password !== passwordConfirm) {
+        if (errorElement) {
+            errorElement.textContent = 'Passwords do not match.';
+        }
+        return;
+    }
+
+    if (role !== SUPER_ADMIN_ROLE && !tenantIdRaw) {
+        if (errorElement) {
+            errorElement.textContent = 'Select a tenant for this user.';
+        }
+        return;
+    }
+
+    if (submitButton) {
+        submitButton.disabled = true;
+    }
+
+    try {
+        await api.createUser({
+            email,
+            password,
+            role,
+            tenant_id: role === SUPER_ADMIN_ROLE ? null : tenantIdRaw
+        });
+        showToast('User created successfully', 'success');
+        form.reset();
+        const roleSelect = document.getElementById('create-user-role');
+        if (roleSelect) {
+            roleSelect.value = 'admin';
+            toggleCreateUserTenantField('admin');
+        }
+        await loadUsersPage();
+    } catch (error) {
+        console.error('Failed to create user:', error);
+        if (errorElement) {
+            errorElement.textContent = error.message || 'Failed to create user.';
+        }
+        showToast('Failed to create user: ' + error.message, 'error');
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+        }
+    }
+}
+
+async function handleUserRoleChange(event) {
+    const select = event.target;
+    const userId = select.dataset.userId;
+    const originalRole = select.dataset.originalRole;
+    const newRole = select.value;
+    const email = select.dataset.userEmail || '';
+
+    if (!userId || !newRole || newRole === originalRole) {
+        return;
+    }
+
+    const confirmed = await showConfirmationDialog({
+        title: 'Update user role',
+        description: `Change role for <strong>${escapeHtml(email)}</strong> to ${escapeHtml(newRole)}?`,
+        confirmLabel: 'Update role',
+        tone: 'info'
+    });
+
+    if (!confirmed) {
+        select.value = originalRole;
+        return;
+    }
+
+    try {
+        await api.updateUserRole(userId, newRole);
+        select.dataset.originalRole = newRole;
+        const user = usersPageState.users.find(item => item.id === userId);
+        if (user) {
+            user.role = newRole;
+        }
+        if (authState.user && authState.user.id === userId) {
+            setAuthenticatedUser({ ...authState.user, role: newRole }, authState.session);
+        }
+        showToast('User role updated', 'success');
+    } catch (error) {
+        console.error('Failed to update role:', error);
+        select.value = originalRole;
+        showToast('Failed to update role: ' + error.message, 'error');
+    }
+}
+
+async function handleDeactivateUserClick(event) {
+    const button = event.currentTarget;
+    const userId = button.dataset.userId;
+    const email = button.dataset.userEmail || '';
+
+    if (!userId) {
+        return;
+    }
+
+    const confirmed = await showConfirmationDialog({
+        title: 'Deactivate user',
+        description: `The user <strong>${escapeHtml(email)}</strong> will lose access to the admin console. Continue?`,
+        confirmLabel: 'Deactivate',
+        tone: 'danger'
+    });
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+        await api.deactivateUser(userId);
+        showToast('User deactivated', 'success');
+        await loadUsersPage();
+    } catch (error) {
+        console.error('Failed to deactivate user:', error);
+        showToast('Failed to deactivate user: ' + error.message, 'error');
     }
 }
 
@@ -4434,16 +5042,6 @@ async function exportConsents() {
             const testUrl = api.testAgent(agentId);
             console.log('[agentTester] URL de teste:', testUrl);
 
-            const token = getStoredToken();
-            const headers = {
-                'Content-Type': 'application/json'
-            };
-
-            if (token) {
-                headers['Authorization'] = `Bearer ${token}`;
-                headers['X-Admin-Token'] = token;
-            }
-
             const requestBody = {
                 message: message,
                 stream: true
@@ -4452,14 +5050,22 @@ async function exportConsents() {
             console.log('[agentTester] Enviando POST para:', testUrl);
             console.log('[agentTester] Body:', requestBody);
 
-            const response = await fetch(testUrl, {
+            const response = await authFetch(testUrl, {
                 method: 'POST',
-                headers: headers,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream'
+                },
                 body: JSON.stringify(requestBody)
             });
 
             console.log('[agentTester] Response status:', response.status);
             console.log('[agentTester] Response headers:', Object.fromEntries(response.headers.entries()));
+
+            if (response.status === 401) {
+                handleUnauthorized(new APIError('Authentication required', { status: 401 }));
+                throw new Error('Authentication required');
+            }
 
             if (!response.ok) {
                 const errorText = await response.text();

@@ -43,6 +43,8 @@ body {
     position: fixed;
     height: 100vh;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
 
 .sidebar-header {
@@ -57,6 +59,7 @@ body {
 
 .sidebar-nav {
     padding: 1rem 0;
+    flex: 1 1 auto;
 }
 
 .nav-link {
@@ -78,9 +81,29 @@ body {
     color: white;
 }
 
+.nav-link.is-hidden {
+    display: none;
+}
+
 .nav-icon {
     margin-right: 0.75rem;
     font-size: 1.2rem;
+}
+
+.sidebar-footer {
+    margin-top: auto;
+    padding: 1rem 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav-link-logout {
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 600;
+}
+
+.nav-link-logout:hover {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #fff;
 }
 
 /* Main Content */
@@ -115,8 +138,62 @@ body {
     font-size: 1.5rem;
 }
 
+.status-indicator.offline {
+    color: var(--secondary-color);
+}
+
+.status-indicator.pending {
+    color: var(--warning-color);
+}
+
 .status-indicator.error {
     color: var(--danger-color);
+}
+
+.user-session {
+    display: flex;
+    flex-direction: column;
+    background: rgba(79, 70, 229, 0.08);
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    line-height: 1.2;
+    min-width: 160px;
+}
+
+.user-session-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+}
+
+.user-session-value {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    word-break: break-all;
+}
+
+body:not(.is-authenticated) .user-session {
+    background: rgba(107, 114, 128, 0.12);
+}
+
+body:not(.is-authenticated) .user-session-value {
+    color: var(--text-secondary);
+}
+
+body:not(.is-authenticated) .sidebar-nav .nav-link[data-page] {
+    pointer-events: none;
+    opacity: 0.45;
+}
+
+body:not(.is-authenticated) .nav-link-logout {
+    display: none;
+}
+
+body.is-authenticated .sidebar-nav .nav-link[data-page] {
+    pointer-events: auto;
+    opacity: 1;
 }
 
 .content {
@@ -165,6 +242,12 @@ body {
     transition: all 0.2s;
     text-decoration: none;
     display: inline-block;
+}
+
+.btn-full {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
 }
 
 .btn-primary {
@@ -741,66 +824,161 @@ body.modal-overlay-open {
     border: 0;
 }
 
-/* Token Modal */
-.token-modal {
+/* Login Modal */
+.login-modal {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.8);
+    inset: 0;
+    background-color: rgba(17, 24, 39, 0.7);
     z-index: 3000;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 1.5rem;
 }
 
-.token-modal-content {
+.login-modal-content {
     background-color: var(--bg-primary);
-    border-radius: 0.5rem;
+    border-radius: 0.75rem;
     padding: 2rem;
-    max-width: 400px;
-    width: 90%;
+    width: min(420px, 100%);
+    box-shadow: 0 25px 50px -12px rgba(79, 70, 229, 0.35);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
 }
 
-.token-modal-content h2 {
+.login-modal-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.login-modal .form-label {
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+
+.login-modal .form-input {
+    width: 100%;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    font-size: 1rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.login-modal .form-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.18);
+    outline: none;
+}
+
+.login-error {
+    min-height: 1.2rem;
+    font-size: 0.85rem;
+    color: var(--danger-color);
+    margin-top: -0.25rem;
+}
+
+/* Users Page */
+.users-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.users-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 1.5rem;
+    align-items: stretch;
+}
+
+@media (max-width: 1100px) {
+    .users-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.users-inline-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--danger-color);
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+}
+
+.users-table .user-email {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.users-table .user-meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.user-role-select {
+    min-width: 160px;
+}
+
+.user-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.user-status-pill.active {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success-color);
+}
+
+.user-status-pill.inactive {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--danger-color);
+}
+
+.create-user-form .form-group {
     margin-bottom: 1rem;
 }
 
-.token-modal-content input {
+.create-user-form .form-input,
+.create-user-form .form-select {
     width: 100%;
-    padding: 0.75rem;
-    margin: 1rem 0;
-    border: 1px solid var(--border-color);
-    border-radius: 0.375rem;
-    font-size: 1rem;
 }
 
-.token-modal-actions {
-    margin-top: 1rem;
+.form-group.is-disabled {
+    opacity: 0.5;
 }
 
-.token-modal-content button {
-    width: 100%;
-    padding: 0.75rem;
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    border-radius: 0.375rem;
-    font-size: 1rem;
-    font-weight: 500;
-    cursor: pointer;
+.form-group.is-disabled .form-select {
+    pointer-events: none;
 }
 
-.token-modal-content button:hover {
-    background-color: var(--primary-hover);
+.form-error {
+    color: var(--danger-color);
+    font-size: 0.85rem;
+    min-height: 1.2rem;
+    margin-top: -0.25rem;
+    margin-bottom: 0.75rem;
 }
 
-.token-help {
-    margin-top: 1rem;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    text-align: center;
+.page-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
 }
 
 /* Loading Spinner */
