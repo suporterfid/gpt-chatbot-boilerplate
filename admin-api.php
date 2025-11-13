@@ -3266,9 +3266,9 @@ try {
             
             $subscription = $billingService->getSubscription($targetTenantId);
             if (!$subscription) {
-                sendError('Subscription not found', 404);
+                sendResponse(null);
             }
-            
+
             sendResponse($subscription);
             break;
             
