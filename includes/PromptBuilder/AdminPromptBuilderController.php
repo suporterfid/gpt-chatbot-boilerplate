@@ -55,12 +55,22 @@ class AdminPromptBuilderController
         }
         
         $agentId = $pathParts[0];
-        
-        // Validate agent exists
-        $this->validateAgentExists($agentId);
-        
-        // Check rate limit
-        $this->checkRateLimit($userId ?? 'anonymous');
+
+        $isCatalogRequest = count($pathParts) >= 3
+            && $pathParts[1] === 'prompt-builder'
+            && $pathParts[2] === 'catalog'
+            && $method === 'GET';
+
+        if (!$isCatalogRequest) {
+            // Validate agent exists for agent-scoped routes
+            $this->validateAgentExists($agentId);
+
+            // Check rate limit scoped to agent operations
+            $this->checkRateLimit($userId ?? 'anonymous');
+        } else {
+            // Apply rate limiting for global catalog requests as well
+            $this->checkRateLimit(($userId ?? 'anonymous') . ':catalog');
+        }
         
         // Route based on remaining path
         if (count($pathParts) === 2 && $pathParts[1] === 'prompt-builder' && $method === 'POST') {
@@ -73,7 +83,7 @@ class AdminPromptBuilderController
                 // POST /agents/{agent_id}/prompt-builder/generate
                 return $this->generate($agentId, $data, $userId);
             }
-            if (count($pathParts) === 3 && $pathParts[2] === 'catalog' && $method === 'GET') {
+            if ($isCatalogRequest) {
                 // GET /agents/{agent_id}/prompt-builder/catalog
                 return $this->catalog();
             }
