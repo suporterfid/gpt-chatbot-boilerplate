@@ -762,6 +762,18 @@ function getStoredToken() {
     return '';
 }
 
+function getAdminAuthHeaders(extra = {}) {
+    const headers = { ...extra };
+    const token = getStoredToken();
+
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+        headers['X-Admin-Token'] = token;
+    }
+
+    return headers;
+}
+
 function setStoredToken(token) {
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
     adminToken = token;
@@ -3630,9 +3642,7 @@ async function loadWhatsAppTemplatesPage() {
 async function loadTemplates() {
     try {
         const response = await fetch(`${API_BASE_URL}/admin-api.php?action=list_templates`, {
-            headers: {
-                'Authorization': `Bearer ${getToken()}`
-            }
+            headers: getAdminAuthHeaders()
         });
         
         if (!response.ok) {
@@ -3790,10 +3800,9 @@ async function createTemplate(event) {
     try {
         const response = await fetch(`${API_BASE_URL}/admin-api.php?action=create_template`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${getToken()}`,
+            headers: getAdminAuthHeaders({
                 'Content-Type': 'application/json'
-            },
+            }),
             body: JSON.stringify(data)
         });
         
@@ -3814,9 +3823,7 @@ async function createTemplate(event) {
 async function viewTemplate(templateId) {
     try {
         const response = await fetch(`${API_BASE_URL}/admin-api.php?action=get_template&id=${templateId}`, {
-            headers: {
-                'Authorization': `Bearer ${getToken()}`
-            }
+            headers: getAdminAuthHeaders()
         });
         
         if (!response.ok) {
@@ -3895,9 +3902,7 @@ async function submitTemplate(templateId) {
     try {
         const response = await fetch(`${API_BASE_URL}/admin-api.php?action=submit_template&id=${templateId}`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${getToken()}`
-            }
+            headers: getAdminAuthHeaders()
         });
         
         if (!response.ok) {
@@ -3919,9 +3924,7 @@ async function deleteTemplate(templateId) {
     try {
         const response = await fetch(`${API_BASE_URL}/admin-api.php?action=delete_template&id=${templateId}`, {
             method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${getToken()}`
-            }
+            headers: getAdminAuthHeaders()
         });
         
         if (!response.ok) {
@@ -3986,9 +3989,7 @@ async function loadConsentManagementPage() {
 async function loadConsents() {
     try {
         const response = await fetch(`${API_BASE_URL}/admin-api.php?action=list_consents`, {
-            headers: {
-                'Authorization': `Bearer ${getToken()}`
-            }
+            headers: getAdminAuthHeaders()
         });
         
         if (!response.ok) {
@@ -4084,9 +4085,7 @@ function filterConsents() {
 async function viewConsent(consentId) {
     try {
         const response = await fetch(`${API_BASE_URL}/admin-api.php?action=get_consent_by_id&id=${consentId}`, {
-            headers: {
-                'Authorization': `Bearer ${getToken()}`
-            }
+            headers: getAdminAuthHeaders()
         });
         
         if (!response.ok) {
@@ -4155,9 +4154,7 @@ async function viewConsent(consentId) {
 async function viewConsentAudit(consentId) {
     try {
         const response = await fetch(`${API_BASE_URL}/admin-api.php?action=get_consent_audit&id=${consentId}`, {
-            headers: {
-                'Authorization': `Bearer ${getToken()}`
-            }
+            headers: getAdminAuthHeaders()
         });
         
         if (!response.ok) {
@@ -4210,9 +4207,7 @@ async function withdrawConsent(consentId) {
     try {
         const response = await fetch(`${API_BASE_URL}/admin-api.php?action=withdraw_consent_by_id&id=${consentId}`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${getToken()}`
-            }
+            headers: getAdminAuthHeaders()
         });
         
         if (!response.ok) {
@@ -4233,9 +4228,7 @@ async function exportConsents() {
         showToast('Preparing export...', 'info');
         
         const response = await fetch(`${API_BASE_URL}/admin-api.php?action=export_consents`, {
-            headers: {
-                'Authorization': `Bearer ${getToken()}`
-            }
+            headers: getAdminAuthHeaders()
         });
         
         if (!response.ok) {
