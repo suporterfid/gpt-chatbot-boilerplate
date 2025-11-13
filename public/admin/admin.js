@@ -471,6 +471,9 @@ class AdminAPI {
     }
 }
 
+// Expose AdminAPI to window for extension by other modules
+window.AdminAPI = AdminAPI;
+
 let api = new AdminAPI();
 
 // UI Helpers
