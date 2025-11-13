@@ -482,7 +482,7 @@ function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    
+
     const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
     
     toast.innerHTML = `
@@ -499,6 +499,214 @@ function showToast(message, type = 'success') {
         setTimeout(() => toast.remove(), 300);
     }, 3000);
 }
+
+const confirmationDialogState = {
+    overlay: null,
+    confirmButton: null,
+    cancelButton: null,
+    titleElement: null,
+    messageElement: null,
+    iconElement: null,
+    resolve: null,
+    keydownHandler: null,
+    previouslyFocusedElement: null
+};
+
+function ensureConfirmationDialog() {
+    if (confirmationDialogState.overlay) {
+        return confirmationDialogState.overlay;
+    }
+
+    const dialogHTML = `
+        <div
+            id="admin-confirmation-overlay"
+            class="modal modal-overlay confirmation-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-confirmation-title"
+            aria-describedby="admin-confirmation-message"
+            aria-hidden="true"
+        >
+            <div class="modal-content confirmation-dialog" role="document">
+                <div class="confirmation-header">
+                    <div class="confirmation-icon" aria-hidden="true"></div>
+                    <h3 id="admin-confirmation-title"></h3>
+                </div>
+                <p id="admin-confirmation-message"></p>
+                <div class="confirmation-actions">
+                    <button type="button" class="btn btn-outline" data-confirmation="cancel">Cancel</button>
+                    <button type="button" class="btn btn-primary" data-confirmation="confirm">Confirm</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', dialogHTML);
+
+    const overlay = document.getElementById('admin-confirmation-overlay');
+    confirmationDialogState.overlay = overlay;
+    confirmationDialogState.confirmButton = overlay.querySelector('[data-confirmation="confirm"]');
+    confirmationDialogState.cancelButton = overlay.querySelector('[data-confirmation="cancel"]');
+    confirmationDialogState.titleElement = document.getElementById('admin-confirmation-title');
+    confirmationDialogState.messageElement = document.getElementById('admin-confirmation-message');
+    confirmationDialogState.iconElement = overlay.querySelector('.confirmation-icon');
+
+    return overlay;
+}
+
+function hideConfirmationDialog(result = false) {
+    const {
+        overlay,
+        confirmButton,
+        cancelButton,
+        keydownHandler,
+        resolve,
+        previouslyFocusedElement
+    } = confirmationDialogState;
+
+    if (!overlay) return;
+
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.removeEventListener('click', handleOverlayClick);
+
+    if (confirmButton) {
+        confirmButton.removeEventListener('click', handleConfirmClick);
+    }
+
+    if (cancelButton) {
+        cancelButton.removeEventListener('click', handleCancelClick);
+    }
+
+    if (keydownHandler) {
+        overlay.removeEventListener('keydown', keydownHandler);
+    }
+
+    document.body.classList.remove('modal-overlay-open');
+
+    if (typeof resolve === 'function') {
+        resolve(result);
+    }
+
+    confirmationDialogState.resolve = null;
+    confirmationDialogState.keydownHandler = null;
+
+    if (previouslyFocusedElement && typeof previouslyFocusedElement.focus === 'function') {
+        previouslyFocusedElement.focus();
+    }
+
+    confirmationDialogState.previouslyFocusedElement = null;
+}
+
+function handleConfirmClick(event) {
+    event.preventDefault();
+    hideConfirmationDialog(true);
+}
+
+function handleCancelClick(event) {
+    event.preventDefault();
+    hideConfirmationDialog(false);
+}
+
+function handleOverlayClick(event) {
+    if (event.target === confirmationDialogState.overlay) {
+        hideConfirmationDialog(false);
+    }
+}
+
+function showConfirmationDialog(options = {}) {
+    const overlay = ensureConfirmationDialog();
+
+    const {
+        title = 'Confirm action',
+        message = 'Are you sure you want to continue?',
+        confirmLabel = 'Confirm',
+        cancelLabel = 'Cancel',
+        tone = 'primary'
+    } = options;
+
+    const { confirmButton, cancelButton, titleElement, messageElement, iconElement } = confirmationDialogState;
+
+    if (titleElement) {
+        titleElement.textContent = title;
+    }
+
+    if (messageElement) {
+        messageElement.textContent = message;
+    }
+
+    if (confirmButton) {
+        confirmButton.textContent = confirmLabel;
+        confirmButton.classList.remove('btn-primary', 'btn-danger', 'btn-success');
+        const toneClass = tone === 'danger' ? 'btn-danger' : tone === 'success' ? 'btn-success' : 'btn-primary';
+        confirmButton.classList.add(toneClass);
+    }
+
+    if (cancelButton) {
+        cancelButton.textContent = cancelLabel;
+    }
+
+    if (iconElement) {
+        iconElement.classList.remove('is-danger', 'is-success', 'is-primary');
+        const toneClass = tone === 'danger' ? 'is-danger' : tone === 'success' ? 'is-success' : 'is-primary';
+        iconElement.classList.add(toneClass);
+        iconElement.innerHTML = tone === 'danger' ? '⚠️' : tone === 'success' ? '✅' : 'ℹ️';
+    }
+
+    return new Promise(resolve => {
+        confirmationDialogState.resolve = resolve;
+        confirmationDialogState.previouslyFocusedElement = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+
+        overlay.classList.add('open');
+        overlay.setAttribute('aria-hidden', 'false');
+        overlay.addEventListener('click', handleOverlayClick);
+        document.body.classList.add('modal-overlay-open');
+
+        if (confirmButton) {
+            confirmButton.addEventListener('click', handleConfirmClick);
+        }
+
+        if (cancelButton) {
+            cancelButton.addEventListener('click', handleCancelClick);
+        }
+
+        const keydownHandler = event => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                hideConfirmationDialog(false);
+            } else if (event.key === 'Tab') {
+                const focusableElements = [cancelButton, confirmButton].filter(Boolean);
+                if (focusableElements.length === 0) {
+                    return;
+                }
+
+                const currentIndex = focusableElements.indexOf(document.activeElement);
+                if (event.shiftKey) {
+                    if (currentIndex <= 0) {
+                        event.preventDefault();
+                        focusableElements[focusableElements.length - 1].focus();
+                    }
+                } else if (currentIndex === focusableElements.length - 1) {
+                    event.preventDefault();
+                    focusableElements[0].focus();
+                }
+            }
+        };
+
+        overlay.addEventListener('keydown', keydownHandler);
+        confirmationDialogState.keydownHandler = keydownHandler;
+
+        requestAnimationFrame(() => {
+            if (confirmButton) {
+                confirmButton.focus();
+            }
+        });
+    });
+}
+
+window.showConfirmationDialog = showConfirmationDialog;
 
 function openModal(title, content) {
     const modal = document.getElementById('modal');
