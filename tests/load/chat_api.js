@@ -16,7 +16,7 @@ const chatCompletionTime = new Trend('chat_completion_time');
 
 // Configuration
 const BASE_URL = __ENV.BASE_URL || 'http://localhost';
-const ADMIN_TOKEN = __ENV.ADMIN_TOKEN || '';
+const ADMIN_API_KEY = __ENV.ADMIN_API_KEY || '';
 const ADMIN_EMAIL = __ENV.ADMIN_EMAIL || '';
 const ADMIN_PASSWORD = __ENV.ADMIN_PASSWORD || '';
 
@@ -59,10 +59,10 @@ function buildAdminParams(options = {}) {
     const cookie = ensureSessionCookie();
     if (cookie) {
         params.cookies = { ...(options.cookies || {}), [cookie.name]: cookie.value };
-    } else if (ADMIN_TOKEN) {
+    } else if (ADMIN_API_KEY) {
         params.headers = {
             ...params.headers,
-            Authorization: `Bearer ${ADMIN_TOKEN}`,
+            Authorization: `Bearer ${ADMIN_API_KEY}`,
         };
     }
 
@@ -154,8 +154,8 @@ function testChatCompletion() {
 }
 
 function testAgentTest() {
-    if (!ADMIN_TOKEN && (!ADMIN_EMAIL || !ADMIN_PASSWORD)) {
-        return; // Skip if no admin token
+    if (!ADMIN_API_KEY && (!ADMIN_EMAIL || !ADMIN_PASSWORD)) {
+        return; // Skip if no admin credentials
     }
 
     const payload = JSON.stringify({
@@ -182,8 +182,8 @@ function testAgentTest() {
 }
 
 function testAdminAPI() {
-    if (!ADMIN_TOKEN && (!ADMIN_EMAIL || !ADMIN_PASSWORD)) {
-        return; // Skip if no admin token
+    if (!ADMIN_API_KEY && (!ADMIN_EMAIL || !ADMIN_PASSWORD)) {
+        return; // Skip if no admin credentials
     }
 
     const params = buildAdminParams();

@@ -7,10 +7,11 @@
 echo "=== Test Agent Endpoint Test ===\n\n";
 
 // Test credentials (generated for testing only, not for production use)
-const TEST_TOKEN = 'test_admin_token_for_phase1_testing_min32chars';
+$sessionEmail = 'endpoint.super.admin@test.local';
+$sessionPassword = 'EndpointTest!234';
 
 // Set up .env file for testing
-$envContent = "ADMIN_TOKEN=" . TEST_TOKEN . "\n";
+$envContent = "ADMIN_ENABLED=true\n";
 $envContent .= "OPENAI_API_KEY=test_key\n";
 $envPath = __DIR__ . '/../.env';
 $envBackupPath = __DIR__ . '/../.env.backup.test';
@@ -23,7 +24,7 @@ if (file_exists($envPath)) {
 
 // Write test .env
 file_put_contents($envPath, $envContent);
-echo "Created test .env with ADMIN_TOKEN\n\n";
+echo "Created test .env with admin session support\n\n";
 
 // Start PHP built-in server
 $port = 9998;
@@ -84,11 +85,6 @@ function testRequest($name, $url, $method = 'GET', $headers = [], $body = null, 
     ];
 }
 
-// First, create a test agent
-// Set test token for authentication (generated for testing only)
-putenv("ADMIN_TOKEN=" . TEST_TOKEN);
-$_ENV['ADMIN_TOKEN'] = TEST_TOKEN;
-
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/DB.php';
 require_once __DIR__ . '/../includes/AgentService.php';
@@ -109,16 +105,7 @@ try {
     // Migrations might already be run, continue
 }
 
-// Verify the token is set in config
-if (!isset($config['admin']['token']) || $config['admin']['token'] !== TEST_TOKEN) {
-    echo "Warning: ADMIN_TOKEN not properly set in config\n";
-    $config['admin']['token'] = TEST_TOKEN;
-}
-
 // Create a dedicated session test user
-$sessionEmail = 'session.test+agent@endpoint.local';
-$sessionPassword = 'TestPassw0rd!';
-
 try {
     $db->execute('DELETE FROM admin_sessions WHERE user_id IN (SELECT id FROM admin_users WHERE email = ?)', [$sessionEmail]);
     $db->execute('DELETE FROM admin_users WHERE email = ?', [$sessionEmail]);
@@ -127,6 +114,7 @@ try {
 }
 
 $sessionUser = $adminAuth->createUser($sessionEmail, $sessionPassword, AdminAuth::ROLE_SUPER_ADMIN);
+$apiKey = $adminAuth->generateApiKey($sessionUser['id'], 'Endpoint test key');
 
 $agentService = new AgentService($db);
 
@@ -186,7 +174,7 @@ if ($resultSession['code'] === 200 || strpos($resultSession['headers'], 'text/ev
 
 // Test 3: GET request with Authorization header for API key compatibility
 echo "\n--- Test 3: GET request with Authorization header ---\n";
-$resultApiKey = testRequest('GET with Authorization header', $urlSession, 'GET', ["Authorization: Bearer " . TEST_TOKEN]);
+$resultApiKey = testRequest('GET with Authorization header', $urlSession, 'GET', ["Authorization: Bearer " . $apiKey['key']]);
 
 if ($resultApiKey['code'] === 200 || strpos($resultApiKey['headers'], 'text/event-stream') !== false) {
     echo "✓ PASS: GET request with Authorization header works\n";
@@ -199,7 +187,7 @@ if ($resultApiKey['code'] === 200 || strpos($resultApiKey['headers'], 'text/even
 
 // Test 4: Query parameter token should be rejected
 echo "\n--- Test 4: GET request with token query parameter (deprecated) ---\n";
-$urlToken = "$baseUrl/admin-api.php?action=test_agent&id=$agentId&token=" . urlencode(TEST_TOKEN);
+$urlToken = "$baseUrl/admin-api.php?action=test_agent&id=$agentId&token=" . urlencode($apiKey['key']);
 $resultToken = testRequest('GET with token param (deprecated)', $urlToken);
 
 if ($resultToken['code'] === 403) {

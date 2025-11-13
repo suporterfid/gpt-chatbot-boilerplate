@@ -2,17 +2,27 @@
 <?php
 /**
  * Admin API Authentication Test
- * Tests the token-based authentication for admin-api.php
+ * Tests API key and session authentication for admin-api.php
  */
 
 echo "=== Admin API Authentication Test ===\n\n";
 
-// Prepare authentication tokens before server boots
-$validToken = "test_admin_token_for_phase1_testing_min32chars";
-$invalidToken = "wrong_token";
+// Prepare authentication credentials before server boots
+$validEmail = 'auth.super.admin@test.local';
+$validPassword = 'AuthTestPass!456';
+$invalidKey = 'wrong_key';
 
-putenv("ADMIN_TOKEN=$validToken");
-$_ENV['ADMIN_TOKEN'] = $validToken;
+// Configure .env for admin session support
+$envContent = "ADMIN_ENABLED=true\n";
+$envContent .= "OPENAI_API_KEY=test_key\n";
+$envPath = __DIR__ . '/../.env';
+$envBackupPath = __DIR__ . '/../.env.backup.adminauth';
+
+if (file_exists($envPath)) {
+    copy($envPath, $envBackupPath);
+}
+
+file_put_contents($envPath, $envContent);
 
 // Start PHP built-in server
 $port = 9998;
@@ -44,15 +54,20 @@ try {
 $adminAuth = new AdminAuth($db, $config);
 $sessionEmail = 'auth.session@test.local';
 $sessionPassword = 'Sup3rSecure!';
+$apiKey = null;
 
 try {
     $db->execute('DELETE FROM admin_sessions WHERE user_id IN (SELECT id FROM admin_users WHERE email = ?)', [$sessionEmail]);
     $db->execute('DELETE FROM admin_users WHERE email = ?', [$sessionEmail]);
+    $db->execute('DELETE FROM admin_sessions WHERE user_id IN (SELECT id FROM admin_users WHERE email = ?)', [$validEmail]);
+    $db->execute('DELETE FROM admin_users WHERE email = ?', [$validEmail]);
 } catch (Exception $e) {
     // ignore cleanup issues
 }
 
 $adminAuth->createUser($sessionEmail, $sessionPassword, AdminAuth::ROLE_SUPER_ADMIN);
+$adminUser = $adminAuth->createUser($validEmail, $validPassword, AdminAuth::ROLE_SUPER_ADMIN);
+$apiKey = $adminAuth->generateApiKey($adminUser['id'], 'Admin auth test key');
 
 $testsPassed = 0;
 $testsFailed = 0;
@@ -88,23 +103,23 @@ test(
     403
 );
 
-// Test 2: Request with invalid token should fail
+// Test 2: Request with invalid API key should fail
 test(
-    "List agents with invalid token",
+    "List agents with invalid API key",
     "$baseUrl/admin-api.php?action=list_agents",
-    $invalidToken,
+    $invalidKey,
     403
 );
 
-// Test 3: Request with valid token should succeed
+// Test 3: Request with valid API key should succeed
 test(
-    "List agents with valid token",
+    "List agents with valid API key",
     "$baseUrl/admin-api.php?action=list_agents",
-    $validToken,
+    $apiKey['key'],
     200
 );
 
-// Test 4: Create with valid token should succeed
+// Test 4: Create with valid API key should succeed
 $uniqueName = 'Auth Test Agent ' . time();
 $ch = curl_init("$baseUrl/admin-api.php?action=create_agent");
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -114,7 +129,7 @@ curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
     'api_type' => 'chat'
 ]));
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "Authorization: Bearer $validToken",
+    "Authorization: Bearer {$apiKey['key']}",
     "Content-Type: application/json"
 ]);
 $response = curl_exec($ch);
@@ -213,6 +228,12 @@ sleep(1);
 echo "\n=== Test Summary ===\n";
 echo "Passed: $testsPassed\n";
 echo "Failed: $testsFailed\n";
+
+if (file_exists($envBackupPath)) {
+    rename($envBackupPath, $envPath);
+} else {
+    @unlink($envPath);
+}
 
 if ($testsFailed > 0) {
     echo "\n❌ Some tests failed!\n";

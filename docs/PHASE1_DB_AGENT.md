@@ -54,21 +54,29 @@ Add these to your `.env` file:
 ```bash
 # Admin API Configuration
 ADMIN_ENABLED=true
-ADMIN_TOKEN=your_random_admin_token_here_min_32_chars
+DEFAULT_ADMIN_EMAIL=super.admin@example.com
+DEFAULT_ADMIN_PASSWORD=generate_a_secure_password_here
 DATABASE_URL=
 DATABASE_PATH=./data/chatbot.db
 ```
 
 - **ADMIN_ENABLED**: Enable/disable admin features (default: `false`)
-- **ADMIN_TOKEN**: Bearer token for authenticating admin API requests (required when enabled)
+- **DEFAULT_ADMIN_EMAIL / DEFAULT_ADMIN_PASSWORD**: Bootstrap credentials for the initial super-admin login. Remove after creating a permanent account.
 - **DATABASE_URL**: Optional MySQL connection string (e.g., `mysql://user:pass@host/db`)
 - **DATABASE_PATH**: Path to SQLite database file (default: `./data/chatbot.db`)
 
 ### Security Notes
 
-- **ADMIN_TOKEN** must be at least 32 characters for production use
-- Store the token securely and do not commit it to version control
-- The Admin API rejects any request without a valid `Authorization: Bearer <token>` header
+- Create per-user API keys from the Admin UI or via `POST /admin-api.php?action=generate_api_key`.
+- Super-admins authenticate interactively with email/password; API clients use `Authorization: Bearer <ADMIN_API_KEY>`.
+- Legacy `ADMIN_TOKEN` headers remain available for backward compatibility only—migrate all clients to sessions or API keys.
+
+### Super-Admin Credential Management
+
+1. **Bootstrap:** Provide `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` for the first login, then remove them once an account exists.
+2. **Password resets:** Create a replacement super-admin with `POST /admin-api.php?action=create_user` (`role=super-admin`), sign in with the new credentials, and deactivate the previous user using `POST /admin-api.php?action=deactivate_user`.
+3. **API key rotation:** Generate a new key via `POST /admin-api.php?action=generate_api_key`, update dependent clients, and revoke the old key with `POST /admin-api.php?action=revoke_api_key&id={key_id}`.
+4. **Session hygiene:** Encourage admins to log out when finished or use `POST /admin-api.php?action=logout` programmatically for automation flows.
 
 ## Running Migrations
 
@@ -90,7 +98,7 @@ echo "Executed $count migrations\n";
 
 Base URL: `/admin-api.php`
 
-All endpoints require the `Authorization: Bearer <ADMIN_TOKEN>` header.
+All endpoints require either an authenticated admin session cookie or the `Authorization: Bearer <ADMIN_API_KEY>` header. Legacy `ADMIN_TOKEN` headers are accepted for older clients but will be removed in a future release.
 
 ### List Agents
 
@@ -138,7 +146,7 @@ Response: Single agent object
 ```bash
 POST /admin-api.php?action=create_agent
 Content-Type: application/json
-Authorization: Bearer <ADMIN_TOKEN>
+Authorization: Bearer <ADMIN_API_KEY>
 
 {
   "name": "Customer Support Agent",
@@ -169,7 +177,7 @@ Response: Created agent object with generated `id`
 ```bash
 POST /admin-api.php?action=update_agent&id=<agent_id>
 Content-Type: application/json
-Authorization: Bearer <ADMIN_TOKEN>
+Authorization: Bearer <ADMIN_API_KEY>
 
 {
   "description": "Updated description",
@@ -183,7 +191,7 @@ Only include fields to update. Response: Updated agent object
 
 ```bash
 POST /admin-api.php?action=delete_agent&id=<agent_id>
-Authorization: Bearer <ADMIN_TOKEN>
+Authorization: Bearer <ADMIN_API_KEY>
 ```
 
 Response:
@@ -200,7 +208,7 @@ Response:
 
 ```bash
 POST /admin-api.php?action=make_default&id=<agent_id>
-Authorization: Bearer <ADMIN_TOKEN>
+Authorization: Bearer <ADMIN_API_KEY>
 ```
 
 Atomically unsets all previous defaults and sets this agent as default.
@@ -287,10 +295,10 @@ Tests cover:
 
 ```bash
 BASE_URL="http://localhost"
-ADMIN_TOKEN="your_token_here"
+ADMIN_API_KEY="your_admin_api_key_here"
 
 curl -X POST "$BASE_URL/admin-api.php?action=create_agent" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Customer Support",
@@ -308,7 +316,7 @@ curl -X POST "$BASE_URL/admin-api.php?action=create_agent" \
 
 ```bash
 curl -X GET "$BASE_URL/admin-api.php?action=list_agents" \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
+  -H "Authorization: Bearer $ADMIN_API_KEY"
 ```
 
 ### Use Agent in Chat
@@ -328,7 +336,7 @@ curl -X POST "$BASE_URL/chat-unified.php" \
 
 ### Phase 1 Limitations
 
-- Single admin token (no user accounts)
+- Legacy single admin token (no user accounts in Phase 1; retained only for backward compatibility)
 - No UI (command-line/API only)
 - No audit logging
 - No OpenAI Admin API integration (for Prompts/Vector Stores management)
@@ -360,12 +368,12 @@ chmod 755 data
 Verify your token:
 
 ```bash
-# Check token is set in .env
-grep ADMIN_TOKEN .env
+# Check bootstrap credentials are set in .env (temporary)
+grep DEFAULT_ADMIN_EMAIL .env
 
 # Ensure Authorization header is correct
-curl -v -H "Authorization: Bearer wrong_token" ...
-# Should return: {"error": {"message": "Invalid admin token", ...}}
+curl -v -H "Authorization: Bearer wrong_key" ...
+# Should return: {"error": {"message": "Invalid admin credentials", ...}}
 ```
 
 ### Agent Not Found Errors
@@ -374,7 +382,7 @@ Check that agent exists:
 
 ```bash
 curl -X GET "$BASE_URL/admin-api.php?action=list_agents" \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
+  -H "Authorization: Bearer $ADMIN_API_KEY"
 ```
 
 ## Migration from config.php
@@ -398,7 +406,7 @@ Once created, chat requests without `agent_id` will use the default agent if one
 
 ## Next Steps
 
-1. Enable admin in `.env`: Set `ADMIN_ENABLED=true` and generate a secure `ADMIN_TOKEN`
+1. Enable admin in `.env`: Set `ADMIN_ENABLED=true` and provide `DEFAULT_ADMIN_EMAIL`/`DEFAULT_ADMIN_PASSWORD`
 2. Run migrations (automatic on first request)
 3. Create your first agent via Admin API
 4. Test agent in chat requests
