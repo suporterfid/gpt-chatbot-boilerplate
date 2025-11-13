@@ -62,6 +62,9 @@
             return this.request('prompt_builder_catalog');
         }
     };
+    
+    // Recreate the api instance with the extended AdminAPI class
+    window.api = new window.AdminAPI();
 })();
 
 // Prompt Builder State
