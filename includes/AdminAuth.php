@@ -38,13 +38,14 @@ class AdminAuth {
         // Check legacy ADMIN_TOKEN first
         $legacyToken = $this->config['admin']['token'] ?? null;
         if ($legacyToken && $token === $legacyToken) {
+            error_log('Legacy ADMIN_TOKEN authentication used - this flow is deprecated and will be removed in a future release.');
             // Return super-admin user for legacy token
             return [
                 'id' => 'legacy',
                 'email' => 'admin@legacy',
                 'role' => self::ROLE_SUPER_ADMIN,
                 'is_active' => true,
-                'auth_method' => 'legacy_token'
+                'auth_method' => 'legacy_token_deprecated'
             ];
         }
         
@@ -168,10 +169,149 @@ class AdminAuth {
      * @return array|null User data
      */
     public function getUser($userId) {
-        $sql = "SELECT id, email, role, tenant_id, is_active, created_at, updated_at 
+        $sql = "SELECT id, email, role, tenant_id, is_active, created_at, updated_at
                 FROM admin_users WHERE id = ?";
-        
+
         return $this->db->queryOne($sql, [$userId]);
+    }
+
+    /**
+     * Get user by email including password hash (for authentication)
+     */
+    public function getUserByEmail($email) {
+        $sql = "SELECT id, email, password_hash, role, tenant_id, is_active, created_at, updated_at
+                FROM admin_users WHERE email = ?";
+
+        return $this->db->queryOne($sql, [$email]);
+    }
+
+    /**
+     * Authenticate credentials via password verification
+     *
+     * @return array|null
+     */
+    public function authenticateCredentials($email, $password) {
+        $user = $this->getUserByEmail($email);
+
+        if (!$user || !(bool)$user['is_active']) {
+            return null;
+        }
+
+        if (empty($user['password_hash']) || !password_verify($password, $user['password_hash'])) {
+            return null;
+        }
+
+        unset($user['password_hash']);
+        $user['auth_method'] = 'password';
+
+        return $user;
+    }
+
+    /**
+     * Create a persistent session for cookie-based admin auth
+     */
+    public function createSession($userId, $ttl = null, $context = []) {
+        $this->pruneExpiredSessions();
+
+        $token = bin2hex(random_bytes(32));
+        $tokenHash = hash('sha256', $token);
+        $sessionId = $this->generateUUID();
+        $now = date('Y-m-d H:i:s');
+
+        $ttlSeconds = $ttl !== null ? (int)$ttl : (int)($this->config['admin']['session_ttl'] ?? 86400);
+        if ($ttlSeconds <= 0) {
+            $ttlSeconds = 3600;
+        }
+
+        $expiresAt = date('Y-m-d H:i:s', time() + $ttlSeconds);
+
+        $sql = "INSERT INTO admin_sessions ("
+             . " id, user_id, session_token_hash, user_agent, ip_address, expires_at, created_at, updated_at"
+             . " ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+        $this->db->insert($sql, [
+            $sessionId,
+            $userId,
+            $tokenHash,
+            $context['user_agent'] ?? null,
+            $context['ip_address'] ?? null,
+            $expiresAt,
+            $now,
+            $now
+        ]);
+
+        return [
+            'token' => $token,
+            'session_id' => $sessionId,
+            'expires_at' => $expiresAt
+        ];
+    }
+
+    /**
+     * Validate session token and return associated user
+     */
+    public function validateSession($token) {
+        if (empty($token)) {
+            return null;
+        }
+
+        $this->pruneExpiredSessions();
+
+        $tokenHash = hash('sha256', $token);
+        $sql = "SELECT s.id AS session_id, s.user_id, s.expires_at, s.user_agent, s.ip_address,"
+             . " au.email, au.role, au.tenant_id, au.is_active"
+             . " FROM admin_sessions s"
+             . " JOIN admin_users au ON s.user_id = au.id"
+             . " WHERE s.session_token_hash = ?"
+             . " LIMIT 1";
+
+        $session = $this->db->queryOne($sql, [$tokenHash]);
+        if (!$session) {
+            return null;
+        }
+
+        if (!$session['is_active']) {
+            $this->revokeSessionById($session['session_id']);
+            return null;
+        }
+
+        if (strtotime($session['expires_at']) <= time()) {
+            $this->revokeSessionById($session['session_id']);
+            return null;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        try {
+            $this->db->execute(
+                "UPDATE admin_sessions SET updated_at = ? WHERE id = ?",
+                [$now, $session['session_id']]
+            );
+        } catch (Exception $e) {
+            error_log('Failed to update admin session metadata: ' . $e->getMessage());
+        }
+
+        return [
+            'id' => $session['user_id'],
+            'email' => $session['email'],
+            'role' => $session['role'],
+            'tenant_id' => $session['tenant_id'],
+            'is_active' => (bool)$session['is_active'],
+            'auth_method' => 'session',
+            'session_id' => $session['session_id'],
+            'session_expires_at' => $session['expires_at']
+        ];
+    }
+
+    /**
+     * Revoke a session token
+     */
+    public function revokeSession($token) {
+        if (empty($token)) {
+            return;
+        }
+
+        $tokenHash = hash('sha256', $token);
+        $this->db->execute("DELETE FROM admin_sessions WHERE session_token_hash = ?", [$tokenHash]);
     }
     
     /**
@@ -316,6 +456,25 @@ class AdminAuth {
         } catch (Exception $e) {
             // Ignore errors - this is non-critical
             error_log("Failed to update key last_used_at: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Remove expired sessions
+     */
+    private function pruneExpiredSessions() {
+        try {
+            $this->db->execute("DELETE FROM admin_sessions WHERE expires_at <= ?", [date('Y-m-d H:i:s')]);
+        } catch (Exception $e) {
+            error_log('Failed to prune expired admin sessions: ' . $e->getMessage());
+        }
+    }
+
+    private function revokeSessionById($sessionId) {
+        try {
+            $this->db->execute("DELETE FROM admin_sessions WHERE id = ?", [$sessionId]);
+        } catch (Exception $e) {
+            error_log('Failed to revoke admin session: ' . $e->getMessage());
         }
     }
     

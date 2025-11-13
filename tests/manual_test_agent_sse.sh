@@ -58,17 +58,18 @@ if [ -z "$AGENT_ID" ]; then
     exit 1
 fi
 
-# Test 1: EventSource-like GET request with token parameter (what the browser does)
-echo "--- Test 1: EventSource-like GET with token parameter ---"
-echo "This simulates what happens when the browser's EventSource connects"
-echo "URL: http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID&token=..."
+# Test 1: EventSource-like GET request with Authorization header
+echo "--- Test 1: EventSource-like GET with Authorization header ---"
+echo "This simulates what happens when the browser's EventSource connects after login"
+echo "URL: http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID"
 echo
 
 # Use curl with timeout to get first few events
 timeout 5 curl -s -N \
   -H "Accept: text/event-stream" \
   -H "Cache-Control: no-cache" \
-  "http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID&token=$TEST_TOKEN" \
+  -H "Authorization: Bearer $TEST_TOKEN" \
+  "http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID" \
   | head -20
 
 echo
@@ -78,7 +79,8 @@ echo
 # Test 2: Check HTTP status code directly
 echo "--- Test 2: Check HTTP status code ---"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-  "http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID&token=$TEST_TOKEN")
+  -H "Authorization: Bearer $TEST_TOKEN" \
+  "http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID")
 
 echo "HTTP Status Code: $HTTP_CODE"
 if [ "$HTTP_CODE" = "200" ]; then

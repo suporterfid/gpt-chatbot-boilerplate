@@ -17,6 +17,73 @@ const chatCompletionTime = new Trend('chat_completion_time');
 // Configuration
 const BASE_URL = __ENV.BASE_URL || 'http://localhost';
 const ADMIN_TOKEN = __ENV.ADMIN_TOKEN || '';
+const ADMIN_EMAIL = __ENV.ADMIN_EMAIL || '';
+const ADMIN_PASSWORD = __ENV.ADMIN_PASSWORD || '';
+
+let sessionCookie = null;
+
+function ensureSessionCookie() {
+    if (sessionCookie || !ADMIN_EMAIL || !ADMIN_PASSWORD) {
+        return sessionCookie;
+    }
+
+    const payload = JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    const res = http.post(`${BASE_URL}/admin-api.php?action=login`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: '30s',
+    });
+
+    const cookieHeader = res.headers['Set-Cookie'];
+    if (res.status === 200 && cookieHeader) {
+        const raw = Array.isArray(cookieHeader) ? cookieHeader[0] : cookieHeader;
+        const pair = raw.split(';')[0];
+        const [name, value] = pair.split('=');
+        if (name && value) {
+            sessionCookie = { name: name.trim(), value: value.trim() };
+        }
+    }
+
+    return sessionCookie;
+}
+
+function clearSessionCookie() {
+    sessionCookie = null;
+}
+
+function buildAdminParams(options = {}) {
+    const params = {
+        headers: { ...(options.headers || {}) },
+        timeout: options.timeout || '60s',
+    };
+
+    const cookie = ensureSessionCookie();
+    if (cookie) {
+        params.cookies = { ...(options.cookies || {}), [cookie.name]: cookie.value };
+    } else if (ADMIN_TOKEN) {
+        params.headers = {
+            ...params.headers,
+            Authorization: `Bearer ${ADMIN_TOKEN}`,
+        };
+    }
+
+    return params;
+}
+
+function logoutSession() {
+    if (!sessionCookie) {
+        return;
+    }
+
+    const params = {
+        cookies: { [sessionCookie.name]: sessionCookie.value },
+        timeout: '30s',
+    };
+
+    const res = http.post(`${BASE_URL}/admin-api.php?action=logout`, null, params);
+    if (res.status === 200) {
+        clearSessionCookie();
+    }
+}
 
 export const options = {
     stages: [
@@ -87,50 +154,51 @@ function testChatCompletion() {
 }
 
 function testAgentTest() {
-    if (!ADMIN_TOKEN) {
+    if (!ADMIN_TOKEN && (!ADMIN_EMAIL || !ADMIN_PASSWORD)) {
         return; // Skip if no admin token
     }
-    
+
     const payload = JSON.stringify({
         message: 'Hello, this is a test message',
         agent_id: null // Use default agent
     });
-    
-    const params = {
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${ADMIN_TOKEN}`,
-        },
+
+    const params = buildAdminParams({
+        headers: { 'Content-Type': 'application/json' },
         timeout: '60s',
-    };
-    
+    });
+
+    if (!params.cookies && !params.headers.Authorization) {
+        return;
+    }
+
     const response = http.post(`${BASE_URL}/admin-api.php/test_agent`, payload, params);
-    
+
     const success = check(response, {
         'agent test status is 200': (r) => r.status === 200,
     });
-    
+
     errorRate.add(!success);
 }
 
 function testAdminAPI() {
-    if (!ADMIN_TOKEN) {
+    if (!ADMIN_TOKEN && (!ADMIN_EMAIL || !ADMIN_PASSWORD)) {
         return; // Skip if no admin token
     }
-    
-    const params = {
-        headers: {
-            'Authorization': `Bearer ${ADMIN_TOKEN}`,
-        },
-    };
-    
+
+    const params = buildAdminParams();
+
+    if (!params.cookies && !params.headers.Authorization) {
+        return;
+    }
+
     // Test various admin endpoints
     const endpoints = [
         '/admin-api.php/health',
         '/admin-api.php/list_agents',
         '/admin-api.php/job_stats',
     ];
-    
+
     const endpoint = endpoints[Math.floor(Math.random() * endpoints.length)];
     const response = http.get(`${BASE_URL}${endpoint}`, params);
     
@@ -144,8 +212,12 @@ function testAdminAPI() {
             }
         },
     });
-    
+
     errorRate.add(!success);
+
+    if (sessionCookie && Math.random() < 0.1) {
+        logoutSession();
+    }
 }
 
 // Teardown function

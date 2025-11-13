@@ -80,12 +80,15 @@ $agentId1 = $testAgent1['id'];
 echo "Created test agent: $agentId1 with name '{$testAgent1['name']}'\n";
 
 // Test the endpoint with SSE
-$url1 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId1&token=" . urlencode(TEST_TOKEN);
+$url1 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId1";
 
 $ch = curl_init($url1);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HEADER, false);
 curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Authorization: Bearer ' . TEST_TOKEN,
+]);
 $response1 = curl_exec($ch);
 $httpCode1 = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
@@ -178,12 +181,15 @@ $agentId2 = $testAgent2['id'];
 echo "Created test agent: $agentId2 with name '{$testAgent2['name']}'\n";
 
 // Test the endpoint with SSE
-$url2 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId2&token=" . urlencode(TEST_TOKEN);
+$url2 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId2";
 
 $ch = curl_init($url2);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HEADER, false);
 curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Authorization: Bearer ' . TEST_TOKEN,
+]);
 $response2 = curl_exec($ch);
 $httpCode2 = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);

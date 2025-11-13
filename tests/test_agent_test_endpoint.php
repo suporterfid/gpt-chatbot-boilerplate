@@ -40,20 +40,24 @@ $baseUrl = "http://localhost:$port";
 $testsPassed = 0;
 $testsFailed = 0;
 
-function testRequest($name, $url, $method = 'GET', $headers = [], $body = null) {
+function testRequest($name, $url, $method = 'GET', $headers = [], $body = null, $cookie = null) {
     global $testsPassed, $testsFailed;
-    
+
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_HEADER, true);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-    
+
     if (!empty($headers)) {
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
     }
-    
+
     if ($body !== null) {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+    }
+
+    if ($cookie !== null) {
+        curl_setopt($ch, CURLOPT_COOKIE, $cookie);
     }
     
     $response = curl_exec($ch);
@@ -96,6 +100,7 @@ $dbConfig = [
 ];
 
 $db = new DB($dbConfig);
+$adminAuth = new AdminAuth($db, $config);
 
 // Run migrations
 try {
@@ -109,6 +114,19 @@ if (!isset($config['admin']['token']) || $config['admin']['token'] !== TEST_TOKE
     echo "Warning: ADMIN_TOKEN not properly set in config\n";
     $config['admin']['token'] = TEST_TOKEN;
 }
+
+// Create a dedicated session test user
+$sessionEmail = 'session.test+agent@endpoint.local';
+$sessionPassword = 'TestPassw0rd!';
+
+try {
+    $db->execute('DELETE FROM admin_sessions WHERE user_id IN (SELECT id FROM admin_users WHERE email = ?)', [$sessionEmail]);
+    $db->execute('DELETE FROM admin_users WHERE email = ?', [$sessionEmail]);
+} catch (Exception $e) {
+    // Ignore cleanup issues
+}
+
+$sessionUser = $adminAuth->createUser($sessionEmail, $sessionPassword, AdminAuth::ROLE_SUPER_ADMIN);
 
 $agentService = new AgentService($db);
 
@@ -126,76 +144,99 @@ $testAgent = $agentService->createAgent([
 $agentId = $testAgent['id'];
 echo "Created test agent: $agentId\n\n";
 
-// Test 1: GET request with token parameter (should work now)
-echo "--- Test 1: GET request with token parameter ---\n";
-$url1 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId&token=" . urlencode(TEST_TOKEN);
-$result1 = testRequest('GET with token param', $url1);
+// Test 1: Login with credentials to receive session cookie
+echo "--- Test 1: Session login flow ---\n";
+$loginPayload = json_encode(['email' => $sessionEmail, 'password' => $sessionPassword]);
+$loginResult = testRequest('Login with credentials', "$baseUrl/admin-api.php?action=login", 'POST', [
+    'Content-Type: application/json'
+], $loginPayload);
 
-if ($result1['code'] === 200 || strpos($result1['headers'], 'text/event-stream') !== false) {
-    echo "✓ PASS: GET request with token parameter works (got SSE response)\n";
+$sessionCookie = null;
+if ($loginResult['code'] === 200) {
+    foreach (explode("\r\n", $loginResult['headers']) as $headerLine) {
+        if (stripos($headerLine, 'Set-Cookie:') === 0) {
+            $rawCookie = trim(substr($headerLine, strlen('Set-Cookie:')));
+            $sessionCookie = explode(';', $rawCookie)[0];
+            break;
+        }
+    }
+}
+
+if ($sessionCookie) {
+    echo "✓ PASS: Login succeeded and session cookie issued ($sessionCookie)\n";
     $testsPassed++;
 } else {
-    echo "✗ FAIL: GET request with token parameter failed (HTTP {$result1['code']})\n";
-    echo "  Response body: " . substr($result1['body'], 0, 200) . "\n";
+    echo "✗ FAIL: Login failed or session cookie missing (HTTP {$loginResult['code']})\n";
     $testsFailed++;
 }
 
-// Test 2: GET request with Authorization header (should also work)
-echo "\n--- Test 2: GET request with Authorization header ---\n";
-$url2 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId";
-$result2 = testRequest('GET with Auth header', $url2, 'GET', ["Authorization: Bearer " . TEST_TOKEN]);
+// Test 2: GET request with session cookie should stream SSE
+echo "\n--- Test 2: GET request with session cookie ---\n";
+$urlSession = "$baseUrl/admin-api.php?action=test_agent&id=$agentId";
+$resultSession = testRequest('GET with session cookie', $urlSession, 'GET', [], null, $sessionCookie);
 
-if ($result2['code'] === 200 || strpos($result2['headers'], 'text/event-stream') !== false) {
+if ($resultSession['code'] === 200 || strpos($resultSession['headers'], 'text/event-stream') !== false) {
+    echo "✓ PASS: GET request with session cookie works\n";
+    $testsPassed++;
+} else {
+    echo "✗ FAIL: GET request with session cookie failed (HTTP {$resultSession['code']})\n";
+    echo "  Response body: " . substr($resultSession['body'], 0, 200) . "\n";
+    $testsFailed++;
+}
+
+// Test 3: GET request with Authorization header for API key compatibility
+echo "\n--- Test 3: GET request with Authorization header ---\n";
+$resultApiKey = testRequest('GET with Authorization header', $urlSession, 'GET', ["Authorization: Bearer " . TEST_TOKEN]);
+
+if ($resultApiKey['code'] === 200 || strpos($resultApiKey['headers'], 'text/event-stream') !== false) {
     echo "✓ PASS: GET request with Authorization header works\n";
     $testsPassed++;
 } else {
-    echo "✗ FAIL: GET request with Authorization header failed (HTTP {$result2['code']})\n";
-    echo "  Response body: " . substr($result2['body'], 0, 200) . "\n";
+    echo "✗ FAIL: GET request with Authorization header failed (HTTP {$resultApiKey['code']})\n";
+    echo "  Response body: " . substr($resultApiKey['body'], 0, 200) . "\n";
     $testsFailed++;
 }
 
-// Test 3: GET request with admin_token parameter (legacy, should still work)
-echo "\n--- Test 3: GET request with admin_token parameter ---\n";
-$url3 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId&admin_token=" . urlencode(TEST_TOKEN);
-$result3 = testRequest('GET with admin_token param', $url3);
+// Test 4: Query parameter token should be rejected
+echo "\n--- Test 4: GET request with token query parameter (deprecated) ---\n";
+$urlToken = "$baseUrl/admin-api.php?action=test_agent&id=$agentId&token=" . urlencode(TEST_TOKEN);
+$resultToken = testRequest('GET with token param (deprecated)', $urlToken);
 
-if ($result3['code'] === 200 || strpos($result3['headers'], 'text/event-stream') !== false) {
-    echo "✓ PASS: GET request with admin_token parameter works (legacy support)\n";
+if ($resultToken['code'] === 403) {
+    echo "✓ PASS: Query token rejected with 403 as expected\n";
     $testsPassed++;
 } else {
-    echo "✗ FAIL: GET request with admin_token parameter failed (HTTP {$result3['code']})\n";
-    echo "  Response body: " . substr($result3['body'], 0, 200) . "\n";
+    echo "✗ FAIL: Query token should be rejected with 403, got {$resultToken['code']}\n";
     $testsFailed++;
 }
 
-// Test 4: GET request without authentication (should fail with 403)
-echo "\n--- Test 4: GET request without authentication ---\n";
-$url4 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId";
-$result4 = testRequest('GET without auth', $url4);
+// Test 5: Logout should revoke session cookie
+echo "\n--- Test 5: Logout invalidates session ---\n";
+$logoutResult = testRequest('Logout with session cookie', "$baseUrl/admin-api.php?action=logout", 'POST', [], null, $sessionCookie);
 
-if ($result4['code'] === 403) {
-    echo "✓ PASS: GET request without authentication properly rejected (403)\n";
+if ($logoutResult['code'] === 200) {
+    echo "✓ PASS: Logout endpoint responded with 200\n";
     $testsPassed++;
 } else {
-    echo "✗ FAIL: GET request without authentication should return 403, got {$result4['code']}\n";
+    echo "✗ FAIL: Logout expected HTTP 200, got {$logoutResult['code']}\n";
     $testsFailed++;
 }
 
-// Test 5: POST request with JSON body (should still work for backward compatibility)
-echo "\n--- Test 5: POST request with JSON body ---\n";
-$url5 = "$baseUrl/admin-api.php?action=test_agent&id=$agentId";
-$postData = json_encode(['message' => 'Test message from POST']);
-$result5 = testRequest('POST with JSON', $url5, 'POST', [
-    "Authorization: Bearer " . TEST_TOKEN,
-    "Content-Type: application/json"
-], $postData);
-
-if ($result5['code'] === 200 || strpos($result5['headers'], 'text/event-stream') !== false) {
-    echo "✓ PASS: POST request with JSON body works (backward compatibility)\n";
+$postLogout = testRequest('GET after logout', $urlSession, 'GET', [], null, $sessionCookie);
+if ($postLogout['code'] === 403) {
+    echo "✓ PASS: Session cookie no longer valid after logout\n";
     $testsPassed++;
 } else {
-    echo "✗ FAIL: POST request with JSON body failed (HTTP {$result5['code']})\n";
-    echo "  Response body: " . substr($result5['body'], 0, 200) . "\n";
+    echo "✗ FAIL: Session should be invalid after logout (expected 403, got {$postLogout['code']})\n";
+    $testsFailed++;
+}
+
+$currentUserResult = testRequest('Current user after logout', "$baseUrl/admin-api.php?action=current_user", 'GET', [], null, $sessionCookie);
+if ($currentUserResult['code'] === 401) {
+    echo "✓ PASS: current_user requires active session (401 after logout)\n";
+    $testsPassed++;
+} else {
+    echo "✗ FAIL: current_user should return 401 after logout, got {$currentUserResult['code']}\n";
     $testsFailed++;
 }
 

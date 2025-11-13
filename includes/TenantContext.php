@@ -9,6 +9,7 @@ class TenantContext {
     private static $instance = null;
     private $currentTenantId = null;
     private $currentUser = null;
+    private $authenticationMethod = null;
     
     /**
      * Private constructor for singleton pattern
@@ -34,6 +35,7 @@ class TenantContext {
     public function setFromUser($user) {
         $this->currentUser = $user;
         $this->currentTenantId = $user['tenant_id'] ?? null;
+        $this->authenticationMethod = $user['auth_method'] ?? null;
     }
     
     /**
@@ -61,6 +63,13 @@ class TenantContext {
      */
     public function getUser() {
         return $this->currentUser;
+    }
+
+    /**
+     * Get current authentication method (session, api_key, etc.)
+     */
+    public function getAuthenticationMethod() {
+        return $this->authenticationMethod;
     }
     
     /**
@@ -179,6 +188,7 @@ class TenantContext {
     public function clear() {
         $this->currentTenantId = null;
         $this->currentUser = null;
+        $this->authenticationMethod = null;
     }
     
     /**
