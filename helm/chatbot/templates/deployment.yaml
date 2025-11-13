@@ -54,8 +54,10 @@ spec:
         - name: TZ
           value: {{ .Values.global.timezone }}
         {{- range $key, $value := .Values.env }}
+        {{- if and (ne $key "DEFAULT_ADMIN_EMAIL") (ne $key "DEFAULT_ADMIN_PASSWORD") }}
         - name: {{ $key }}
           value: {{ $value | quote }}
+        {{- end }}
         {{- end }}
         - name: OPENAI_API_KEY
           valueFrom:
@@ -67,11 +69,26 @@ spec:
             secretKeyRef:
               name: {{ include "chatbot.fullname" . }}
               key: db-password
-        - name: ADMIN_TOKEN
+        {{- if .Values.secrets.defaultAdminEmail }}
+        - name: DEFAULT_ADMIN_EMAIL
           valueFrom:
             secretKeyRef:
               name: {{ include "chatbot.fullname" . }}
-              key: admin-token
+              key: default-admin-email
+        {{- else if .Values.env.DEFAULT_ADMIN_EMAIL }}
+        - name: DEFAULT_ADMIN_EMAIL
+          value: {{ .Values.env.DEFAULT_ADMIN_EMAIL | quote }}
+        {{- end }}
+        {{- if .Values.secrets.defaultAdminPassword }}
+        - name: DEFAULT_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "chatbot.fullname" . }}
+              key: default-admin-password
+        {{- else if .Values.env.DEFAULT_ADMIN_PASSWORD }}
+        - name: DEFAULT_ADMIN_PASSWORD
+          value: {{ .Values.env.DEFAULT_ADMIN_PASSWORD | quote }}
+        {{- end }}
         {{- if .Values.persistence.enabled }}
         volumeMounts:
         - name: uploads

@@ -160,6 +160,10 @@ env:
   
   ## Other
   ADMIN_EMAIL: "admin@example.com"
+  # ⚠️ The following defaults are for initial bootstrap only. Replace via
+  #     encrypted secrets or overrides immediately after deployment.
+  DEFAULT_ADMIN_EMAIL: "admin@example.com"
+  DEFAULT_ADMIN_PASSWORD: ""
 
 ## Secrets (use external secrets or sealed secrets in production)
 secrets:
@@ -167,7 +171,9 @@ secrets:
   # DO NOT commit real secrets to Git
   openaiApiKey: ""  # base64 encoded
   dbPassword: ""  # base64 encoded
-  adminToken: ""  # base64 encoded
+  # Optional bootstrap credentials; rotate or disable after first login
+  defaultAdminEmail: ""      # base64 encoded
+  defaultAdminPassword: ""  # base64 encoded
 
 ## Persistent Storage
 persistence:

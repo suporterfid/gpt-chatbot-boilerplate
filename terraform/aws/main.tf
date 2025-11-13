@@ -333,13 +333,18 @@ resource "aws_secretsmanager_secret" "chatbot_secrets" {
 
 resource "aws_secretsmanager_secret_version" "chatbot_secrets" {
   secret_id = aws_secretsmanager_secret.chatbot_secrets.id
-  
-  secret_string = jsonencode({
-    openai_api_key = var.openai_api_key
-    db_password    = var.db_password
-    redis_auth_token = var.redis_auth_token
-    admin_token    = var.admin_token
-  })
+
+  secret_string = jsonencode(
+    merge(
+      {
+        openai_api_key   = var.openai_api_key
+        db_password      = var.db_password
+        redis_auth_token = var.redis_auth_token
+      },
+      var.default_admin_email != "" ? { default_admin_email = var.default_admin_email } : {},
+      var.default_admin_password != "" ? { default_admin_password = var.default_admin_password } : {}
+    )
+  )
 }
 
 ##############################################################################
