@@ -79,7 +79,9 @@ let promptBuilderState = {
     guardrailsCatalog: [],
     selectedGuardrails: [],
     generating: false,
-    generatedPrompt: null
+    generatedPrompt: null,
+    previouslyFocusedElement: null,
+    focusTrapHandler: null
 };
 
 const promptBuilderHooks = {
@@ -174,7 +176,95 @@ async function showPromptBuilderModal(agentId, agentName) {
     hideGeneratedPrompt();
     
     // Show modal
-    modal.style.display = 'flex';
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    if (document.body) {
+        document.body.classList.add('modal-overlay-open');
+    }
+
+    // Store element that opened the modal to restore focus later
+    promptBuilderState.previouslyFocusedElement = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    const focusableSelectors = [
+        'a[href]',
+        'button:not([disabled])',
+        'textarea:not([disabled])',
+        'input:not([disabled])',
+        'select:not([disabled])',
+        '[tabindex]:not([tabindex="-1"])'
+    ].join(', ');
+
+    const getFocusableElements = () => {
+        const elements = Array.from(modal.querySelectorAll(focusableSelectors));
+        return elements.filter(element => {
+            const style = window.getComputedStyle(element);
+            const isHidden = style.display === 'none' || style.visibility === 'hidden';
+            const withinHiddenParent = element.closest('.hidden');
+            return !isHidden && !withinHiddenParent;
+        });
+    };
+
+    if (promptBuilderState.focusTrapHandler) {
+        modal.removeEventListener('keydown', promptBuilderState.focusTrapHandler);
+    }
+
+    const handleKeydown = (event) => {
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closePromptBuilderModal();
+            return;
+        }
+
+        if (event.key !== 'Tab') {
+            return;
+        }
+
+        const focusableElements = getFocusableElements();
+        if (focusableElements.length === 0) {
+            event.preventDefault();
+            return;
+        }
+
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+        const activeElement = document.activeElement;
+
+        if (!focusableElements.includes(activeElement)) {
+            event.preventDefault();
+            if (event.shiftKey) {
+                lastElement.focus();
+            } else {
+                firstElement.focus();
+            }
+            return;
+        }
+
+        if (event.shiftKey) {
+            if (activeElement === firstElement || !modal.contains(activeElement)) {
+                event.preventDefault();
+                lastElement.focus();
+            }
+        } else if (activeElement === lastElement) {
+            event.preventDefault();
+            firstElement.focus();
+        }
+    };
+
+    promptBuilderState.focusTrapHandler = handleKeydown;
+    modal.addEventListener('keydown', handleKeydown);
+
+    requestAnimationFrame(() => {
+        const modalTitle = document.getElementById('prompt-builder-modal-title');
+        const focusableElements = getFocusableElements();
+
+        if (modalTitle) {
+            modalTitle.focus();
+        } else if (focusableElements.length > 0) {
+            focusableElements[0].focus();
+        }
+    });
 }
 
 /**
@@ -182,11 +272,18 @@ async function showPromptBuilderModal(agentId, agentName) {
  */
 function createPromptBuilderModal() {
     const modalHTML = `
-        <div id="prompt-builder-modal" class="modal" style="display: none;">
-            <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+        <div
+            id="prompt-builder-modal"
+            class="modal modal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="prompt-builder-modal-title"
+            aria-hidden="true"
+        >
+            <div class="modal-content prompt-builder-modal-content">
                 <div class="modal-header">
-                    <h2>Prompt Builder - <span id="prompt-builder-agent-name"></span></h2>
-                    <button class="close-btn" onclick="closePromptBuilderModal()">&times;</button>
+                    <h2 id="prompt-builder-modal-title" tabindex="-1">Prompt Builder - <span id="prompt-builder-agent-name"></span></h2>
+                    <button class="close-btn" type="button" onclick="closePromptBuilderModal()" aria-label="Close Prompt Builder">&times;</button>
                 </div>
                 <div class="modal-body">
                     <!-- Step 1: Generate from Idea -->
@@ -234,7 +331,7 @@ function createPromptBuilderModal() {
                     </div>
                     
                     <!-- Step 2: Review & Edit Generated Prompt -->
-                    <div id="prompt-builder-result" style="display: none;">
+                    <div id="prompt-builder-result" class="prompt-builder-section hidden">
                         <h3>Generated Specification</h3>
                         <p class="text-muted">Review and edit the specification below. You can save it as a new version or activate it immediately.</p>
                         
@@ -244,17 +341,16 @@ function createPromptBuilderModal() {
                             <span class="badge">Guardrails: <span id="result-guardrails"></span></span>
                         </div>
                         
-                        <div class="form-group" style="margin-top: 20px;">
+                        <div class="form-group form-group-spaced">
                             <label>Specification (Markdown)</label>
-                            <textarea 
-                                id="prompt-builder-output" 
-                                class="form-control markdown-editor" 
+                            <textarea
+                                id="prompt-builder-output"
+                                class="form-control markdown-editor"
                                 rows="20"
-                                style="font-family: monospace; font-size: 13px;"
                             ></textarea>
                         </div>
-                        
-                        <div class="markdown-preview" id="markdown-preview" style="display: none;">
+
+                        <div class="markdown-preview hidden" id="markdown-preview">
                             <label>Preview</label>
                             <div id="markdown-preview-content" class="markdown-content"></div>
                         </div>
@@ -276,7 +372,7 @@ function createPromptBuilderModal() {
                     </div>
                     
                     <!-- Version History -->
-                    <div style="margin-top: 30px; border-top: 1px solid #ddd; padding-top: 20px;">
+                    <div class="prompt-builder-history">
                         <h3>Version History</h3>
                         <div id="prompt-versions-list">
                             <button class="btn btn-secondary" onclick="loadPromptVersions()">Load Versions</button>
@@ -384,9 +480,17 @@ async function generatePromptSpec() {
  * Show generated prompt
  */
 function showGeneratedPrompt(result) {
-    document.getElementById('prompt-builder-wizard').style.display = 'none';
-    document.getElementById('prompt-builder-result').style.display = 'block';
-    
+    const wizard = document.getElementById('prompt-builder-wizard');
+    const resultSection = document.getElementById('prompt-builder-result');
+
+    if (wizard) {
+        wizard.classList.add('hidden');
+    }
+
+    if (resultSection) {
+        resultSection.classList.remove('hidden');
+    }
+
     // Populate result
     document.getElementById('result-version').textContent = result.version;
     document.getElementById('result-latency').textContent = result.latency_ms || 'N/A';
@@ -398,8 +502,21 @@ function showGeneratedPrompt(result) {
  * Hide generated prompt view
  */
 function hideGeneratedPrompt() {
-    document.getElementById('prompt-builder-wizard').style.display = 'block';
-    document.getElementById('prompt-builder-result').style.display = 'none';
+    const wizard = document.getElementById('prompt-builder-wizard');
+    const resultSection = document.getElementById('prompt-builder-result');
+    const preview = document.getElementById('markdown-preview');
+
+    if (wizard) {
+        wizard.classList.remove('hidden');
+    }
+
+    if (resultSection) {
+        resultSection.classList.add('hidden');
+    }
+
+    if (preview) {
+        preview.classList.add('hidden');
+    }
 }
 
 /**
@@ -417,14 +534,14 @@ function toggleMarkdownPreview() {
     const preview = document.getElementById('markdown-preview');
     const content = document.getElementById('markdown-preview-content');
     const markdown = document.getElementById('prompt-builder-output').value;
-    
-    if (preview.style.display === 'none') {
+
+    if (preview.classList.contains('hidden')) {
         // Simple markdown to HTML (basic implementation)
         const html = markdownToHtml(markdown);
         content.innerHTML = html;
-        preview.style.display = 'block';
+        preview.classList.remove('hidden');
     } else {
-        preview.style.display = 'none';
+        preview.classList.add('hidden');
     }
 }
 
@@ -566,10 +683,18 @@ async function loadPromptVersions() {
 async function viewPromptVersion(version) {
     try {
         const data = await api.getPromptVersion(promptBuilderState.currentAgentId, version);
-        
-        document.getElementById('prompt-builder-wizard').style.display = 'none';
-        document.getElementById('prompt-builder-result').style.display = 'block';
-        
+
+        const wizard = document.getElementById('prompt-builder-wizard');
+        const resultSection = document.getElementById('prompt-builder-result');
+
+        if (wizard) {
+            wizard.classList.add('hidden');
+        }
+
+        if (resultSection) {
+            resultSection.classList.remove('hidden');
+        }
+
         document.getElementById('result-version').textContent = data.version;
         document.getElementById('result-latency').textContent = 'N/A';
         document.getElementById('result-guardrails').textContent = data.guardrails.map(g => g.key || g).join(', ');
@@ -638,8 +763,24 @@ async function deactivateCurrentPrompt() {
 function closePromptBuilderModal() {
     const modal = document.getElementById('prompt-builder-modal');
     if (modal) {
-        modal.style.display = 'none';
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+
+        if (promptBuilderState.focusTrapHandler) {
+            modal.removeEventListener('keydown', promptBuilderState.focusTrapHandler);
+            promptBuilderState.focusTrapHandler = null;
+        }
     }
+
+    if (document.body) {
+        document.body.classList.remove('modal-overlay-open');
+    }
+
+    if (promptBuilderState.previouslyFocusedElement && typeof promptBuilderState.previouslyFocusedElement.focus === 'function') {
+        promptBuilderState.previouslyFocusedElement.focus();
+    }
+
+    promptBuilderState.previouslyFocusedElement = null;
 
     // Reset state
     promptBuilderState.currentAgentId = null;
@@ -649,7 +790,7 @@ function closePromptBuilderModal() {
 // Close modal on outside click
 window.addEventListener('click', (e) => {
     const modal = document.getElementById('prompt-builder-modal');
-    if (modal && e.target === modal) {
+    if (modal && modal.classList.contains('open') && e.target === modal) {
         closePromptBuilderModal();
     }
 });

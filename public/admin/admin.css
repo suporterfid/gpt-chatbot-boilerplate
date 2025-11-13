@@ -539,6 +539,28 @@ tr:hover {
     justify-content: center;
 }
 
+.modal-overlay {
+    display: none;
+}
+
+.modal-overlay.open {
+    display: flex;
+}
+
+.modal-overlay button:focus-visible,
+.modal-overlay [href]:focus-visible,
+.modal-overlay textarea:focus-visible,
+.modal-overlay input:focus-visible,
+.modal-overlay select:focus-visible,
+.modal-overlay [tabindex]:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+body.modal-overlay-open {
+    overflow: hidden;
+}
+
 .modal-content {
     background-color: var(--bg-primary);
     border-radius: 0.5rem;
@@ -946,10 +968,22 @@ code {
     border-color: #6d28d9;
 }
 
-#prompt-builder-modal .modal-content {
+.prompt-builder-modal-content {
     max-width: 900px;
-    max-height: 90vh;
-    overflow-y: auto;
+}
+
+.prompt-builder-section {
+    display: block;
+}
+
+.form-group-spaced {
+    margin-top: 20px;
+}
+
+.prompt-builder-history {
+    margin-top: 30px;
+    border-top: 1px solid var(--border-color);
+    padding-top: 20px;
 }
 
 .guardrails-container {
