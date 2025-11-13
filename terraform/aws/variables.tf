@@ -134,9 +134,16 @@ variable "openai_api_key" {
   sensitive   = true
 }
 
-variable "admin_token" {
-  description = "Admin API token"
+variable "default_admin_email" {
+  description = "Optional bootstrap admin email; rotate or disable after initial login"
   type        = string
+  default     = ""
+}
+
+variable "default_admin_password" {
+  description = "Optional bootstrap admin password; rotate immediately after deployment"
+  type        = string
+  default     = ""
   sensitive   = true
 }
 
