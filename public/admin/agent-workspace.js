@@ -336,6 +336,16 @@
             ? wizardState.data.status.toLowerCase() === 'ready'
             : false;
 
+        const summaryHtml = renderAgentSummarySection(wizardState.data, {
+            title: 'Resumo do agente',
+            layout: 'inline',
+            compact: true,
+            channels: wizardState.channels
+        });
+        const summaryBlock = summaryHtml
+            ? `<div class="tester-card tester-summary-card">${summaryHtml}</div>`
+            : '';
+
         return `
             <div class="tester-panel">
                 <div class="tester-header">
@@ -348,6 +358,8 @@
                         ${isDefault ? '<span class="badge badge-success">Padrão</span>' : ''}
                     </div>
                 </div>
+
+                ${summaryBlock}
 
                 <div class="tester-card">
                     <div class="tester-card-header">
@@ -1292,63 +1304,105 @@
             return;
         }
 
-        const data = wizardState.data;
-        const vectorStores = Array.isArray(data.vector_store_ids) ? data.vector_store_ids : (data.vector_store_ids || '').split(',').map(item => item.trim()).filter(Boolean);
+        const summaryHtml = renderAgentSummarySection(wizardState.data, {
+            title: 'Resumo do agente',
+            layout: 'stacked',
+            compact: false,
+            channels: wizardState.channels
+        });
+
+        container.innerHTML = summaryHtml;
+    }
+
+    function renderAgentSummarySection(agentData, options = {}) {
+        const data = agentData || {};
+        const channels = Array.isArray(options.channels) ? options.channels : Array.isArray(data.channels) ? data.channels : [];
+        const vectorStoreLookup = options.vectorStoreLookup || (id => {
+            const stores = wizardState.resources?.vectorStores || [];
+            return stores.find(store => (store?.openai_store_id || '') === id);
+        });
+
+        const summaryPayload = {
+            ...data,
+            channels
+        };
+
         if (window.AgentSummaryComponent && typeof window.AgentSummaryComponent.render === 'function') {
-            const lookup = id => wizardState.resources.vectorStores.find(store => (store.openai_store_id || '') === id);
-            const summaryPayload = {
-                ...data,
-                channels: wizardState.channels
-            };
-            container.innerHTML = window.AgentSummaryComponent.render(summaryPayload, {
-                title: 'Resumo do agente',
-                layout: 'stacked',
-                vectorStoreLookup: lookup,
-                compact: false
+            return window.AgentSummaryComponent.render(summaryPayload, {
+                title: options.title ?? 'Resumo do agente',
+                layout: options.layout ?? 'stacked',
+                compact: options.compact ?? false,
+                showTitle: options.showTitle === false ? false : true,
+                vectorStoreLookup
             });
-            return;
         }
 
-        container.innerHTML = `
-            <dl class="wizard-summary-list">
+        return renderLegacyAgentSummary(summaryPayload, {
+            title: options.title,
+            showTitle: options.showTitle,
+            vectorStoreLookup
+        });
+    }
+
+    function renderLegacyAgentSummary(agentData, options = {}) {
+        const data = agentData || {};
+        const vectorStoreIds = parseVectorStoreIds(data.vector_store_ids);
+        const vectorStoreLookup = options.vectorStoreLookup;
+        const resolvedStores = vectorStoreIds.map(id => {
+            const store = typeof vectorStoreLookup === 'function' ? vectorStoreLookup(id) : null;
+            return store ? (store.name || store.display_name || store.openai_store_id || id) : id;
+        });
+        const channels = Array.isArray(data.channels) ? data.channels : [];
+        const connectedChannels = channels.filter(channel => channel && channel.enabled).length;
+        const channelSummary = channels.length
+            ? `${connectedChannels}/${channels.length} canais conectados`
+            : 'Nenhum canal configurado';
+
+        const rows = [
+            { label: 'Nome', value: data.name || '—' },
+            { label: 'Descrição', value: data.description || '—' },
+            { label: 'API', value: data.api_type || '—' },
+            { label: 'Modelo', value: data.model || 'Padrão' },
+            { label: 'Temperatura', value: data.temperature || '—' },
+            { label: 'Top P', value: data.top_p || '—' },
+            { label: 'Max Tokens', value: data.max_output_tokens || '—' },
+            { label: 'Canais', value: channelSummary },
+            { label: 'Vector stores', value: resolvedStores.length ? resolvedStores.join(', ') : '—' },
+            { label: 'File Search', value: data.enable_file_search ? 'Ativado' : 'Desativado' }
+        ];
+
+        const title = options.showTitle === false ? '' : `<div class="agent-summary-title">${escapeHtml(options.title || 'Resumo do agente')}</div>`;
+        const list = rows.map(row => `
                 <div>
-                    <dt>Nome</dt>
-                    <dd>${escapeHtml(data.name) || '—'}</dd>
+                    <dt>${escapeHtml(row.label)}</dt>
+                    <dd>${escapeHtml(String(row.value))}</dd>
                 </div>
-                <div>
-                    <dt>Descrição</dt>
-                    <dd>${escapeHtml(data.description) || '—'}</dd>
-                </div>
-                <div>
-                    <dt>API</dt>
-                    <dd>${escapeHtml(data.api_type)}</dd>
-                </div>
-                <div>
-                    <dt>Modelo</dt>
-                    <dd>${escapeHtml(data.model || 'Padrão')}</dd>
-                </div>
-                <div>
-                    <dt>Temperatura</dt>
-                    <dd>${escapeHtml(data.temperature || '—')}</dd>
-                </div>
-                <div>
-                    <dt>Top P</dt>
-                    <dd>${escapeHtml(data.top_p || '—')}</dd>
-                </div>
-                <div>
-                    <dt>Max Tokens</dt>
-                    <dd>${escapeHtml(data.max_output_tokens || '—')}</dd>
-                </div>
-                <div>
-                    <dt>Vector Stores</dt>
-                    <dd>${vectorStores.length ? escapeHtml(vectorStores.join(', ')) : '—'}</dd>
-                </div>
-                <div>
-                    <dt>File Search</dt>
-                    <dd>${data.enable_file_search ? 'Ativado' : 'Desativado'}</dd>
-                </div>
-            </dl>
+            `).join('');
+
+        return `
+            <div class="agent-summary agent-summary-legacy">
+                ${title}
+                <dl class="wizard-summary-list">
+                    ${list}
+                </dl>
+            </div>
         `;
+    }
+
+    function parseVectorStoreIds(value) {
+        if (!value) {
+            return [];
+        }
+
+        if (Array.isArray(value)) {
+            return value.filter(Boolean);
+        }
+
+        if (typeof value === 'string') {
+            return value.split(',').map(item => item.trim()).filter(Boolean);
+        }
+
+        return [];
     }
 
     function updatePromptBuilderPreview() {
