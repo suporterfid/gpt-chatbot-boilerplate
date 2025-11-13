@@ -152,6 +152,10 @@ class AdminAPI {
             config.body = JSON.stringify(options.body);
         }
 
+        if (options.signal) {
+            config.signal = options.signal;
+        }
+
         try {
             const response = await fetch(url, config);
             const data = await response.json();
