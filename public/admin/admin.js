@@ -4047,3 +4047,348 @@ async function exportConsents() {
     }
 }
 
+// ==================== Agent Tester Module ====================
+
+(function() {
+    // Don't overwrite if already exists
+    if (window.agentTester) {
+        console.log('agentTester already initialized');
+        return;
+    }
+
+    // Modal HTML template
+    const modalHTML = `
+        <div id="agent-tester-modal" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 800px; height: 80vh; display: flex; flex-direction: column;">
+                <div class="modal-header">
+                    <h2 id="agent-tester-title">Testar Agente</h2>
+                    <button class="modal-close" id="agent-tester-close" aria-label="Fechar">&times;</button>
+                </div>
+                <div class="modal-body" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                    <div id="agent-tester-history" style="flex: 1; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 4px; padding: 1rem; margin-bottom: 1rem; background: #f9fafb;"></div>
+                    <div style="display: flex; gap: 0.5rem; flex-direction: column;">
+                        <textarea id="agent-tester-input" placeholder="Digite sua mensagem..." style="width: 100%; min-height: 80px; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; font-family: inherit; resize: vertical;"></textarea>
+                        <div style="display: flex; gap: 0.5rem; justify-content: space-between;">
+                            <div id="agent-tester-status" style="color: #6b7280; font-size: 0.875rem; display: flex; align-items: center;"></div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button id="agent-tester-clear" class="btn btn-secondary btn-small">Limpar histórico</button>
+                                <button id="agent-tester-send" class="btn btn-primary">Enviar mensagem</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Helper functions
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.toString().replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function appendMessageToHistory(role, content) {
+        const history = document.getElementById('agent-tester-history');
+        if (!history) return;
+
+        const messageDiv = document.createElement('div');
+        messageDiv.style.marginBottom = '1rem';
+        messageDiv.style.padding = '0.75rem';
+        messageDiv.style.borderRadius = '4px';
+        messageDiv.style.backgroundColor = role === 'user' ? '#e0f2fe' : '#f3f4f6';
+        messageDiv.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 0.25rem; color: ${role === 'user' ? '#0369a1' : '#374151'};">
+                ${role === 'user' ? 'Você' : 'Assistente'}
+            </div>
+            <div style="white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(content)}</div>
+        `;
+        history.appendChild(messageDiv);
+        history.scrollTop = history.scrollHeight;
+    }
+
+    function setStatus(message, type = 'info') {
+        const status = document.getElementById('agent-tester-status');
+        if (!status) return;
+
+        const colors = {
+            info: '#6b7280',
+            success: '#10b981',
+            error: '#ef4444',
+            warning: '#f59e0b'
+        };
+
+        status.textContent = message;
+        status.style.color = colors[type] || colors.info;
+    }
+
+    function clearHistory() {
+        const history = document.getElementById('agent-tester-history');
+        if (history) {
+            history.innerHTML = '';
+        }
+        setStatus('');
+    }
+
+    async function sendMessageAndStream(agentId, message) {
+        console.log('[agentTester] Enviando mensagem para agente:', agentId);
+        console.log('[agentTester] Mensagem:', message);
+
+        const sendButton = document.getElementById('agent-tester-send');
+        const inputField = document.getElementById('agent-tester-input');
+
+        if (sendButton) sendButton.disabled = true;
+        if (inputField) inputField.disabled = true;
+        setStatus('Enviando...', 'info');
+
+        // Append user message to history
+        appendMessageToHistory('user', message);
+
+        try {
+            // Get test URL from API
+            const testUrl = api.testAgent(agentId);
+            console.log('[agentTester] URL de teste:', testUrl);
+
+            const token = getStoredToken();
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+                headers['X-Admin-Token'] = token;
+            }
+
+            const requestBody = {
+                message: message,
+                stream: true
+            };
+
+            console.log('[agentTester] Enviando POST para:', testUrl);
+            console.log('[agentTester] Body:', requestBody);
+
+            const response = await fetch(testUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(requestBody)
+            });
+
+            console.log('[agentTester] Response status:', response.status);
+            console.log('[agentTester] Response headers:', Object.fromEntries(response.headers.entries()));
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[agentTester] Erro na resposta:', errorText);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+
+            // Check if streaming is supported
+            const reader = response.body?.getReader();
+            if (reader) {
+                console.log('[agentTester] Usando streaming via reader');
+                setStatus('Recebendo resposta...', 'info');
+
+                const decoder = new TextDecoder();
+                let assistantMessage = '';
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+
+                    if (done) {
+                        console.log('[agentTester] Stream concluído');
+                        break;
+                    }
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    console.log('[agentTester] Chunk recebido:', chunk.substring(0, 100));
+                    buffer += chunk;
+
+                    // Try to parse SSE events (data: {...})
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.substring(6).trim();
+                            if (data === '[DONE]') {
+                                console.log('[agentTester] Recebido [DONE]');
+                                continue;
+                            }
+
+                            try {
+                                const event = JSON.parse(data);
+                                console.log('[agentTester] Event parsed:', event.type || 'unknown');
+
+                                if (event.type === 'chunk' && event.content) {
+                                    assistantMessage += event.content;
+                                } else if (event.content) {
+                                    assistantMessage += event.content;
+                                }
+                            } catch (e) {
+                                // Not JSON, treat as plain text
+                                console.log('[agentTester] Texto não-JSON, adicionando ao conteúdo');
+                                assistantMessage += data;
+                            }
+                        } else if (line.trim()) {
+                            // Plain text line
+                            assistantMessage += line + '\n';
+                        }
+                    }
+                }
+
+                if (assistantMessage.trim()) {
+                    appendMessageToHistory('assistant', assistantMessage.trim());
+                    setStatus('Resposta recebida', 'success');
+                } else {
+                    setStatus('Nenhum conteúdo recebido', 'warning');
+                }
+            } else {
+                // Fallback to JSON or text
+                console.log('[agentTester] Streaming não disponível, usando fallback');
+                const contentType = response.headers.get('content-type');
+
+                if (contentType && contentType.includes('application/json')) {
+                    const data = await response.json();
+                    console.log('[agentTester] Resposta JSON:', data);
+
+                    let assistantMessage = '';
+                    if (data.reply) {
+                        assistantMessage = data.reply;
+                    } else if (data.message) {
+                        assistantMessage = data.message;
+                    } else if (data.response) {
+                        assistantMessage = data.response;
+                    } else {
+                        assistantMessage = JSON.stringify(data, null, 2);
+                    }
+
+                    appendMessageToHistory('assistant', assistantMessage);
+                    setStatus('Resposta recebida', 'success');
+                } else {
+                    const text = await response.text();
+                    console.log('[agentTester] Resposta texto:', text.substring(0, 200));
+                    appendMessageToHistory('assistant', text);
+                    setStatus('Resposta recebida', 'success');
+                }
+            }
+
+        } catch (error) {
+            console.error('[agentTester] Erro ao enviar mensagem:', error);
+            setStatus('Erro: ' + error.message, 'error');
+            appendMessageToHistory('assistant', '❌ Erro: ' + error.message);
+        } finally {
+            if (sendButton) sendButton.disabled = false;
+            if (inputField) {
+                inputField.disabled = false;
+                inputField.value = '';
+                inputField.focus();
+            }
+        }
+    }
+
+    function initModal() {
+        // Check if modal already exists
+        if (document.getElementById('agent-tester-modal')) {
+            console.log('[agentTester] Modal já existe');
+            return;
+        }
+
+        // Inject modal HTML
+        const container = document.createElement('div');
+        container.innerHTML = modalHTML;
+        document.body.appendChild(container.firstElementChild);
+
+        // Bind event listeners
+        const closeBtn = document.getElementById('agent-tester-close');
+        const sendBtn = document.getElementById('agent-tester-send');
+        const clearBtn = document.getElementById('agent-tester-clear');
+        const input = document.getElementById('agent-tester-input');
+        const modal = document.getElementById('agent-tester-modal');
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                if (modal) modal.style.display = 'none';
+            });
+        }
+
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                clearHistory();
+            });
+        }
+
+        let currentAgentId = null;
+
+        if (sendBtn && input) {
+            const sendMessage = () => {
+                const message = input.value.trim();
+                if (!message || !currentAgentId) return;
+                sendMessageAndStream(currentAgentId, message);
+            };
+
+            sendBtn.addEventListener('click', sendMessage);
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+        }
+
+        // Store agent ID for later use
+        modal._setAgentId = (id) => {
+            currentAgentId = id;
+        };
+
+        console.log('[agentTester] Modal inicializado');
+    }
+
+    // Public API
+    window.agentTester = {
+        start: function(agentId) {
+            console.log('[agentTester] Iniciando teste do agente:', agentId);
+
+            // Initialize modal if needed
+            initModal();
+
+            const modal = document.getElementById('agent-tester-modal');
+            if (!modal) {
+                console.error('[agentTester] Modal não encontrado');
+                return;
+            }
+
+            // Set agent ID
+            if (modal._setAgentId) {
+                modal._setAgentId(agentId);
+            }
+
+            // Update title
+            const title = document.getElementById('agent-tester-title');
+            if (title) {
+                title.textContent = `Testar Agente (ID: ${agentId})`;
+            }
+
+            // Clear history and show modal
+            clearHistory();
+            setStatus('Pronto para enviar mensagens', 'info');
+            modal.style.display = 'flex';
+
+            // Focus input
+            const input = document.getElementById('agent-tester-input');
+            if (input) {
+                setTimeout(() => input.focus(), 100);
+            }
+        }
+    };
+
+    console.log('[agentTester] Módulo inicializado');
+})();
+
