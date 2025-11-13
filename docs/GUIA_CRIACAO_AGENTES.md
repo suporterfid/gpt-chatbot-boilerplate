@@ -60,7 +60,7 @@ http://localhost:8088/setup/install.php
    - 🎯 Habilitar recursos opcionais
    - 🚀 Inicializar banco de dados
 
-4. Guarde o **Admin Token** gerado - você precisará dele para acessar o painel administrativo.
+4. Guarde as credenciais do usuário administrador criado (email e senha) — elas serão usadas no novo fluxo de login do painel. Tokens continuam disponíveis para integrações headless, porém são considerados legados.
 
 #### Opção B: Configuração Manual
 
@@ -106,7 +106,27 @@ Após configurar o `.env`, acesse:
 http://seu-dominio/public/admin/
 ```
 
-Digite o `ADMIN_TOKEN` quando solicitado.
+Você será direcionado para o formulário de login. Informe o **email** e **senha** do usuário administrador criado durante a instalação. Após autenticar, o navegador receberá um cookie `admin_session` (HttpOnly, SameSite=Lax) válido por 24 horas por padrão (`ADMIN_SESSION_TTL`).
+
+> **Integrações legadas:** o cabeçalho `Authorization: Bearer <ADMIN_TOKEN>` continua funcionando, mas está **depreciado**. Migre para sessões ou chaves de API individuais o quanto antes.
+
+Para criar sessões manualmente (ou scripts de automação), use os novos endpoints:
+
+```bash
+# Realiza login e salva o cookie de sessão
+curl -i -c cookies.txt -X POST "http://localhost/admin-api.php?action=login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@example.com",
+    "password": "senha-super-segura"
+  }'
+
+# Consulta o usuário autenticado reaproveitando o cookie
+curl -b cookies.txt "http://localhost/admin-api.php?action=current_user"
+
+# Finaliza a sessão atual
+curl -b cookies.txt -X POST "http://localhost/admin-api.php?action=logout"
+```
 
 ## Métodos de Criação
 

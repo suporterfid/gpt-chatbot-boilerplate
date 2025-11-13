@@ -43,6 +43,42 @@ function log_admin($message, $level = 'info') {
     @file_put_contents($logFile, $line, FILE_APPEND);
 }
 
+function getSessionCookieName($config) {
+    return $config['admin']['session_cookie_name'] ?? 'admin_session';
+}
+
+function isSecureRequest() {
+    if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+        return true;
+    }
+    if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+        return strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https';
+    }
+    return false;
+}
+
+function setAdminSessionCookie($config, $token, $expiresAt) {
+    $options = [
+        'expires' => $expiresAt ? strtotime($expiresAt) : 0,
+        'path' => '/',
+        'secure' => isSecureRequest(),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ];
+    setcookie(getSessionCookieName($config), $token, $options);
+}
+
+function clearAdminSessionCookie($config) {
+    $options = [
+        'expires' => time() - 3600,
+        'path' => '/',
+        'secure' => isSecureRequest(),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ];
+    setcookie(getSessionCookieName($config), '', $options);
+}
+
 /**
  * Send SSE event to client
  */
@@ -62,8 +98,26 @@ function sendSSEEvent($type, $data = null, $id = null) {
     flush();
 }
 
-// Authentication check - supports both legacy ADMIN_TOKEN and AdminAuth
+// Authentication check - prefer session cookie, support API keys for headless integrations
 function checkAuthentication($config, $adminAuth) {
+    $cookieName = getSessionCookieName($config);
+    $sessionToken = $_COOKIE[$cookieName] ?? null;
+
+    if (!empty($sessionToken)) {
+        try {
+            $user = $adminAuth->validateSession($sessionToken);
+            if ($user) {
+                $user['auth_method'] = 'session';
+                $user['session_token'] = $sessionToken;
+                return $user;
+            }
+            clearAdminSessionCookie($config);
+        } catch (Exception $e) {
+            log_admin('Session validation error: ' . $e->getMessage(), 'error');
+            clearAdminSessionCookie($config);
+        }
+    }
+
     $headers = [];
     if (function_exists('getallheaders')) {
         $headers = array_change_key_case(getallheaders(), CASE_LOWER);
@@ -71,29 +125,18 @@ function checkAuthentication($config, $adminAuth) {
         $headers = array_change_key_case(apache_request_headers(), CASE_LOWER);
     }
 
-    // Try to get Authorization header from multiple sources
-    // Apache/PHP can place it in different locations depending on configuration
     $authHeader = '';
-
-    // Method 1: Direct HTTP_AUTHORIZATION
     if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
         $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
-    }
-    // Method 2: REDIRECT_HTTP_AUTHORIZATION (when using mod_rewrite)
-    elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+    } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
         $authHeader = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
-    }
-    // Method 3: getallheaders()/apache_request_headers()
-    elseif (!empty($headers['authorization'])) {
+    } elseif (!empty($headers['authorization'])) {
         $authHeader = $headers['authorization'];
-    }
-    // Method 4: PHP_AUTH_* variables (Basic/Digest auth fallback)
-    elseif (isset($_SERVER['PHP_AUTH_USER']) && isset($_SERVER['PHP_AUTH_PW'])) {
+    } elseif (isset($_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW'])) {
         $authHeader = 'Basic ' . base64_encode($_SERVER['PHP_AUTH_USER'] . ':' . $_SERVER['PHP_AUTH_PW']);
     }
 
     $token = null;
-
     if (!empty($authHeader)) {
         if (preg_match('/^Bearer\s+(.+)$/i', $authHeader, $matches)) {
             $token = trim($matches[1]);
@@ -102,49 +145,38 @@ function checkAuthentication($config, $adminAuth) {
         }
     }
 
-    // Fallback: custom header or explicit admin_token/token parameter
     if (empty($token)) {
-        $fallbackToken = null;
-
         if (isset($_SERVER['HTTP_X_ADMIN_TOKEN'])) {
-            $fallbackToken = $_SERVER['HTTP_X_ADMIN_TOKEN'];
+            $token = trim($_SERVER['HTTP_X_ADMIN_TOKEN']);
+            log_admin('Authentication via X-Admin-Token header is deprecated; please migrate to sessions or API keys.', 'warn');
         } elseif (!empty($headers['x-admin-token'])) {
-            $fallbackToken = $headers['x-admin-token'];
-        } elseif (isset($_GET['admin_token'])) {
-            $fallbackToken = $_GET['admin_token'];
-        } elseif (isset($_POST['admin_token'])) {
-            $fallbackToken = $_POST['admin_token'];
-        } elseif (isset($_GET['token'])) {
-            $fallbackToken = $_GET['token'];
-        } elseif (isset($_POST['token'])) {
-            $fallbackToken = $_POST['token'];
-        }
-
-        if (!empty($fallbackToken)) {
-            $token = trim($fallbackToken);
+            $token = trim($headers['x-admin-token']);
+            log_admin('Authentication via X-Admin-Token header is deprecated; please migrate to sessions or API keys.', 'warn');
         }
     }
 
     if (empty($token)) {
-        log_admin('Missing admin token', 'warn');
-        // Only log server vars in debug mode
+        log_admin('Missing authentication credentials', 'warn');
         if (isset($config['debug']) && $config['debug']) {
             $serverKeys = array_keys($_SERVER);
             log_admin('Available SERVER keys: ' . implode(', ', $serverKeys), 'debug');
         }
-        sendError('Authorization token required', 403);
+        sendError('Authentication required', 403);
     }
 
-    // Try to authenticate with AdminAuth (supports both legacy token and API keys)
     try {
         $user = $adminAuth->authenticate($token);
-        
+
         if (!$user) {
             log_admin('Invalid authentication token', 'warn');
             sendError('Invalid authentication token', 403);
         }
-        
-        return $user; // Return authenticated user data
+
+        if (($user['auth_method'] ?? '') === 'legacy_token_deprecated') {
+            log_admin('Legacy ADMIN_TOKEN authentication is deprecated. Migrate to session-based login or API keys.', 'warn');
+        }
+
+        return $user;
     } catch (Exception $e) {
         log_admin('Authentication error: ' . $e->getMessage(), 'error');
         sendError('Authentication failed', 403);
@@ -314,7 +346,7 @@ try {
     $method = $_SERVER['REQUEST_METHOD'];
 
     // Public endpoints that don't require authentication (e.g., health checks for login screen)
-    $publicActions = ['health'];
+    $publicActions = ['health', 'login', 'logout', 'current_user'];
     $requiresAuth = !in_array($action, $publicActions, true);
 
     // Check authentication and get user when required
@@ -392,10 +424,103 @@ try {
     }
 
     $logUser = $authenticatedUser['email'] ?? 'anonymous';
-    log_admin("$method /admin-api.php?action=$action [user: $logUser]");
+    $authStrategy = $authenticatedUser['auth_method'] ?? ($requiresAuth ? 'unauthenticated' : 'public');
+    log_admin("$method /admin-api.php?action=$action [user: $logUser][auth:$authStrategy]");
     
     // Route to appropriate handler
     switch ($action) {
+        case 'login':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+
+            $body = getRequestBody();
+            $email = trim($body['email'] ?? '');
+            $password = $body['password'] ?? '';
+
+            if ($email === '' || $password === '') {
+                sendError('Email and password are required', 400, 'INVALID_CREDENTIALS');
+            }
+
+            $credentialsUser = $adminAuth->authenticateCredentials($email, $password);
+            if (!$credentialsUser) {
+                log_admin("Failed admin login attempt for $email", 'warn');
+                sendError('Invalid email or password', 401, 'INVALID_CREDENTIALS');
+            }
+
+            $sessionMeta = $adminAuth->createSession($credentialsUser['id'], null, [
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
+            ]);
+
+            setAdminSessionCookie($config, $sessionMeta['token'], $sessionMeta['expires_at']);
+
+            $responseUser = [
+                'id' => $credentialsUser['id'],
+                'email' => $credentialsUser['email'],
+                'role' => $credentialsUser['role'],
+                'tenant_id' => $credentialsUser['tenant_id'] ?? null,
+                'is_active' => (bool)($credentialsUser['is_active'] ?? true),
+                'auth_method' => 'session',
+                'session_id' => $sessionMeta['session_id'],
+                'session_expires_at' => $sessionMeta['expires_at'],
+            ];
+
+            log_admin("User {$credentialsUser['email']} authenticated via password", 'info');
+
+            sendResponse([
+                'user' => $responseUser,
+                'session' => [
+                    'id' => $sessionMeta['session_id'],
+                    'expires_at' => $sessionMeta['expires_at'],
+                ]
+            ]);
+            break;
+
+        case 'logout':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+
+            $cookieName = getSessionCookieName($config);
+            $sessionToken = $_COOKIE[$cookieName] ?? null;
+            if ($sessionToken) {
+                $adminAuth->revokeSession($sessionToken);
+            }
+            clearAdminSessionCookie($config);
+            log_admin('Admin session terminated by logout request', 'info');
+            sendResponse(['message' => 'Logged out']);
+            break;
+
+        case 'current_user':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+
+            $cookieName = getSessionCookieName($config);
+            $sessionToken = $_COOKIE[$cookieName] ?? null;
+            if (!$sessionToken) {
+                sendError('Not authenticated', 401, 'NOT_AUTHENTICATED');
+            }
+
+            $sessionUser = $adminAuth->validateSession($sessionToken);
+            if (!$sessionUser) {
+                clearAdminSessionCookie($config);
+                sendError('Not authenticated', 401, 'NOT_AUTHENTICATED');
+            }
+
+            $sessionUser['auth_method'] = 'session';
+            $payload = [
+                'user' => $sessionUser,
+                'session' => [
+                    'id' => $sessionUser['session_id'] ?? null,
+                    'expires_at' => $sessionUser['session_expires_at'] ?? null,
+                ]
+            ];
+
+            sendResponse($payload);
+            break;
+
         case 'list_agents':
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);

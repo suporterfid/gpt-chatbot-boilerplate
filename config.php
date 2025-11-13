@@ -326,6 +326,8 @@ $config = [
         'database_path' => $_ENV['DATABASE_PATH'] ?? getenv('DATABASE_PATH') ?: __DIR__ . '/data/chatbot.db',
         'rate_limit_requests' => (int)($_ENV['ADMIN_RATE_LIMIT_REQUESTS'] ?? getenv('ADMIN_RATE_LIMIT_REQUESTS') ?: 300),
         'rate_limit_window' => (int)($_ENV['ADMIN_RATE_LIMIT_WINDOW'] ?? getenv('ADMIN_RATE_LIMIT_WINDOW') ?: 60),
+        'session_ttl' => (int)($_ENV['ADMIN_SESSION_TTL'] ?? getenv('ADMIN_SESSION_TTL') ?: 86400),
+        'session_cookie_name' => $_ENV['ADMIN_SESSION_COOKIE'] ?? getenv('ADMIN_SESSION_COOKIE') ?: 'admin_session',
         'jobs_enabled' => filter_var($_ENV['JOBS_ENABLED'] ?? getenv('JOBS_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
     ],
     

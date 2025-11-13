@@ -428,6 +428,28 @@ curl -X POST "http://localhost/chat-unified.php" \
   }'
 ```
 
+### Admin Authentication Flow
+
+Admins can establish a secure session using email/password credentials. Sessions are persisted in the `admin_sessions` table and expire automatically (default TTL: 24 hours, configurable via `ADMIN_SESSION_TTL`). Every request should include either the session cookie or an API key in the `Authorization` header.
+
+```bash
+# Login and capture session cookie
+curl -i -c cookies.txt -X POST "http://localhost/admin-api.php?action=login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@example.com",
+    "password": "super-secure-password"
+  }'
+
+# Use the session cookie for subsequent requests
+curl -b cookies.txt "http://localhost/admin-api.php?action=current_user"
+
+# Logout and revoke the session
+curl -b cookies.txt -X POST "http://localhost/admin-api.php?action=logout"
+```
+
+> **Note:** API keys supplied via `Authorization: Bearer <API_KEY>` remain supported for headless integrations. Legacy single `ADMIN_TOKEN` headers still work but are deprecated and slated for removal in a future release.
+
 #### Error Handling
 
 - **Invalid agent_id**: Logs warning and falls back to default agent

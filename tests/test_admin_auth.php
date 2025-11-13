@@ -7,6 +7,13 @@
 
 echo "=== Admin API Authentication Test ===\n\n";
 
+// Prepare authentication tokens before server boots
+$validToken = "test_admin_token_for_phase1_testing_min32chars";
+$invalidToken = "wrong_token";
+
+putenv("ADMIN_TOKEN=$validToken");
+$_ENV['ADMIN_TOKEN'] = $validToken;
+
 // Start PHP built-in server
 $port = 9998;
 $serverLog = '/tmp/test_admin_auth_server.log';
@@ -17,8 +24,35 @@ sleep(2); // Wait for server to start
 echo "Started test server (PID: $pid)\n\n";
 
 $baseUrl = "http://localhost:$port";
-$validToken = "test_admin_token_for_phase1_testing_min32chars";
-$invalidToken = "wrong_token";
+
+$config = require __DIR__ . '/../config.php';
+require_once __DIR__ . '/../includes/DB.php';
+require_once __DIR__ . '/../includes/AdminAuth.php';
+
+$dbConfig = [
+    'database_url' => null,
+    'database_path' => __DIR__ . '/../data/chatbot.db'
+];
+
+$db = new DB($dbConfig);
+try {
+    $db->runMigrations(__DIR__ . '/../db/migrations');
+} catch (Exception $e) {
+    // ignore - migrations may have already run
+}
+
+$adminAuth = new AdminAuth($db, $config);
+$sessionEmail = 'auth.session@test.local';
+$sessionPassword = 'Sup3rSecure!';
+
+try {
+    $db->execute('DELETE FROM admin_sessions WHERE user_id IN (SELECT id FROM admin_users WHERE email = ?)', [$sessionEmail]);
+    $db->execute('DELETE FROM admin_users WHERE email = ?', [$sessionEmail]);
+} catch (Exception $e) {
+    // ignore cleanup issues
+}
+
+$adminAuth->createUser($sessionEmail, $sessionPassword, AdminAuth::ROLE_SUPER_ADMIN);
 
 $testsPassed = 0;
 $testsFailed = 0;
@@ -94,6 +128,83 @@ if ($httpCode === 201) {
     echo "✗ FAIL: Create agent with valid token (expected HTTP 201, got HTTP $httpCode)\n";
     echo "Response: $response\n";
     $testsFailed++;
+}
+
+// Session-based login/logout flow
+echo "\n--- Session login/logout flow ---\n";
+$loginCh = curl_init("$baseUrl/admin-api.php?action=login");
+curl_setopt($loginCh, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($loginCh, CURLOPT_HEADER, true);
+curl_setopt($loginCh, CURLOPT_POST, true);
+curl_setopt($loginCh, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_setopt($loginCh, CURLOPT_POSTFIELDS, json_encode([
+    'email' => $sessionEmail,
+    'password' => $sessionPassword,
+]));
+$loginResponse = curl_exec($loginCh);
+$loginCode = curl_getinfo($loginCh, CURLINFO_HTTP_CODE);
+curl_close($loginCh);
+
+$sessionCookie = null;
+if (preg_match('/Set-Cookie:\s*([^\r\n]+)/i', $loginResponse, $matches)) {
+    $sessionCookie = explode(';', trim($matches[1]))[0];
+}
+
+if ($loginCode === 200 && $sessionCookie) {
+    echo "✓ PASS: Login returned 200 and issued session cookie\n";
+    $testsPassed++;
+} else {
+    echo "✗ FAIL: Login failed (HTTP $loginCode, cookie: " . ($sessionCookie ?? 'none') . ")\n";
+    $testsFailed++;
+}
+
+if ($sessionCookie) {
+    $currentCh = curl_init("$baseUrl/admin-api.php?action=current_user");
+    curl_setopt($currentCh, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($currentCh, CURLOPT_HEADER, false);
+    curl_setopt($currentCh, CURLOPT_COOKIE, $sessionCookie);
+    $currentResponse = curl_exec($currentCh);
+    $currentCode = curl_getinfo($currentCh, CURLINFO_HTTP_CODE);
+    curl_close($currentCh);
+
+    if ($currentCode === 200) {
+        echo "✓ PASS: current_user returns 200 with valid session\n";
+        $testsPassed++;
+    } else {
+        echo "✗ FAIL: current_user expected 200 with session, got HTTP $currentCode\n";
+        $testsFailed++;
+    }
+
+    $logoutCh = curl_init("$baseUrl/admin-api.php?action=logout");
+    curl_setopt($logoutCh, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($logoutCh, CURLOPT_POST, true);
+    curl_setopt($logoutCh, CURLOPT_COOKIE, $sessionCookie);
+    $logoutResponse = curl_exec($logoutCh);
+    $logoutCode = curl_getinfo($logoutCh, CURLINFO_HTTP_CODE);
+    curl_close($logoutCh);
+
+    if ($logoutCode === 200) {
+        echo "✓ PASS: Logout endpoint returned 200\n";
+        $testsPassed++;
+    } else {
+        echo "✗ FAIL: Logout expected 200, got HTTP $logoutCode\n";
+        $testsFailed++;
+    }
+
+    $postLogoutCh = curl_init("$baseUrl/admin-api.php?action=current_user");
+    curl_setopt($postLogoutCh, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($postLogoutCh, CURLOPT_COOKIE, $sessionCookie);
+    $postLogoutResponse = curl_exec($postLogoutCh);
+    $postLogoutCode = curl_getinfo($postLogoutCh, CURLINFO_HTTP_CODE);
+    curl_close($postLogoutCh);
+
+    if ($postLogoutCode === 401) {
+        echo "✓ PASS: Session cookie invalidated after logout (401)\n";
+        $testsPassed++;
+    } else {
+        echo "✗ FAIL: Session should be invalid after logout (expected 401, got $postLogoutCode)\n";
+        $testsFailed++;
+    }
 }
 
 // Cleanup

@@ -71,7 +71,18 @@ Both services:
 
 ### 4. Admin API Endpoints
 
-All endpoints require `Authorization: Bearer <ADMIN_TOKEN>` header.
+Administrative endpoints now support two authentication strategies:
+
+1. **Session cookies** created via `POST /admin-api.php?action=login` using an admin email/password. Sessions are stored in the new `admin_sessions` table and expire automatically (default TTL: 24 hours).
+2. **API keys** supplied through the `Authorization: Bearer <API_KEY>` header for headless integrations.
+
+Support for the legacy `ADMIN_TOKEN` header persists for backwards compatibility, but it is marked as deprecated and should be phased out in favour of session-based login or per-user API keys.
+
+**Authentication utility endpoints**
+
+- `POST /admin-api.php?action=login` — Authenticate with email/password and receive an HttpOnly session cookie
+- `POST /admin-api.php?action=logout` — Revoke the current session cookie
+- `GET /admin-api.php?action=current_user` — Return the authenticated user metadata when a session cookie is present
 
 **Agents**
 - `GET /admin-api.php?action=list_agents` - List all agents
@@ -112,7 +123,8 @@ All endpoints require `Authorization: Bearer <ADMIN_TOKEN>` header.
 The Admin UI is a single-page application located at `/public/admin/index.html`.
 
 **Features:**
-- Token-based authentication (uses localStorage)
+- Session-based authentication with secure cookies (email + password login)
+- Optional API key authentication for headless integrations
 - Responsive design
 - Real-time updates
 - Toast notifications
