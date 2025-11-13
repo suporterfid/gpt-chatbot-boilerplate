@@ -283,33 +283,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isInstalled) {
         if ($currentStep === 3) {
             try {
                 // Load the configuration
-                require_once __DIR__ . '/../config.php';
+                $config = require __DIR__ . '/../config.php';
                 require_once __DIR__ . '/../includes/DB.php';
-                
+                require_once __DIR__ . '/../includes/AdminAuth.php';
+
                 $dbConfig = [];
                 if (!empty(getEnvValue('DATABASE_URL'))) {
                     $dbConfig['database_url'] = getEnvValue('DATABASE_URL');
                 } else {
                     $dbConfig['database_path'] = getEnvValue('DATABASE_PATH') ?? './data/chatbot.db';
                 }
-                
+
                 $db = new DB($dbConfig);
-                
+
                 // Run migrations
                 $migrationsPath = __DIR__ . '/../db/migrations';
                 $migrationsRun = $db->runMigrations($migrationsPath);
-                
-                // Create lock file
-                file_put_contents($lockFile, json_encode([
-                    'installed_at' => date('c'),
-                    'migrations_run' => $migrationsRun,
-                    'php_version' => PHP_VERSION,
-                    'database_type' => !empty(getEnvValue('DATABASE_URL')) ? 'mysql' : 'sqlite'
-                ]));
-                
-                $success = true;
-                header('Location: install.php?step=4');
-                exit;
+
+                // Attempt to create the initial super-admin user
+                $adminStatus = [
+                    'created' => false,
+                    'already_existed' => false,
+                ];
+
+                $adminEmail = $_SESSION['install_config']['admin_email'] ?? null;
+                $adminPassword = $_SESSION['install_config']['admin_password'] ?? null;
+
+                if ($adminEmail && $adminPassword) {
+                    $adminAuth = new AdminAuth($db, $config);
+
+                    try {
+                        $existingAdmin = $adminAuth->getUserByEmail($adminEmail);
+                        if ($existingAdmin) {
+                            $adminStatus['already_existed'] = true;
+                        } else {
+                            $adminAuth->createUser($adminEmail, $adminPassword, AdminAuth::ROLE_SUPER_ADMIN);
+                            $adminStatus['created'] = true;
+                        }
+                    } catch (Exception $e) {
+                        if ($e->getCode() === 409 || strpos(strtolower($e->getMessage()), 'exists') !== false) {
+                            $adminStatus['already_existed'] = true;
+                        } else {
+                            $errors[] = 'Super admin account could not be created: ' . $e->getMessage();
+                        }
+                    }
+                } else {
+                    $errors[] = 'Super admin credentials are missing from the previous step. Please return to Step 2 and save the configuration again.';
+                }
+
+                if (empty($errors)) {
+                    // Create lock file
+                    file_put_contents($lockFile, json_encode([
+                        'installed_at' => date('c'),
+                        'migrations_run' => $migrationsRun,
+                        'php_version' => PHP_VERSION,
+                        'database_type' => !empty(getEnvValue('DATABASE_URL')) ? 'mysql' : 'sqlite'
+                    ]));
+
+                    $_SESSION['install_config']['admin_setup_status'] = $adminStatus;
+                    unset($_SESSION['install_config']['admin_password'], $_SESSION['install_config']['admin_password_hash']);
+
+                    $success = true;
+                    header('Location: install.php?step=4');
+                    exit;
+                }
             } catch (PDOException $e) {
                 $errorMsg = $e->getMessage();
                 if (strpos($errorMsg, 'Access denied') !== false) {
@@ -1026,11 +1063,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$isInstalled) {
                 
                 <?php
                 $configuredAdminEmail = $_SESSION['install_config']['admin_email'] ?? null;
+                $adminSetupStatus = $_SESSION['install_config']['admin_setup_status'] ?? [];
                 if ($configuredAdminEmail) {
-                    echo '<div class="alert alert-warning" style="margin-top: 30px;">';
-                    echo '<strong>🔑 Remember Your Admin Credentials</strong><br>';
-                    echo 'Admin Email: <code style="font-size: 14px; word-break: break-all;">' . htmlspecialchars($configuredAdminEmail) . '</code><br>';
-                    echo '<small>Use this email along with the password you configured in Step 2 to sign in to the admin panel.</small>';
+                    $created = !empty($adminSetupStatus['created']);
+                    $alreadyExisted = !empty($adminSetupStatus['already_existed']);
+                    $alertClass = $created ? 'alert alert-success' : 'alert alert-info';
+                    $statusIcon = $created ? '✅' : 'ℹ️';
+                    $headline = $created ? 'Super Admin Account Created' : 'Super Admin Account Ready';
+
+                    if ($alreadyExisted && !$created) {
+                        $headline = 'Super Admin Account Already Exists';
+                        $statusIcon = 'ℹ️';
+                    }
+
+                    echo '<div class="' . $alertClass . '" style="margin-top: 30px; text-align: left;">';
+                    echo '<strong>' . $statusIcon . ' ' . $headline . '</strong><br>';
+                    echo 'Email: <code style="font-size: 14px; word-break: break-all;">' . htmlspecialchars($configuredAdminEmail) . '</code><br>';
+
+                    if ($created) {
+                        echo '<small>A new super-admin account was created during installation.</small>';
+                    } elseif ($alreadyExisted) {
+                        echo '<small>An existing super-admin account with this email was detected and left unchanged.</small>';
+                    } else {
+                        echo '<small>Use the credentials you configured in Step 2 to access the admin panel.</small>';
+                    }
+
+                    echo '<div style="margin-top: 12px;">';
+                    echo '<ul style="margin-left: 18px;">';
+                    echo '<li>Store the password you set in Step 2 in a secure password manager.</li>';
+                    echo '<li>Log in to the admin panel and change the password immediately after installation.</li>';
+                    echo '</ul>';
+                    echo '</div>';
                     echo '</div>';
                 }
                 ?>
