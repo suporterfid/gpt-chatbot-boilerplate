@@ -9,13 +9,17 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR/.."
 
 # Generate test credentials (for testing only, not for production)
-TEST_TOKEN="${TEST_TOKEN:-test_admin_token_for_phase1_testing_min32chars}"
-TEST_API_KEY="${TEST_API_KEY:-sk-test-fake-key-for-demo}"
+ADMIN_API_KEY="${ADMIN_API_KEY:-}"
+TEST_OPENAI_KEY="${TEST_OPENAI_KEY:-sk-test-fake-key-for-demo}"
+
+if [ -z "$ADMIN_API_KEY" ]; then
+    echo "⚠️  Set ADMIN_API_KEY environment variable to a valid super-admin API key before running."
+    exit 1
+fi
 
 # Create .env for testing
 cat > .env << EOF
-ADMIN_TOKEN=$TEST_TOKEN
-OPENAI_API_KEY=$TEST_API_KEY
+OPENAI_API_KEY=$TEST_OPENAI_KEY
 ADMIN_ENABLED=true
 DATABASE_PATH=./data/chatbot.db
 EOF
@@ -33,7 +37,7 @@ echo
 # Create test agent using the API
 echo "Creating test agent..."
 AGENT_RESPONSE=$(curl -s -X POST \
-  -H "Authorization: Bearer $TEST_TOKEN" \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Manual Test Agent",
@@ -68,7 +72,7 @@ echo
 timeout 5 curl -s -N \
   -H "Accept: text/event-stream" \
   -H "Cache-Control: no-cache" \
-  -H "Authorization: Bearer $TEST_TOKEN" \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
   "http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID" \
   | head -20
 
@@ -79,7 +83,7 @@ echo
 # Test 2: Check HTTP status code directly
 echo "--- Test 2: Check HTTP status code ---"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer $TEST_TOKEN" \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
   "http://localhost:8088/admin-api.php?action=test_agent&id=$AGENT_ID")
 
 echo "HTTP Status Code: $HTTP_CODE"
@@ -93,7 +97,7 @@ echo
 # Clean up
 echo "Cleaning up..."
 curl -s -X DELETE \
-  -H "Authorization: Bearer $TEST_TOKEN" \
+  -H "Authorization: Bearer $ADMIN_API_KEY" \
   "http://localhost:8088/admin-api.php?action=delete_agent&id=$AGENT_ID" > /dev/null
 
 kill $SERVER_PID
@@ -102,7 +106,7 @@ echo "Stopped server and cleaned up"
 echo
 
 if [ "$HTTP_CODE" = "200" ]; then
-    echo "✅ Manual test PASSED - test_agent endpoint now accepts GET with token parameter"
+    echo "✅ Manual test PASSED - test_agent endpoint works with admin API key authorization"
     exit 0
 else
     echo "❌ Manual test FAILED"

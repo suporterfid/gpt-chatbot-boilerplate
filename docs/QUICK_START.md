@@ -168,7 +168,8 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 
 # Admin Features
 ADMIN_ENABLED=true
-ADMIN_TOKEN=generate_a_secure_random_token_min_32_chars
+DEFAULT_ADMIN_EMAIL=super.admin@example.com
+DEFAULT_ADMIN_PASSWORD=generate_a_secure_password_here
 
 # Database
 DATABASE_PATH=./data/chatbot.db  # SQLite
@@ -205,6 +206,15 @@ ChatBot.init({
 </script>
 ```
 
+### Super-Admin Login and Credential Hygiene
+
+1. **Bootstrap credentials** – enable admin features (`ADMIN_ENABLED=true`) and provide `DEFAULT_ADMIN_EMAIL`/`DEFAULT_ADMIN_PASSWORD` for the first run. The install wizard can populate these for you.
+2. **Sign in** – browse to `/public/admin/`, enter the bootstrap credentials, and the platform will establish a secure session cookie.
+3. **Issue API keys** – generate user-specific API keys from the Admin UI or by calling `POST /admin-api.php?action=generate_api_key`. Store keys in your secrets manager; they are displayed only once.
+4. **Rotate passwords** – create a new super-admin via `POST /admin-api.php?action=create_user` (role `super-admin`), log in with the new user, and deactivate the previous account using `POST /admin-api.php?action=deactivate_user`.
+5. **Rotate API keys** – provision a replacement key, update integrations, then revoke the previous key with `POST /admin-api.php?action=revoke_api_key&id={key_id}`.
+6. **Clean up** – remove the bootstrap defaults from `.env` after onboarding. Legacy `ADMIN_TOKEN` headers are maintained only for backward compatibility and should be phased out.
+
 ## Testing Your Installation
 
 ### Quick API Testing
@@ -226,7 +236,7 @@ curl -X POST -H "Content-Type: application/json" \
 ### Accessing the Admin Panel
 
 1. Navigate to `http://localhost:8088/public/admin/`
-2. Enter your admin token (from `.env`)
+2. Sign in with your super-admin email and password
 3. Create and test agents, prompts, and vector stores
 
 ### Health Check

@@ -7,10 +7,11 @@
 echo "=== Test Agent Name in Response ===\n\n";
 
 // Test credentials (generated for testing only)
-const TEST_TOKEN = 'test_admin_token_for_utf8_testing_min32chars';
+$sessionEmail = 'utf8.super.admin@test.local';
+$sessionPassword = 'Utf8TestPass!123';
 
 // Set up .env file for testing
-$envContent = "ADMIN_TOKEN=" . TEST_TOKEN . "\n";
+$envContent = "ADMIN_ENABLED=true\n";
 $envContent .= "OPENAI_API_KEY=test_key\n";
 $envPath = __DIR__ . '/../.env';
 $envBackupPath = __DIR__ . '/../.env.backup.utf8test';
@@ -23,7 +24,7 @@ if (file_exists($envPath)) {
 
 // Write test .env
 file_put_contents($envPath, $envContent);
-echo "Created test .env with ADMIN_TOKEN\n\n";
+echo "Created test .env with admin session support\n\n";
 
 // Start PHP built-in server
 $port = 9997;
@@ -40,13 +41,10 @@ $baseUrl = "http://localhost:$port";
 $testsPassed = 0;
 $testsFailed = 0;
 
-// Set test token for authentication
-putenv("ADMIN_TOKEN=" . TEST_TOKEN);
-$_ENV['ADMIN_TOKEN'] = TEST_TOKEN;
-
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/DB.php';
 require_once __DIR__ . '/../includes/AgentService.php';
+require_once __DIR__ . '/../includes/AdminAuth.php';
 
 $dbConfig = [
     'database_url' => null,
@@ -54,12 +52,61 @@ $dbConfig = [
 ];
 
 $db = new DB($dbConfig);
+$adminAuth = new AdminAuth($db, $config);
 
 // Run migrations
 try {
     $db->runMigrations(__DIR__ . '/../db/migrations');
 } catch (Exception $e) {
     // Migrations might already be run, continue
+}
+
+$loginUser = null;
+try {
+    $db->execute('DELETE FROM admin_sessions WHERE user_id IN (SELECT id FROM admin_users WHERE email = ?)', [$sessionEmail]);
+    $db->execute('DELETE FROM admin_users WHERE email = ?', [$sessionEmail]);
+} catch (Exception $e) {
+    // Ignore cleanup issues
+}
+
+try {
+    $loginUser = $adminAuth->createUser($sessionEmail, $sessionPassword, AdminAuth::ROLE_SUPER_ADMIN);
+} catch (Exception $e) {
+    $existing = $adminAuth->getUserByEmail($sessionEmail);
+    if ($existing) {
+        $loginUser = $existing;
+    } else {
+        throw $e;
+    }
+}
+
+$loginCookie = null;
+$loginCh = curl_init("$baseUrl/admin-api.php?action=login");
+curl_setopt($loginCh, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($loginCh, CURLOPT_HEADER, true);
+curl_setopt($loginCh, CURLOPT_POST, true);
+curl_setopt($loginCh, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_setopt($loginCh, CURLOPT_POSTFIELDS, json_encode([
+    'email' => $sessionEmail,
+    'password' => $sessionPassword,
+]));
+$loginResponse = curl_exec($loginCh);
+$loginCode = curl_getinfo($loginCh, CURLINFO_HTTP_CODE);
+curl_close($loginCh);
+
+if ($loginCode === 200 && preg_match('/Set-Cookie:\s*([^\r\n]+)/i', $loginResponse, $cookieMatch)) {
+    $loginCookie = explode(';', trim($cookieMatch[1]))[0];
+}
+
+if (!$loginCookie) {
+    echo "✗ FAIL: Could not obtain session cookie for admin login (HTTP $loginCode)\n";
+    shell_exec("kill $pid 2>/dev/null");
+    if (file_exists($envBackupPath)) {
+        rename($envBackupPath, $envPath);
+    } else {
+        @unlink($envPath);
+    }
+    exit(1);
 }
 
 $agentService = new AgentService($db);
@@ -86,9 +133,8 @@ $ch = curl_init($url1);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HEADER, false);
 curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Authorization: Bearer ' . TEST_TOKEN,
-]);
+curl_setopt($ch, CURLOPT_HTTPHEADER, []);
+curl_setopt($ch, CURLOPT_COOKIE, $loginCookie);
 $response1 = curl_exec($ch);
 $httpCode1 = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
@@ -187,9 +233,8 @@ $ch = curl_init($url2);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HEADER, false);
 curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Authorization: Bearer ' . TEST_TOKEN,
-]);
+curl_setopt($ch, CURLOPT_HTTPHEADER, []);
+curl_setopt($ch, CURLOPT_COOKIE, $loginCookie);
 $response2 = curl_exec($ch);
 $httpCode2 = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);

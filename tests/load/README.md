@@ -37,10 +37,10 @@ k6 run --vus 10 --duration 30s tests/load/chat_api.js
 # Test against specific URL
 k6 run --vus 10 --duration 1m --env BASE_URL=https://chatbot.example.com tests/load/chat_api.js
 
-# With admin token for authenticated endpoints
+# With admin API key for authenticated endpoints (or use ADMIN_EMAIL/ADMIN_PASSWORD for session login)
 k6 run --vus 5 --duration 30s \
   --env BASE_URL=https://chatbot.example.com \
-  --env ADMIN_TOKEN=your_admin_token \
+  --env ADMIN_API_KEY=your_admin_api_key \
   tests/load/chat_api.js
 ```
 
@@ -76,8 +76,8 @@ k6 run --vus 100 --duration 30s tests/load/chat_api.js
 Tests the following endpoints with realistic traffic distribution:
 
 - **70%** - Chat completions (non-streaming)
-- **20%** - Agent testing (requires ADMIN_TOKEN)
-- **10%** - Admin API endpoints (requires ADMIN_TOKEN)
+- **20%** - Agent testing (requires ADMIN_API_KEY or admin login)
+- **10%** - Admin API endpoints (requires ADMIN_API_KEY or admin login)
 
 ## Interpreting Results
 

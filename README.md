@@ -61,7 +61,9 @@ nano .env
 
 # Required settings:
 # OPENAI_API_KEY=your_key_here
-# ADMIN_TOKEN=your_secure_token_here
+# ADMIN_ENABLED=true
+# DEFAULT_ADMIN_EMAIL=super.admin@example.com
+# DEFAULT_ADMIN_PASSWORD=generate_a_secure_password
 
 # Start services
 docker-compose up -d
@@ -73,6 +75,16 @@ docker-compose up -d
 - **Admin Panel**: `http://localhost:8088/public/admin/`
 
 👉 **[Full Quick Start Guide](docs/QUICK_START.md)** for all installation methods and configuration options.
+
+### 🔑 Super-Admin Login & Credential Rotation
+
+- **Bootstrap credentials:** Set `ADMIN_ENABLED=true` along with `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` in `.env` for the first run only. The install wizard writes these automatically for you.
+- **Sign in:** Visit `http://localhost:8088/public/admin/` and enter the super-admin email/password. The platform issues an encrypted session cookie.
+- **Create durable API keys:** From the Admin UI (or `POST /admin-api.php?action=generate_api_key`), mint user-specific API keys for automation. Store the plain-text key securely—it's shown only once.
+- **Rotate credentials:**
+  - To rotate passwords, create a new super-admin via `POST /admin-api.php?action=create_user` (role `super-admin`), sign in with the new user, then deactivate the previous account using `POST /admin-api.php?action=deactivate_user`.
+  - To rotate API keys, generate a replacement key, update dependent services, and call `POST /admin-api.php?action=revoke_api_key&id={key_id}` to retire the old key.
+- **Clean up:** Remove `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` from `.env` once a permanent account exists. Legacy `ADMIN_TOKEN` headers still function but are strictly deprecated—migrate any remaining clients to session login or per-user API keys.
 
 ## 💻 Basic Integration
 
@@ -112,7 +124,8 @@ OPENAI_MODEL=gpt-4o-mini
 
 # Admin Features (optional)
 ADMIN_ENABLED=true
-ADMIN_TOKEN=your_secure_token_here
+DEFAULT_ADMIN_EMAIL=super.admin@example.com
+DEFAULT_ADMIN_PASSWORD=change_me_securely
 
 # Database (SQLite by default)
 DATABASE_PATH=./data/chatbot.db

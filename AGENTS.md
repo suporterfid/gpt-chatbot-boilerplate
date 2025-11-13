@@ -45,7 +45,7 @@ For detailed step-by-step instructions with screenshots, see [GUIA_CRIACAO_AGENT
 
 ```bash
 curl -X POST "http://localhost/admin-api.php?action=create_agent" \
-  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Authorization: Bearer YOUR_ADMIN_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Customer Support",
