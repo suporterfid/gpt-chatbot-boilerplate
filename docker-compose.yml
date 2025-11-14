@@ -112,11 +112,11 @@ services:
       MYSQL_DATABASE: ${DB_NAME:-chatbot}
       MYSQL_USER: ${DB_USER:-chatbot}
       MYSQL_PASSWORD: ${DB_PASSWORD:-chatbot}
-    ports:
-      - "3306:3306"
     volumes:
       - ./docker/mysql/init:/docker-entrypoint-initdb.d
       - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
