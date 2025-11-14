@@ -37,10 +37,11 @@ try {
     // --- Test 1: Create Test Tenant ---
     echo "--- Test 1: Create Test Tenant ---\n";
     $tenantId = 'test-tenant-' . uniqid();
+    $tenantSlug = 'test-tenant-billing-' . uniqid();
     $db->insert("INSERT INTO tenants (id, name, slug, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", [
         $tenantId,
         'Test Tenant for Billing',
-        'test-tenant-billing',
+        $tenantSlug,
         'active',
         date('c'),
         date('c')
@@ -49,19 +50,35 @@ try {
     
     // --- Test 2: Log Usage Events ---
     echo "--- Test 2: Log Usage Events ---\n";
-    $usageTrackingService->logUsage($tenantId, 'message', [
+    $usageTrackingService->logUsage($tenantId, UsageTrackingService::RESOURCE_MESSAGE, [
         'quantity' => 1,
         'metadata' => ['tokens' => 150, 'model' => 'gpt-4o-mini']
     ]);
-    $usageTrackingService->logUsage($tenantId, 'completion', [
+    $usageTrackingService->logUsage($tenantId, UsageTrackingService::RESOURCE_COMPLETION, [
         'quantity' => 1,
         'metadata' => ['tokens' => 500, 'model' => 'gpt-4o-mini']
     ]);
-    $usageTrackingService->logUsage($tenantId, 'file_upload', [
+    $usageTrackingService->logUsage($tenantId, UsageTrackingService::RESOURCE_FILE_UPLOAD, [
         'quantity' => 1,
         'metadata' => ['size_bytes' => 1024000]
     ]);
+    $usageTrackingService->logUsage($tenantId, UsageTrackingService::RESOURCE_TOOL_CALL, [
+        'quantity' => 1,
+        'metadata' => ['tool_name' => 'search_knowledge']
+    ]);
     echo "✓ PASS: Usage events logged\n\n";
+
+    $loggedResources = $db->query("SELECT resource_type FROM usage_logs WHERE tenant_id = ?", [$tenantId]);
+    $resourceTypes = array_unique(array_map(function($row) { return $row['resource_type']; }, $loggedResources));
+    $expectedResources = [
+        UsageTrackingService::RESOURCE_MESSAGE,
+        UsageTrackingService::RESOURCE_COMPLETION,
+        UsageTrackingService::RESOURCE_FILE_UPLOAD,
+        UsageTrackingService::RESOURCE_TOOL_CALL
+    ];
+    foreach ($expectedResources as $expectedResource) {
+        assert(in_array($expectedResource, $resourceTypes, true), "Usage logs should include {$expectedResource} entries");
+    }
     
     // --- Test 3: Get Usage Stats ---
     echo "--- Test 3: Get Usage Stats ---\n";
@@ -73,11 +90,11 @@ try {
     
     // --- Test 4: Set Quotas ---
     echo "--- Test 4: Set Quotas ---\n";
-    $quota = $quotaService->setQuota($tenantId, 'message', 100, 'daily', [
+    $quota = $quotaService->setQuota($tenantId, UsageTrackingService::RESOURCE_MESSAGE, 100, 'daily', [
         'is_hard_limit' => true,
         'notification_threshold' => 80
     ]);
-    assert($quota['resource_type'] === 'message', 'Quota resource type should match');
+    assert($quota['resource_type'] === UsageTrackingService::RESOURCE_MESSAGE, 'Quota resource type should match');
     assert($quota['limit_value'] == 100, 'Quota limit should be 100');
     assert($quota['is_hard_limit'] === true, 'Should be hard limit');
     echo "✓ PASS: Quota created\n";
@@ -85,7 +102,7 @@ try {
     
     // --- Test 5: Check Quota Status ---
     echo "--- Test 5: Check Quota Status ---\n";
-    $check = $quotaService->checkQuota($tenantId, 'message', 'daily');
+    $check = $quotaService->checkQuota($tenantId, UsageTrackingService::RESOURCE_MESSAGE, 'daily');
     assert($check['allowed'] === true, 'Should be within quota');
     assert($check['has_quota'] === true, 'Should have quota set');
     echo "✓ PASS: Quota check successful\n";
@@ -176,15 +193,15 @@ try {
     // --- Test 13: Quota Notification Threshold ---
     echo "--- Test 13: Quota Notification Threshold ---\n";
     // Create a low quota
-    $quotaService->setQuota($tenantId, 'tool_call', 10, 'daily', [
+    $quotaService->setQuota($tenantId, UsageTrackingService::RESOURCE_TOOL_CALL, 10, 'daily', [
         'is_hard_limit' => false,
         'notification_threshold' => 50
     ]);
     // Log usage to 60%
     for ($i = 0; $i < 6; $i++) {
-        $usageTrackingService->logUsage($tenantId, 'tool_call', ['quantity' => 1]);
+        $usageTrackingService->logUsage($tenantId, UsageTrackingService::RESOURCE_TOOL_CALL, ['quantity' => 1]);
     }
-    $shouldNotify = $quotaService->shouldNotify($tenantId, 'tool_call', 'daily');
+    $shouldNotify = $quotaService->shouldNotify($tenantId, UsageTrackingService::RESOURCE_TOOL_CALL, 'daily');
     assert($shouldNotify === true, 'Should trigger notification at 60%');
     echo "✓ PASS: Quota notification threshold working\n\n";
     
@@ -210,7 +227,7 @@ try {
         'quota_warning',
         'Quota Warning',
         'You have reached 80% of your message quota',
-        ['priority' => 'medium']
+        ['priority' => 'normal']
     );
     assert(!empty($notification['id']), 'Notification should have ID');
     echo "✓ PASS: Notification created\n\n";

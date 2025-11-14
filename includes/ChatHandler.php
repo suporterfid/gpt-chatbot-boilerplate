@@ -253,7 +253,19 @@ class ChatHandler {
             'role' => 'user',
             'content' => $message
         ];
-        
+
+        $charCount = mb_strlen($message ?? '', 'UTF-8');
+        $this->trackUsage($tenantId, UsageTrackingService::RESOURCE_MESSAGE, [
+            'quantity' => 1,
+            'conversation_id' => $conversationId,
+            'agent_id' => $agentId,
+            'api_type' => 'chat',
+            'streaming' => true,
+            'characters' => $charCount,
+            'estimated_tokens' => $this->estimateTokenCount($message),
+            'model' => $agentOverrides['model'] ?? $this->config['chat']['model']
+        ]);
+
         // Audit: Record user message
         if ($this->auditService && $this->auditService->isEnabled()) {
             $this->auditService->appendMessage($conversationId, [
@@ -275,7 +287,7 @@ class ChatHandler {
         }
 
         // Stream response from OpenAI with agent overrides applied
-        $this->streamChatCompletion($messages, $conversationId, $agentOverrides, $tenantId);
+        $this->streamChatCompletion($messages, $conversationId, $agentOverrides, $tenantId, $agentId);
     }
 
     public function handleChatCompletionSync($message, $conversationId, $agentId = null, $tenantId = null) {
@@ -323,7 +335,19 @@ class ChatHandler {
             'role' => 'user',
             'content' => $message
         ];
-        
+
+        $charCount = mb_strlen($message ?? '', 'UTF-8');
+        $this->trackUsage($tenantId, UsageTrackingService::RESOURCE_MESSAGE, [
+            'quantity' => 1,
+            'conversation_id' => $conversationId,
+            'agent_id' => $agentId,
+            'api_type' => 'chat',
+            'streaming' => false,
+            'characters' => $charCount,
+            'estimated_tokens' => $this->estimateTokenCount($message),
+            'model' => $agentOverrides['model'] ?? $this->config['chat']['model']
+        ]);
+
         // Audit: Record user message
         $startTime = microtime(true);
         if ($this->auditService && $this->auditService->isEnabled()) {
@@ -357,6 +381,22 @@ class ChatHandler {
         $response = $this->openAIClient->createChatCompletion($payload);
 
         $assistantMessage = $response['choices'][0]['message']['content'] ?? '';
+
+        if (!empty($response['usage'])) {
+            $usage = $response['usage'];
+            $this->trackUsage($tenantId, UsageTrackingService::RESOURCE_COMPLETION, [
+                'quantity' => 1,
+                'conversation_id' => $conversationId,
+                'agent_id' => $agentId,
+                'api_type' => 'chat',
+                'streaming' => false,
+                'model' => $agentOverrides['model'] ?? $this->config['chat']['model'],
+                'prompt_tokens' => $usage['prompt_tokens'] ?? null,
+                'completion_tokens' => $usage['completion_tokens'] ?? null,
+                'total_tokens' => $usage['total_tokens'] ?? null,
+                'finish_reason' => $response['choices'][0]['finish_reason'] ?? null
+            ]);
+        }
 
         $messages[] = [
             'role' => 'assistant',
@@ -480,7 +520,7 @@ class ChatHandler {
 
         $fileIds = [];
         if ($fileData) {
-            $fileIds = $this->uploadFiles($fileData, 'user_data');
+            $fileIds = $this->uploadFiles($fileData, 'user_data', $tenantId, $conversationId, $agentId);
         }
 
         $userMessage = [
@@ -493,6 +533,24 @@ class ChatHandler {
         }
 
         $messages[] = $userMessage;
+
+        $fileCount = count($fileIds);
+        $charCount = mb_strlen($message ?? '', 'UTF-8');
+        $this->trackUsage($tenantId, UsageTrackingService::RESOURCE_MESSAGE, [
+            'quantity' => 1,
+            'conversation_id' => $conversationId,
+            'agent_id' => $agentId,
+            'api_type' => 'responses',
+            'streaming' => true,
+            'characters' => $charCount,
+            'estimated_tokens' => $this->estimateTokenCount($message),
+            'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
+            'file_count' => $fileCount,
+            'has_files' => $fileCount > 0,
+            'file_ids' => $fileIds,
+            'prompt_id' => $effectivePromptId,
+            'prompt_version' => $effectivePromptVersion
+        ]);
         
         // Audit: Record user message
         $userMessageId = null;
@@ -587,8 +645,8 @@ class ChatHandler {
         $leadSenseService = $this->leadSenseService;
         $chatHandler = $this;
 
-        $streamFn = function($p) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls, &$assistantMessageId, $auditService, $startTime, $leadSenseService, $chatHandler, $agentId, $message, $agentOverrides, $responsesConfig, $effectivePromptId) {
-            $this->openAIClient->streamResponse($p, function($event) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls, &$assistantMessageId, $auditService, $startTime, $leadSenseService, $chatHandler, $agentId, $message, $agentOverrides, $responsesConfig, $effectivePromptId) {
+        $streamFn = function($p) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls, &$assistantMessageId, $auditService, $startTime, $leadSenseService, $chatHandler, $agentId, $message, $agentOverrides, $responsesConfig, $effectivePromptId, $effectivePromptVersion, $tenantId) {
+            $this->openAIClient->streamResponse($p, function($event) use (&$messages, $conversationId, &$messageStarted, &$fullResponse, &$responseId, &$toolCalls, &$assistantMessageId, $auditService, $startTime, $leadSenseService, $chatHandler, $agentId, $message, $agentOverrides, $responsesConfig, $effectivePromptId, $effectivePromptVersion, $tenantId) {
             if (!isset($event['type'])) {
                 return;
             }
@@ -688,7 +746,7 @@ class ChatHandler {
                 if (!empty($toolCallsData)) {
                     $toolOutputs = [];
                     foreach ($toolCallsData as $toolCall) {
-                        $result = $this->executeTool($toolCall);
+                        $result = $this->executeTool($toolCall, $tenantId, $conversationId, $agentId, $responseId);
                         $toolOutputs[] = [
                             'tool_call_id' => $toolCall['id'] ?? ($toolCall['call_id'] ?? ''),
                             'output' => is_string($result) ? $result : json_encode($result)
@@ -750,6 +808,23 @@ class ChatHandler {
                         ], $assistantMessageId);
                     }
                 }
+
+                $usage = $event['response']['usage'] ?? null;
+                $chatHandler->trackUsage($tenantId, UsageTrackingService::RESOURCE_COMPLETION, [
+                    'quantity' => 1,
+                    'conversation_id' => $conversationId,
+                    'agent_id' => $agentId,
+                    'api_type' => 'responses',
+                    'streaming' => true,
+                    'response_id' => $responseId,
+                    'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
+                    'total_tokens' => $usage['total_tokens'] ?? null,
+                    'prompt_tokens' => $usage['prompt_tokens'] ?? null,
+                    'completion_tokens' => $usage['completion_tokens'] ?? null,
+                    'finish_reason' => $finishReason,
+                    'prompt_id' => $effectivePromptId,
+                    'prompt_version' => $effectivePromptVersion
+                ]);
 
                 $this->saveConversationHistory($conversationId, $messages);
                 
@@ -917,7 +992,7 @@ class ChatHandler {
 
         $fileIds = [];
         if ($fileData) {
-            $fileIds = $this->uploadFiles($fileData, 'user_data');
+            $fileIds = $this->uploadFiles($fileData, 'user_data', $tenantId, $conversationId, $agentId);
         }
 
         $userMessage = [
@@ -930,7 +1005,25 @@ class ChatHandler {
         }
 
         $messages[] = $userMessage;
-        
+
+        $fileCount = count($fileIds);
+        $charCount = mb_strlen($message ?? '', 'UTF-8');
+        $this->trackUsage($tenantId, UsageTrackingService::RESOURCE_MESSAGE, [
+            'quantity' => 1,
+            'conversation_id' => $conversationId,
+            'agent_id' => $agentId,
+            'api_type' => 'responses',
+            'streaming' => false,
+            'characters' => $charCount,
+            'estimated_tokens' => $this->estimateTokenCount($message),
+            'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
+            'file_count' => $fileCount,
+            'has_files' => $fileCount > 0,
+            'file_ids' => $fileIds,
+            'prompt_id' => $effectivePromptId,
+            'prompt_version' => $effectivePromptVersion
+        ]);
+
         // Audit: Record user message
         $startTime = microtime(true);
         if ($this->auditService && $this->auditService->isEnabled()) {
@@ -1013,8 +1106,25 @@ class ChatHandler {
             $payload['response_format'] = $effectiveResponseFormat;
         }
 
-        $execute = function(array $payload) use (&$messages, $conversationId, $startTime) {
+        $execute = function(array $payload) use (&$messages, $conversationId, $startTime, $tenantId, $agentId, $message, $agentOverrides, $responsesConfig, $effectivePromptId, $effectivePromptVersion) {
             $response = $this->openAIClient->createResponse($payload);
+
+            $usage = $response['usage'] ?? null;
+            $this->trackUsage($tenantId, UsageTrackingService::RESOURCE_COMPLETION, [
+                'quantity' => 1,
+                'conversation_id' => $conversationId,
+                'agent_id' => $agentId,
+                'api_type' => 'responses',
+                'streaming' => false,
+                'response_id' => $response['id'] ?? null,
+                'model' => $agentOverrides['model'] ?? $responsesConfig['model'],
+                'total_tokens' => $usage['total_tokens'] ?? null,
+                'prompt_tokens' => $usage['prompt_tokens'] ?? null,
+                'completion_tokens' => $usage['completion_tokens'] ?? null,
+                'finish_reason' => $response['status'] ?? null,
+                'prompt_id' => $effectivePromptId,
+                'prompt_version' => $effectivePromptVersion
+            ]);
 
             $assistantMessage = $this->extractResponseOutputText($response);
 
@@ -1112,7 +1222,7 @@ class ChatHandler {
         }
     }
 
-    private function streamChatCompletion($messages, $conversationId, $agentOverrides = [], $tenantId = null) {
+    private function streamChatCompletion($messages, $conversationId, $agentOverrides = [], $tenantId = null, $agentId = null) {
         $payload = [
             'model' => $agentOverrides['model'] ?? $this->config['chat']['model'],
             'messages' => $messages,
@@ -1132,7 +1242,7 @@ class ChatHandler {
         $chatHandler = $this;
         $usageData = null;
 
-        $this->openAIClient->streamChatCompletion($payload, function($chunk) use (&$messageStarted, &$fullResponse, $conversationId, $messages, $startTime, $auditService, $leadSenseService, $chatHandler, $agentOverrides, $tenantId, &$usageData) {
+        $this->openAIClient->streamChatCompletion($payload, function($chunk) use (&$messageStarted, &$fullResponse, $conversationId, $messages, $startTime, $auditService, $leadSenseService, $chatHandler, $agentOverrides, $tenantId, &$usageData, $agentId) {
             $messagesCopy = $messages;
 
             if (isset($chunk['choices'][0]['delta']['content'])) {
@@ -1190,14 +1300,18 @@ class ChatHandler {
                 $this->saveConversationHistory($conversationId, $messagesCopy);
                 
                 // Track usage for billing
-                if ($tenantId && $usageData) {
-                    $chatHandler->trackUsage($tenantId, 'completion', [
+                if ($tenantId) {
+                    $chatHandler->trackUsage($tenantId, UsageTrackingService::RESOURCE_COMPLETION, [
                         'quantity' => 1,
-                        'tokens' => $usageData['total_tokens'] ?? 0,
-                        'prompt_tokens' => $usageData['prompt_tokens'] ?? 0,
-                        'completion_tokens' => $usageData['completion_tokens'] ?? 0,
+                        'conversation_id' => $conversationId,
+                        'agent_id' => $agentId,
+                        'api_type' => 'chat',
+                        'streaming' => true,
                         'model' => $agentOverrides['model'] ?? $chatHandler->config['chat']['model'],
-                        'conversation_id' => $conversationId
+                        'total_tokens' => $usageData['total_tokens'] ?? null,
+                        'prompt_tokens' => $usageData['prompt_tokens'] ?? null,
+                        'completion_tokens' => $usageData['completion_tokens'] ?? null,
+                        'finish_reason' => $chunk['choices'][0]['finish_reason'] ?? null
                     ]);
                 }
                 
@@ -1822,7 +1936,7 @@ class ChatHandler {
         return '';
     }
 
-    private function uploadFiles($fileData, $purpose = 'user_data') {
+    private function uploadFiles($fileData, $purpose = 'user_data', $tenantId = null, $conversationId = null, $agentId = null) {
         $fileIds = [];
 
         if (!is_array($fileData)) {
@@ -1833,6 +1947,17 @@ class ChatHandler {
             $fileId = $this->openAIClient->uploadFile($file, $purpose);
             if ($fileId) {
                 $fileIds[] = $fileId;
+
+                $this->trackUsage($tenantId, UsageTrackingService::RESOURCE_FILE_UPLOAD, [
+                    'quantity' => 1,
+                    'file_id' => $fileId,
+                    'conversation_id' => $conversationId,
+                    'agent_id' => $agentId,
+                    'purpose' => $purpose,
+                    'file_name' => $file['name'] ?? null,
+                    'mime_type' => $file['type'] ?? null,
+                    'bytes' => isset($file['size']) ? (int) $file['size'] : null
+                ]);
             }
         }
 
@@ -1979,7 +2104,7 @@ class ChatHandler {
         }
     }
 
-    private function executeTool($toolCall) {
+    private function executeTool($toolCall, $tenantId = null, $conversationId = null, $agentId = null, $responseId = null) {
         $function = $toolCall['function'] ?? [
             'name' => $toolCall['name'] ?? '',
             'arguments' => $toolCall['arguments'] ?? '{}'
@@ -1988,14 +2113,29 @@ class ChatHandler {
         $functionName = $function['name'];
         $arguments = json_decode($function['arguments'] ?? '{}', true) ?: [];
 
+        $result = null;
         switch ($functionName) {
             case 'get_weather':
-                return $this->getWeather($arguments['location'] ?? '');
+                $result = $this->getWeather($arguments['location'] ?? '');
+                break;
             case 'search_knowledge':
-                return $this->searchKnowledge($arguments['query'] ?? '');
+                $result = $this->searchKnowledge($arguments['query'] ?? '');
+                break;
             default:
-                return ['error' => 'Unknown function: ' . $functionName];
+                $result = ['error' => 'Unknown function: ' . $functionName];
+                break;
         }
+
+        $this->trackUsage($tenantId, UsageTrackingService::RESOURCE_TOOL_CALL, [
+            'quantity' => 1,
+            'conversation_id' => $conversationId,
+            'agent_id' => $agentId,
+            'response_id' => $responseId,
+            'tool_name' => $functionName,
+            'arguments' => $arguments
+        ]);
+
+        return $result;
     }
 
     private function getWeather($location) {
@@ -2005,10 +2145,23 @@ class ChatHandler {
     private function searchKnowledge($query) {
         return ['results' => 'Knowledge base search for: ' . $query];
     }
-    
+
+    private function estimateTokenCount($text) {
+        if (!is_string($text) || $text === '') {
+            return 0;
+        }
+
+        $charCount = mb_strlen($text, 'UTF-8');
+        if ($charCount === 0) {
+            return 0;
+        }
+
+        return (int) max(1, ceil($charCount / 4));
+    }
+
     /**
      * Get agent configuration (public for channel integrations)
-     * 
+     *
      * @param string|null $agentId
      * @return array Agent configuration with overrides applied
      */
