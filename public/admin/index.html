@@ -82,6 +82,16 @@
                 <div class="header-right">
                     <span class="status-indicator" id="status-indicator">●</span>
                     <span id="status-text">Offline</span>
+                    <div class="tenant-session" id="current-tenant-pill">
+                        <span class="tenant-session-label">Tenant</span>
+                        <span class="tenant-session-value" id="current-tenant-value">—</span>
+                    </div>
+                    <div class="tenant-selector" id="tenant-selector-wrapper">
+                        <label for="tenant-selector" class="sr-only">Select tenant</label>
+                        <select id="tenant-selector">
+                            <option value="">All tenants</option>
+                        </select>
+                    </div>
                     <div class="user-session" id="current-user-pill">
                         <span class="user-session-label">Signed in as</span>
                         <span class="user-session-value" id="current-user-email">Guest</span>

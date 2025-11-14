@@ -13,6 +13,42 @@ const authState = {
     isAuthenticating: false,
     lastError: null
 };
+
+const tenantSelectionState = {
+    activeTenantId: null,
+    tenants: [],
+    pendingRefresh: null,
+    storageKey: 'gpt-admin.activeTenantId',
+    loadPersistedSelection() {
+        try {
+            const stored = window.sessionStorage?.getItem(this.storageKey);
+            if (stored === null || stored === undefined || stored === '') {
+                return null;
+            }
+            return stored;
+        } catch (error) {
+            console.debug('Unable to read tenant selection from sessionStorage', error);
+            return null;
+        }
+    },
+    persistSelection(tenantId) {
+        try {
+            if (!tenantId) {
+                window.sessionStorage?.removeItem(this.storageKey);
+            } else {
+                window.sessionStorage?.setItem(this.storageKey, tenantId);
+            }
+        } catch (error) {
+            console.debug('Unable to persist tenant selection to sessionStorage', error);
+        }
+    },
+    clear() {
+        this.activeTenantId = null;
+        this.tenants = [];
+        this.pendingRefresh = null;
+        this.persistSelection(null);
+    }
+};
 let isLoginModalVisible = false;
 
 const agentListState = {
@@ -153,10 +189,41 @@ class APIError extends Error {
 
 class AdminAPI {
     async request(action, options = {}) {
-        const url = `${API_ENDPOINT}?action=${action}${options.params || ''}`;
+        const method = (options.method || 'GET').toUpperCase();
+        let params = options.params || '';
+        let body = options.body;
+
+        const isSuperAdminSession = authState.user?.role === SUPER_ADMIN_ROLE;
+        const shouldScopeTenant = isSuperAdminSession && hasActiveTenantSelection();
+        const activeTenantId = shouldScopeTenant ? String(tenantSelectionState.activeTenantId) : null;
+
+        if (shouldScopeTenant && activeTenantId) {
+            const paramsHasTenant = typeof params === 'string' && params.includes('tenant_id=');
+            let bodyHasTenant = false;
+
+            if (body instanceof FormData) {
+                bodyHasTenant = body.has('tenant_id');
+            } else if (body && typeof body === 'object' && !Array.isArray(body)) {
+                bodyHasTenant = Object.prototype.hasOwnProperty.call(body, 'tenant_id');
+            }
+
+            if (!paramsHasTenant && !bodyHasTenant) {
+                if (method === 'GET') {
+                    params += `&tenant_id=${encodeURIComponent(activeTenantId)}`;
+                } else if (body instanceof FormData) {
+                    body.set('tenant_id', activeTenantId);
+                } else if (body && typeof body === 'object' && !Array.isArray(body)) {
+                    body = { ...body, tenant_id: activeTenantId };
+                } else if (body === undefined || body === null) {
+                    body = { tenant_id: activeTenantId };
+                }
+            }
+        }
+
+        const url = `${API_ENDPOINT}?action=${action}${params}`;
         const headers = { ...(options.headers || {}) };
         const config = {
-            method: options.method || 'GET',
+            method,
             headers,
             credentials: 'include'
         };
@@ -165,13 +232,13 @@ class AdminAPI {
             config.signal = options.signal;
         }
 
-        if (options.body !== undefined && options.body !== null) {
-            if (options.body instanceof FormData) {
-                config.body = options.body;
-            } else if (config.method === 'GET') {
+        if (body !== undefined && body !== null) {
+            if (body instanceof FormData) {
+                config.body = body;
+            } else if (method === 'GET') {
                 // ignore
             } else {
-                config.body = JSON.stringify(options.body);
+                config.body = JSON.stringify(body);
                 if (!config.headers['Content-Type']) {
                     config.headers['Content-Type'] = 'application/json';
                 }
@@ -491,35 +558,29 @@ class AdminAPI {
     }
     
     // Billing & Usage
-    getUsageStats(tenantId = null, filters = {}) {
+    getUsageStats(filters = {}) {
         let params = '';
-        if (tenantId) params += `&tenant_id=${tenantId}`;
         if (filters.start_date) params += `&start_date=${filters.start_date}`;
         if (filters.end_date) params += `&end_date=${filters.end_date}`;
         if (filters.resource_type) params += `&resource_type=${filters.resource_type}`;
         return this.request('get_usage_stats', { params });
     }
-    
-    getUsageTimeSeries(tenantId = null, filters = {}) {
+
+    getUsageTimeSeries(filters = {}) {
         let params = '';
-        if (tenantId) params += `&tenant_id=${tenantId}`;
         if (filters.start_date) params += `&start_date=${filters.start_date}`;
         if (filters.end_date) params += `&end_date=${filters.end_date}`;
         if (filters.resource_type) params += `&resource_type=${filters.resource_type}`;
         if (filters.interval) params += `&interval=${filters.interval}`;
         return this.request('get_usage_timeseries', { params });
     }
-    
-    listQuotas(tenantId = null) {
-        let params = '';
-        if (tenantId) params += `&tenant_id=${tenantId}`;
-        return this.request('list_quotas', { params });
+
+    listQuotas() {
+        return this.request('list_quotas');
     }
-    
-    getQuotaStatus(tenantId = null) {
-        let params = '';
-        if (tenantId) params += `&tenant_id=${tenantId}`;
-        return this.request('get_quota_status', { params });
+
+    getQuotaStatus() {
+        return this.request('get_quota_status');
     }
     
     setQuota(data) {
@@ -530,27 +591,28 @@ class AdminAPI {
         return this.request('delete_quota', { method: 'POST', params: `&id=${id}` });
     }
     
-    getSubscription(tenantId = null) {
-        let params = '';
-        if (tenantId) params += `&tenant_id=${tenantId}`;
-        return this.request('get_subscription', { params });
+    getSubscription() {
+        return this.request('get_subscription');
     }
-    
+
     createSubscription(data) {
         return this.request('create_subscription', { method: 'POST', body: data });
     }
-    
+
     updateSubscription(data) {
         return this.request('update_subscription', { method: 'POST', body: data });
     }
-    
-    cancelSubscription(tenantId, immediately = false) {
-        return this.request('cancel_subscription', { method: 'POST', body: { tenant_id: tenantId, immediately } });
+
+    cancelSubscription({ tenantId = null, immediately = false } = {}) {
+        const body = { immediately };
+        if (tenantId) {
+            body.tenant_id = tenantId;
+        }
+        return this.request('cancel_subscription', { method: 'POST', body });
     }
-    
-    listInvoices(tenantId = null, filters = {}) {
+
+    listInvoices(filters = {}) {
         let params = '';
-        if (tenantId) params += `&tenant_id=${tenantId}`;
         if (filters.status) params += `&status=${filters.status}`;
         if (filters.limit) params += `&limit=${filters.limit}`;
         if (filters.offset) params += `&offset=${filters.offset}`;
@@ -569,9 +631,8 @@ class AdminAPI {
         return this.request('update_invoice', { method: 'POST', params: `&id=${id}`, body: data });
     }
     
-    listNotifications(tenantId = null, filters = {}) {
+    listNotifications(filters = {}) {
         let params = '';
-        if (tenantId) params += `&tenant_id=${tenantId}`;
         if (filters.type) params += `&type=${filters.type}`;
         if (filters.status) params += `&status=${filters.status}`;
         if (filters.unread_only) params += `&unread_only=${filters.unread_only}`;
@@ -584,10 +645,8 @@ class AdminAPI {
         return this.request('mark_notification_read', { method: 'POST', params: `&id=${id}` });
     }
     
-    getUnreadCount(tenantId = null) {
-        let params = '';
-        if (tenantId) params += `&tenant_id=${tenantId}`;
-        return this.request('get_unread_count', { params });
+    getUnreadCount() {
+        return this.request('get_unread_count');
     }
 }
 
@@ -861,6 +920,17 @@ function escapeHtml(text) {
 }
 
 const SUPER_ADMIN_ROLE = 'super-admin';
+const TENANT_SCOPED_PAGES = new Set([
+    'agents',
+    'prompts',
+    'vector-stores',
+    'whatsapp-templates',
+    'consent-management',
+    'jobs',
+    'billing',
+    'audit',
+    'audit-conversations'
+]);
 
 function updateStatusIndicator(message, state = 'online') {
     const indicator = document.getElementById('status-indicator');
@@ -894,6 +964,176 @@ function updateRoleVisibility(role) {
             link.classList.add('is-hidden');
         }
     });
+
+    updateTenantNavState();
+    renderTenantSelector();
+}
+
+function requiresTenantSelection(page) {
+    return TENANT_SCOPED_PAGES.has(page);
+}
+
+function hasActiveTenantSelection() {
+    const id = tenantSelectionState.activeTenantId;
+    return id !== null && id !== undefined && id !== '';
+}
+
+function getActiveTenantDisplayName() {
+    if (!authState.user) {
+        return '—';
+    }
+
+    if (authState.user.role === SUPER_ADMIN_ROLE) {
+        if (!hasActiveTenantSelection()) {
+            return 'All tenants';
+        }
+
+        const activeTenantId = String(tenantSelectionState.activeTenantId);
+        const tenants = tenantSelectionState.tenants || [];
+        const match = tenants.find(tenant => tenant && String(tenant.id) === activeTenantId);
+        if (match) {
+            return getTenantDisplayName(match);
+        }
+
+        return activeTenantId;
+    }
+
+    return authState.user.tenant?.name
+        || authState.user.tenant_name
+        || authState.user.tenant_slug
+        || authState.user.tenant_id
+        || '—';
+}
+
+function updateTenantDisplay() {
+    const tenantValueElement = document.getElementById('current-tenant-value');
+    if (tenantValueElement) {
+        tenantValueElement.textContent = getActiveTenantDisplayName();
+    }
+}
+
+function updateTenantNavState() {
+    const navLinks = document.querySelectorAll('.nav-link[data-page]');
+    const isSuperAdmin = authState.user?.role === SUPER_ADMIN_ROLE;
+    const hasTenantSelected = hasActiveTenantSelection();
+
+    navLinks.forEach(link => {
+        const page = link.dataset.page;
+        const shouldDisable = Boolean(
+            isSuperAdmin && requiresTenantSelection(page) && !hasTenantSelected
+        );
+
+        link.classList.toggle('is-disabled', shouldDisable);
+
+        if (shouldDisable) {
+            link.setAttribute('aria-disabled', 'true');
+        } else {
+            link.removeAttribute('aria-disabled');
+        }
+    });
+}
+
+function renderTenantSelector() {
+    const wrapper = document.getElementById('tenant-selector-wrapper');
+    const select = document.getElementById('tenant-selector');
+
+    if (!wrapper || !select) {
+        return;
+    }
+
+    if (!select.dataset.bound) {
+        select.addEventListener('change', handleTenantSelectorChange);
+        select.dataset.bound = 'true';
+    }
+
+    const tenants = tenantSelectionState.tenants || [];
+    const hasSelection = hasActiveTenantSelection();
+    const activeTenantId = hasSelection ? String(tenantSelectionState.activeTenantId) : '';
+
+    const tenantOptions = tenants
+        .filter(tenant => tenant && tenant.id)
+        .map(tenant => `<option value="${String(tenant.id)}">${escapeHtml(getTenantDisplayName(tenant))}</option>`);
+
+    const options = ['<option value="">All tenants</option>', ...tenantOptions].join('');
+
+    select.innerHTML = options;
+    select.value = hasSelection ? activeTenantId : '';
+
+    wrapper.classList.toggle('has-selection', hasSelection);
+}
+
+function handleTenantSelectorChange(event) {
+    const previousSelection = tenantSelectionState.activeTenantId;
+    const rawValue = event.target.value;
+    const nextSelection = rawValue ? rawValue : null;
+
+    tenantSelectionState.activeTenantId = nextSelection;
+    tenantSelectionState.persistSelection(nextSelection);
+
+    renderTenantSelector();
+    updateTenantDisplay();
+    updateTenantNavState();
+
+    if (previousSelection !== nextSelection) {
+        loadCurrentPage();
+    }
+}
+
+async function refreshTenantOptions({ silent = false } = {}) {
+    if (authState.user?.role !== SUPER_ADMIN_ROLE) {
+        tenantSelectionState.tenants = [];
+        tenantSelectionState.pendingRefresh = null;
+        renderTenantSelector();
+        updateTenantDisplay();
+        updateTenantNavState();
+        return [];
+    }
+
+    if (tenantSelectionState.pendingRefresh) {
+        return tenantSelectionState.pendingRefresh;
+    }
+
+    const refreshPromise = (async () => {
+        try {
+            const tenants = await api.listTenants();
+            tenantSelectionState.tenants = Array.isArray(tenants) ? tenants : [];
+
+            const hasSelection = hasActiveTenantSelection();
+            const selectedId = hasSelection ? String(tenantSelectionState.activeTenantId) : null;
+            const selectionAvailable = tenantSelectionState.tenants.some(
+                tenant => tenant && hasSelection && String(tenant.id) === selectedId
+            );
+
+            if (hasSelection && !selectionAvailable) {
+                tenantSelectionState.activeTenantId = null;
+                tenantSelectionState.persistSelection(null);
+                if (!silent) {
+                    showToast('Previously selected tenant is no longer available. Showing all tenants.', 'warning');
+                }
+                if (requiresTenantSelection(currentPage)) {
+                    loadCurrentPage();
+                }
+            }
+
+            renderTenantSelector();
+            updateTenantDisplay();
+            updateTenantNavState();
+
+            return tenantSelectionState.tenants;
+        } catch (error) {
+            if (!silent) {
+                showToast('Failed to load tenants: ' + error.message, 'error');
+            }
+            throw error;
+        } finally {
+            if (tenantSelectionState.pendingRefresh === refreshPromise) {
+                tenantSelectionState.pendingRefresh = null;
+            }
+        }
+    })();
+
+    tenantSelectionState.pendingRefresh = refreshPromise;
+    return refreshPromise;
 }
 
 function setAuthenticatedUser(user, session = null) {
@@ -908,14 +1148,36 @@ function setAuthenticatedUser(user, session = null) {
             emailElement.textContent = user.email || 'Unknown user';
         }
         updateStatusIndicator('Connected', 'online');
+        const isSuperAdmin = user.role === SUPER_ADMIN_ROLE;
+
+        if (isSuperAdmin) {
+            tenantSelectionState.activeTenantId = tenantSelectionState.loadPersistedSelection();
+            tenantSelectionState.tenants = [];
+        } else {
+            tenantSelectionState.activeTenantId = user.tenant_id !== undefined && user.tenant_id !== null
+                ? String(user.tenant_id)
+                : null;
+            tenantSelectionState.tenants = [];
+            tenantSelectionState.persistSelection(tenantSelectionState.activeTenantId);
+        }
+
         updateRoleVisibility(user.role);
+        updateTenantDisplay();
+
+        if (isSuperAdmin) {
+            refreshTenantOptions({ silent: true }).catch(error => {
+                console.error('Failed to refresh tenant options', error);
+            });
+        }
     } else {
         document.body.classList.remove('is-authenticated');
         if (emailElement) {
             emailElement.textContent = 'Guest';
         }
         updateStatusIndicator('Sign in required', 'offline');
+        tenantSelectionState.clear();
         updateRoleVisibility(null);
+        updateTenantDisplay();
     }
 }
 
@@ -1093,6 +1355,13 @@ async function initializeAuthentication() {
     try {
         const user = await refreshCurrentUser({ silent: true });
         if (user) {
+            if (user.role === SUPER_ADMIN_ROLE) {
+                try {
+                    await refreshTenantOptions({ silent: true });
+                } catch (error) {
+                    console.warn('Failed to preload tenant options', error);
+                }
+            }
             const initialPage = window.location.hash.substring(1) || 'agents';
             navigateTo(initialPage);
             loadCurrentPage();
@@ -1142,6 +1411,15 @@ function navigateTo(page) {
         page = 'agents';
     }
 
+    if (
+        authState.user.role === SUPER_ADMIN_ROLE &&
+        requiresTenantSelection(page) &&
+        !hasActiveTenantSelection()
+    ) {
+        showToast('Select a tenant to access this section.', 'warning');
+        return;
+    }
+
     if (currentPage === 'jobs' && jobsRefreshInterval) {
         clearInterval(jobsRefreshInterval);
         jobsRefreshInterval = null;
@@ -1181,6 +1459,23 @@ function navigateTo(page) {
 
 function loadCurrentPage() {
     if (!authState.user) {
+        return;
+    }
+
+    const content = document.getElementById('content');
+
+    if (
+        content &&
+        authState.user.role === SUPER_ADMIN_ROLE &&
+        requiresTenantSelection(currentPage) &&
+        !hasActiveTenantSelection()
+    ) {
+        content.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">🏢</div>
+                <div class="empty-state-text">Select a tenant from the header to view this section.</div>
+            </div>
+        `;
         return;
     }
 
@@ -2942,12 +3237,12 @@ async function loadBillingPage() {
         // Load data in parallel
         const [quotaStatus, usageStats, subscription, invoices, notifications] = await Promise.all([
             api.getQuotaStatus().catch(() => []),
-            api.getUsageStats(null, { 
-                start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() 
+            api.getUsageStats({
+                start_date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
             }).catch(() => ({ by_resource_type: [], totals: {} })),
             api.getSubscription().catch(() => null),
-            api.listInvoices(null, { limit: 10 }).catch(() => []),
-            api.listNotifications(null, { limit: 5, unread_only: true }).catch(() => [])
+            api.listInvoices({ limit: 10 }).catch(() => []),
+            api.listNotifications({ limit: 5, unread_only: true }).catch(() => [])
         ]);
         
         let html = `

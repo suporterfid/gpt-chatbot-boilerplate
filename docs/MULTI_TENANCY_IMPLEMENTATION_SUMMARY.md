@@ -93,24 +93,13 @@ All queries automatically filtered by tenant_id
 - Regular admins restricted to their tenant
 - Resource-level authorization on top of tenant isolation
 
-### 4. Admin UI with Tenant Selector ⚠️
+### 4. Admin UI with Tenant Selector ✅
 
-**Implemented:**
-- ✅ Admin API has complete tenant management endpoints
-- ✅ Admin UI JavaScript has tenant API client methods
-- ⚠️ Visual tenant selector UI not implemented (frontend work, out of scope)
-
-**Available API Endpoints:**
-- `GET /admin-api.php?action=list_tenants`
-- `GET /admin-api.php?action=get_tenant&id={id}`
-- `POST /admin-api.php?action=create_tenant`
-- `POST /admin-api.php?action=update_tenant&id={id}`
-- `POST /admin-api.php?action=delete_tenant&id={id}`
-- `POST /admin-api.php?action=suspend_tenant&id={id}`
-- `POST /admin-api.php?action=activate_tenant&id={id}`
-- `GET /admin-api.php?action=get_tenant_stats&id={id}`
-
-**Note:** JavaScript client methods exist in `admin.js` but visual UI components would require HTML/CSS changes.
+**Highlights:**
+- Super-admins see a tenant badge and dropdown in the admin header for scoping every page and API request.
+- Selection persists in `sessionStorage`, defaults to "All tenants", and falls back automatically if a tenant is removed.
+- Navigation links that require tenant context are disabled until a tenant is picked, and the current page shows a friendly empty-state prompt.
+- Tenant scoping is centralized in the `AdminAPI` client, ensuring every request is automatically scoped without ad-hoc query parameters.
 
 ### 5. Migration Script for Legacy Data ✅
 

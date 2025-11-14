@@ -384,10 +384,10 @@ From SPEC_COMMERCIALIZATION_IMPEDMENTS.md Section 11:
 - **Priority**: Before production if billing is needed
 
 ### 3. Admin UI for Tenants
-- **Issue**: Visual tenant selector not implemented
-- **Impact**: Low - API complete, UI requires HTML/CSS work
-- **Workaround**: Use API directly or add custom UI
-- **Priority**: Nice-to-have enhancement
+- **Status**: Tenant selector shipped in admin header for super-admins
+- **Impact**: Tenant-specific pages and API calls automatically scope to the selected tenant
+- **Notes**: Selection persists per session, disables tenant-scoped nav links until a tenant is picked, and falls back gracefully when a tenant is removed
+- **Priority**: ✅ Complete
 
 ---
 
