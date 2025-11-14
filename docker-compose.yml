@@ -115,6 +115,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
       - mysql_data:/var/lib/mysql
     restart: unless-stopped
     healthcheck:
