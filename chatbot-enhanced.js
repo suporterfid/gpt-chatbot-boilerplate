@@ -49,15 +49,15 @@
 
         // Theme customization
         theme: {
-            primaryColor: '#1FB8CD',
-            backgroundColor: '#F5F5F5',
-            surfaceColor: '#FFFFFF',
-            textColor: '#333333',
-            mutedColor: '#666666',
-            fontFamily: 'inherit',
-            fontSize: '14px',
-            borderRadius: '8px',
-            shadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+            primaryColor: '#5f6360',
+            backgroundColor: '#f2f4f2',
+            surfaceColor: '#ffffff',
+            textColor: '#2a2d2b',
+            mutedColor: 'rgba(42, 45, 43, 0.64)',
+            fontFamily: '"Arial", "Helvetica", "helvetica-w01-bold", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            fontSize: '16px',
+            borderRadius: '16px',
+            shadow: '0 16px 32px -12px rgba(0, 0, 0, 0.25)'
         },
 
         // Assistant settings
