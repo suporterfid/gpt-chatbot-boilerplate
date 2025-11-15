@@ -151,6 +151,29 @@ In the Prompt Builder modal, scroll to the **Version History** section to see al
 2. Confirm the activation
 3. The agent immediately starts using that specification
 
+### Multilingual Guardrail Activation Checklist
+
+1. **Locate the multilingual version** – In **Version History**, find the entry whose Guardrails column lists `language_support` alongside the mandatory safety guardrails.
+2. **Activate via UI or API** – Click **Activate**, confirm, and wait for the toast confirmation. If you prefer automation, call `prompt_builder_activate` with the same `agent_id` and `version` that appears in the table; this mirrors the UI action and immediately swaps the active specification.【F:docs/prompt_builder_api.md†L196-L212】
+3. **Confirm the supported languages** – The current configuration lists **Portuguese (default narration), English, and Spanish** under `supported_languages`, and the guardrail instructs the agent to fall back to Portuguese whenever an unsupported language is requested.【F:docs/prompt_builder_overview.md†L52-L70】【F:docs/prompt_builder_guardrails.md†L118-L139】
+
+#### Conversation smoke test (widget or admin console)
+
+Perform a short conversation in each channel immediately after activation to ensure the guardrail is honored:
+
+- **Portuguese (`pt`)** – Start with a greeting (e.g., “Olá, preciso de ajuda com meu pedido”). The agent should stay in Portuguese for both narration and clarifying questions.
+- **English (`en`)** – Ask a product or policy question to verify the response switches to English automatically while still respecting the guardrail directives.
+- **Spanish (`es`)** – Submit a refund or troubleshooting prompt to confirm the third approved language works end to end.
+- **Unsupported sample (`de`)** – Send a short German sentence; the guardrail must politely list the supported languages and immediately return to Portuguese as the default fallback.
+
+Capture screenshots or transcript excerpts for each language so the next activation run can reference known-good behavior.
+
+#### Documenting languages and planning future edits
+
+- Record the exact `supported_languages` string (`Portuguese, English, Spanish`) and the `default_language` (`Portuguese`) in the agent’s runbook so future rotations know the intended coverage.【F:docs/prompt_builder_overview.md†L52-L70】
+- If you need to add/remove languages, update those two variables before regenerating or editing the specification, then save as a new version so the change is tracked in Version History.【F:docs/prompt_builder_guardrails.md†L118-L139】
+- After every edit, repeat the smoke test above and note any pending follow-up work (e.g., translations that still need review) directly in the agent’s change log.
+
 ### Deactivating
 
 Click **Deactivate Current Prompt** to stop using generated prompts. The agent will fall back to its manually configured system_message.

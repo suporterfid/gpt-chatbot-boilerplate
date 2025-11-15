@@ -209,6 +209,13 @@ curl -X POST "https://your-domain.com/admin-api.php?action=prompt_builder_activa
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
+#### Multilingual activation runbook (API-first)
+
+1. **Identify the version** – Call `prompt_builder_list` or inspect the Admin UI to confirm which `version` contains the `language_support` guardrail plus the current list of supported languages (Portuguese, English, Spanish with Portuguese as the default fallback).【F:docs/prompt_builder_overview.md†L52-L70】
+2. **Activate programmatically** – Trigger `prompt_builder_activate` as shown above, passing the exact `version` number. Capture the JSON response in your deployment logs so audits can prove when the multilingual guardrail went live.
+3. **Validate conversations** – Use the widget/admin console to send quick prompts in Portuguese, English, and Spanish, plus one unsupported language (e.g., German). The guardrail requires the agent to answer only in the approved set and to fall back to Portuguese when a language is unavailable.【F:docs/prompt_builder_guardrails.md†L118-L139】
+4. **Document follow-ups** – Note any languages that still need translations or glossary updates before the next activation. When you change the list, update the `supported_languages` and `default_language` variables before saving a new version so the behavior remains traceable in Version History.【F:docs/prompt_builder_guardrails.md†L118-L139】
+
 ---
 
 ### Deactivate Prompt
