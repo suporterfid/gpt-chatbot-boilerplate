@@ -283,4 +283,15 @@ class DB {
     public function getPDO() {
         return $this->pdo;
     }
+
+    /**
+     * Magic method shim for backwards compatibility (e.g., getPdo vs getPDO).
+     */
+    public function __call($name, $arguments) {
+        if ($name === 'getPdo') {
+            return $this->getPDO();
+        }
+
+        throw new BadMethodCallException('Undefined method ' . __CLASS__ . '::' . $name . '()');
+    }
 }
