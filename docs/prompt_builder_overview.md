@@ -34,7 +34,7 @@ Prompt Builder is an AI-powered specification generator that helps you create co
 
 ### 1. Describe Your Agent Idea
 
-Navigate to the Agents page and click the **✨ Prompt Builder** button next to any agent. Enter a brief description:
+From the Agents page (even when you bypass the legacy Admin UI), click the **✨ Prompt Builder** button next to the agent you want to update. The Prompt Builder modal will open with three panes: the idea input on the left, the guardrail checklist (mandatory items already selected) in the middle, and the preview/version history on the right. Enter a brief description in the idea field:
 
 ```
 A customer support agent that helps users with product questions,
@@ -49,9 +49,33 @@ Choose which guardrails to include. Mandatory guardrails are pre-selected and ca
 - ☑️ **Scope Restriction** (required)
 - ☐ Data Privacy (optional)
 
+> 💡 **Multi-language guardrail**: mark **Language Support** to enforce multilingual behavior. When selected, the variables panel exposes two required fields:
+> - `supported_languages`: comma-separated list such as `Portuguese, English, Spanish`
+> - `default_language`: single fallback value such as `Portuguese`
+
+Fill both variables before generating; otherwise the guardrail snippet cannot interpolate the placeholders.
+
+If you prefer to generate the specification with the API, call `prompt_builder_generate` with an explicit guardrail list:
+
+```json
+{
+  "idea_text": "A multilingual customer-support specialist...",
+  "guardrails": [
+    "hallucination_prevention",
+    "scope_restriction",
+    "language_support"
+  ],
+  "language": "pt",
+  "variables": {
+    "supported_languages": "Portuguese, English, Spanish",
+    "default_language": "Portuguese"
+  }
+}
+```
+
 ### 3. Generate Specification
 
-Click **Generate Specification**. The AI will create a structured prompt with these sections:
+Click **Generate Specification**. The AI will create a structured prompt with these sections and, when the Language Support guardrail is active, a dedicated section that spells out the supported languages plus the default fallback.
 
 1. **Role**: Clear description of the agent's purpose
 2. **Audience**: Target users and use cases
@@ -62,7 +86,7 @@ Click **Generate Specification**. The AI will create a structured prompt with th
 
 ### 4. Review & Edit
 
-The generated specification appears in a markdown editor. You can:
+The generated specification appears in a markdown editor. Confirm that the Guardrails section lists the language instructions from the `language_support` template (supported list, default fallback, and unsupported-language handling). You can then:
 - Edit the specification directly
 - Toggle preview to see rendered output
 - Save as a new version if you make changes

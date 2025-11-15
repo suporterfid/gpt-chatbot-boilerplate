@@ -91,6 +91,26 @@ curl -X POST "https://your-domain.com/admin-api.php?action=prompt_builder_genera
   }'
 ```
 
+**Example with multi-language guardrail**:
+```bash
+curl -X POST "https://your-domain.com/admin-api.php?action=prompt_builder_generate&agent_id=abc123" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "idea_text": "Uma agente de suporte que responde em Português, Inglês e Espanhol",
+    "guardrails": [
+      "hallucination_prevention",
+      "scope_restriction",
+      "language_support"
+    ],
+    "language": "pt",
+    "variables": {
+      "supported_languages": "Portuguese, English, Spanish",
+      "default_language": "Portuguese"
+    }
+  }'
+```
+
 ---
 
 ### List Prompt Versions
