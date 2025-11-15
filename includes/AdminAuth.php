@@ -27,6 +27,86 @@ class AdminAuth {
         $this->config = $config;
     }
     
+    public function ensureBootstrapSuperAdmin() {
+        $adminConfig = $this->config['admin'] ?? [];
+        $enabled = $adminConfig['enabled'] ?? false;
+
+        if (!$enabled) {
+            return null;
+        }
+
+        $defaults = $adminConfig['bootstrap_defaults'] ?? [];
+        $email = isset($defaults['email']) ? trim($defaults['email']) : '';
+        $password = $defaults['password'] ?? '';
+
+        if ($email === '' || $password === '') {
+            return null;
+        }
+
+        if (method_exists($this->db, 'tableExists')) {
+            try {
+                if (!$this->db->tableExists('admin_users')) {
+                    return null;
+                }
+            } catch (Exception $e) {
+                error_log('Failed to verify admin_users table existence: ' . $e->getMessage());
+                return null;
+            }
+        }
+
+        $user = $this->getUserByEmail($email);
+
+        if (!$user) {
+            try {
+                $createdUser = $this->createUser($email, $password, self::ROLE_SUPER_ADMIN);
+                error_log(sprintf('Bootstrap admin account %s created from DEFAULT_ADMIN_EMAIL.', $email));
+                return $createdUser;
+            } catch (Exception $e) {
+                if ($e->getCode() !== 409 && strpos($e->getMessage(), 'already exists') === false) {
+                    throw $e;
+                }
+                $user = $this->getUserByEmail($email);
+            }
+        }
+
+        if (!$user) {
+            return null;
+        }
+
+        $updateClauses = [];
+        $params = [];
+
+        if (($user['role'] ?? null) !== self::ROLE_SUPER_ADMIN) {
+            $updateClauses[] = 'role = ?';
+            $params[] = self::ROLE_SUPER_ADMIN;
+        }
+
+        if (array_key_exists('tenant_id', $user) && $user['tenant_id'] !== null) {
+            $updateClauses[] = 'tenant_id = NULL';
+        }
+
+        if (!(bool)($user['is_active'] ?? false)) {
+            $updateClauses[] = 'is_active = 1';
+        }
+
+        if (empty($user['password_hash'])) {
+            $updateClauses[] = 'password_hash = ?';
+            $params[] = password_hash($password, PASSWORD_BCRYPT);
+        }
+
+        if (!empty($updateClauses)) {
+            $updateClauses[] = 'updated_at = ?';
+            $params[] = date('Y-m-d H:i:s');
+            $params[] = $user['id'];
+
+            $sql = 'UPDATE admin_users SET ' . implode(', ', $updateClauses) . ' WHERE id = ?';
+            $this->db->execute($sql, $params);
+            error_log(sprintf('Bootstrap admin account %s normalized from DEFAULT_ADMIN settings.', $email));
+        }
+
+        return $this->getUser($user['id']);
+    }
+
     /**
      * Authenticate using Bearer token
      * Supports both legacy ADMIN_TOKEN and per-user API keys

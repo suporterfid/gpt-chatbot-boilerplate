@@ -340,6 +340,13 @@ try {
     
     // Initialize AdminAuth before authentication check
     $adminAuth = new AdminAuth($db, $config);
+
+    // Ensure bootstrap admin credentials are materialized for first-time logins
+    try {
+        $adminAuth->ensureBootstrapSuperAdmin();
+    } catch (Exception $e) {
+        log_admin('Failed to ensure bootstrap admin user: ' . $e->getMessage(), 'error');
+    }
     
     // Determine action and request method early so we can decide on authentication requirements
     $action = $_GET['action'] ?? '';
