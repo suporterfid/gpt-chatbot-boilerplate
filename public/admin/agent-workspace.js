@@ -75,6 +75,7 @@
             input: '',
             isStreaming: false,
             eventSource: null,
+            streamAbortController: null,
             error: null,
             statusNotice: null,
             promptMeta: {
@@ -103,17 +104,32 @@
     }
 
     function closeTestStream() {
-        if (wizardState.testSession?.eventSource) {
+        const session = wizardState.testSession;
+        if (!session) {
+            return;
+        }
+
+        if (session.eventSource) {
             try {
-                wizardState.testSession.eventSource.close();
+                session.eventSource.close();
             } catch (error) {
                 console.warn('Failed to close test stream', error);
             }
+            session.eventSource = null;
         }
-        if (wizardState.testSession) {
-            wizardState.testSession.eventSource = null;
-            wizardState.testSession.isStreaming = false;
+
+        if (session.streamAbortController) {
+            if (session.isStreaming) {
+                try {
+                    session.streamAbortController.abort();
+                } catch (error) {
+                    console.warn('Failed to abort test stream', error);
+                }
+            }
+            session.streamAbortController = null;
         }
+
+        session.isStreaming = false;
     }
 
     function resetTestSession(agentId = null) {
@@ -535,7 +551,52 @@
         renderWorkspace();
     }
 
-    function startTestStream(agentId, assistantMessage, userMessage) {
+    function parseSSEEvent(rawEvent) {
+        if (!rawEvent || !rawEvent.trim()) {
+            return null;
+        }
+
+        const lines = rawEvent.split('\n');
+        let eventType = 'message';
+        const dataLines = [];
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                continue;
+            }
+            if (trimmed.startsWith('event:')) {
+                eventType = trimmed.slice(6).trim() || eventType;
+            } else if (trimmed.startsWith('data:')) {
+                dataLines.push(trimmed.slice(5).trim());
+            }
+        }
+
+        if (dataLines.length === 0) {
+            return null;
+        }
+
+        const payload = dataLines.join('\n');
+
+        if (payload === '[DONE]') {
+            return { type: 'done' };
+        }
+
+        try {
+            const parsed = JSON.parse(payload);
+            if (parsed && typeof parsed === 'object' && !parsed.type) {
+                parsed.type = eventType || 'message';
+            }
+            return parsed;
+        } catch (error) {
+            return {
+                type: eventType || 'message',
+                content: payload
+            };
+        }
+    }
+
+    async function startTestStream(agentId, assistantMessage, userMessage) {
         closeTestStream();
 
         let url = '';
@@ -548,39 +609,100 @@
             return;
         }
 
-        if (userMessage) {
-            url += (url.includes('?') ? '&' : '?') + 'message=' + encodeURIComponent(userMessage);
+        const payload = { message: userMessage };
+        if (typeof tenantSelectionState !== 'undefined' && tenantSelectionState?.activeTenantId) {
+            payload.tenant_id = tenantSelectionState.activeTenantId;
         }
 
-        try {
-            const eventSource = new EventSource(url);
-            wizardState.testSession.eventSource = eventSource;
+        const controller = new AbortController();
+        wizardState.testSession.streamAbortController = controller;
 
-            eventSource.addEventListener('message', event => {
-                try {
-                    const data = JSON.parse(event.data);
-                    handleTestStreamEvent(data, assistantMessage);
-                } catch (error) {
-                    console.error('Erro ao interpretar evento de teste', error);
-                }
+        try {
+            const response = await authFetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream'
+                },
+                body: JSON.stringify(payload),
+                signal: controller.signal
             });
 
-            eventSource.onerror = () => {
-                eventSource.close();
-                if (wizardState.testSession.eventSource === eventSource) {
-                    wizardState.testSession.eventSource = null;
+            if (response.status === 401) {
+                const unauthorizedError = typeof APIError === 'function'
+                    ? new APIError('Authentication required', { status: 401 })
+                    : new Error('Authentication required');
+                if (typeof handleUnauthorized === 'function') {
+                    handleUnauthorized(unauthorizedError);
                 }
-                wizardState.testSession.isStreaming = false;
-                wizardState.testSession.statusNotice = { type: 'error', message: 'Conexão interrompida durante o teste.' };
+                throw unauthorizedError;
+            }
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText || 'Falha ao iniciar o teste do agente.'}`);
+            }
+
+            const reader = response.body?.getReader();
+            if (!reader) {
+                const text = await response.text();
+                assistantMessage.content = text;
                 assistantMessage.streaming = false;
+                wizardState.testSession.isStreaming = false;
+                wizardState.testSession.statusNotice = { type: 'success', message: 'Resposta recebida.' };
                 renderWorkspace();
-            };
+                return;
+            }
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let shouldStop = false;
+
+            while (!shouldStop) {
+                const { value, done } = await reader.read();
+                if (done) {
+                    break;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+
+                let boundary = buffer.indexOf('\n\n');
+                while (boundary !== -1) {
+                    const rawEvent = buffer.slice(0, boundary);
+                    buffer = buffer.slice(boundary + 2);
+                    const event = parseSSEEvent(rawEvent);
+
+                    if (event) {
+                        if (event.type === 'error' || event.type === 'done') {
+                            shouldStop = true;
+                        }
+                        handleTestStreamEvent(event, assistantMessage);
+                    }
+
+                    boundary = buffer.indexOf('\n\n');
+                }
+            }
+
+            if (!shouldStop && buffer.trim()) {
+                const event = parseSSEEvent(buffer);
+                if (event) {
+                    handleTestStreamEvent(event, assistantMessage);
+                }
+            }
+
+            wizardState.testSession.isStreaming = false;
         } catch (error) {
-            console.error('Falha ao iniciar EventSource', error);
+            if (error?.name === 'AbortError') {
+                return;
+            }
+
+            console.error('Falha ao iniciar teste do agente', error);
             wizardState.testSession.isStreaming = false;
             wizardState.testSession.statusNotice = { type: 'error', message: error.message || 'Não foi possível iniciar o teste.' };
             assistantMessage.streaming = false;
             renderWorkspace();
+        } finally {
+            wizardState.testSession.streamAbortController = null;
         }
     }
 
