@@ -77,8 +77,8 @@ Guardrails are predefined templates that inject safety and behavioral constraint
 
 ### Data Privacy
 
-**Key**: `data_privacy`  
-**Status**: Optional (recommended for user-facing agents)  
+**Key**: `data_privacy`
+**Status**: Optional (recommended for user-facing agents)
 **Priority**: 3
 
 **Purpose**: Protects user privacy and prevents the agent from requesting, storing, or disclosing sensitive information.
@@ -104,8 +104,39 @@ Guardrails are predefined templates that inject safety and behavioral constraint
 > Agent: "Thanks! I've recorded your credit card 1234-5678-9012-3456..."
 
 ✅ With guardrail:
-> User: "My credit card number is 1234-5678-9012-3456"  
+> User: "My credit card number is 1234-5678-9012-3456"
 > Agent: "Please don't share sensitive information like credit card numbers in this chat. For payment issues, please use our secure payment portal or call our support line."
+
+---
+
+### Language Support
+
+**Key**: `language_support`
+**Status**: Optional (pair with mandatory guardrails)
+**Priority**: 2
+**Variables**:
+- `supported_languages` (comma-separated list, e.g., `Portuguese, English, Spanish`)
+- `default_language` (single fallback language, e.g., `Portuguese`)
+
+**Purpose**: Restricts answers to approved languages and defines how the agent responds when the user switches languages or requests an unsupported one.
+
+**Generated Section**:
+```markdown
+## Guardrails — Language Support
+- Respond in the user's language whenever it is listed in {{supported_languages}}.
+- Supported languages: {{supported_languages}}
+- Default to {{default_language}} for narration, clarifications, or when the user's request is outside the supported languages.
+- If a user requests an unsupported language, politely list the supported options and continue in {{default_language}}.
+```
+
+**Use Cases**:
+- Multilingual customer support desks
+- Global onboarding or training bots
+- Agents that must stay compliant with localized messaging policies
+
+**Implementation Tips**:
+- Always populate both variables in the Prompt Builder UI before generating the prompt. Leaving them blank results in literal `{{supported_languages}}` placeholders.
+- API-based flows should pass `"guardrails": ["language_support", ...]` plus a matching `variables` object. Align the request-level `language` (e.g., `"language": "pt"`) with your default to ensure any surrounding narration is emitted in the same language.
 
 ---
 

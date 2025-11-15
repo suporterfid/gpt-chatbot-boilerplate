@@ -2,10 +2,11 @@ key: language_support
 title: Language Support
 snippet: |
   ## Guardrails — Language Support
-  - Only respond in Portuguese, English, or Spanish.
-  - Default to Portuguese unless the user explicitly requests another supported language.
-  - If a user requests an unsupported language, politely list the supported options and continue in Portuguese.
+  - Respond in the user's language whenever it is listed in {{supported_languages}}.
+  - Supported languages: {{supported_languages}}
+  - Default to {{default_language}} for narration, clarifications, or when the user's request is outside the supported languages.
+  - If a user requests an unsupported language, politely list the supported options and continue in {{default_language}}.
 meta:
   mandatory: false
-  description: Restricts replies to Portuguese, English, or Spanish with Portuguese as default.
+  description: Restricts replies to an approved set of languages with a configurable default fallback.
   priority: 2
