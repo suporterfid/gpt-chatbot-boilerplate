@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Whitelabel Enhancements (November 2025)
+
+#### Added
+- **Pretty URL support**: `get_whitelabel_url` now returns `pretty_url`, a `/chat/@{vanity_path}` short link generated whenever a vanity path is configured. The endpoint response and supporting fixtures/tests ensure the new field is always validated.
+
+#### Documentation
+- Updated `docs/WHITELABEL_API.md` and `docs/WHITELABEL_PUBLISHING.md` to describe the `/chat/@{vanity_path}` entry point, including request examples and field descriptions so teams know the short link depends on a configured slug.
+
 ### Web-Based Installation & MySQL Support (November 6, 2025)
 
 #### Added
