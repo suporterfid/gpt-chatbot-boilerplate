@@ -71,6 +71,11 @@ class DB {
             return $stmt->rowCount();
         } catch (PDOException $e) {
             error_log('Execute failed: ' . $e->getMessage() . ' SQL: ' . $sql);
+            if (strpos($e->getMessage(), 'UNIQUE constraint') !== false ||
+                strpos($e->getMessage(), 'Duplicate entry') !== false) {
+                throw new Exception('Duplicate entry: record already exists', 409);
+            }
+
             throw new Exception('Database execute failed: ' . $e->getMessage(), 500);
         }
     }

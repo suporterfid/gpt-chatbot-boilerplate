@@ -860,11 +860,31 @@ class AgentService {
         
         $updates = [];
         $params = [];
-        
+        $vanityPathProvided = false;
+
+        if (array_key_exists('vanity_path', $config)) {
+            $vanityPathProvided = true;
+            $rawVanityPath = $config['vanity_path'];
+
+            if ($rawVanityPath === null || (is_string($rawVanityPath) && trim($rawVanityPath) === '')) {
+                $updates[] = 'vanity_path = ?';
+                $params[] = null;
+            } else {
+                $sanitizedVanityPath = $this->sanitizeVanityPath($rawVanityPath);
+
+                if ($sanitizedVanityPath === '' || !preg_match('/^[a-z0-9-]{3,64}$/', $sanitizedVanityPath)) {
+                    throw new Exception('Invalid vanity_path: must match /^[a-z0-9-]{3,64}$/', 400);
+                }
+
+                $updates[] = 'vanity_path = ?';
+                $params[] = $sanitizedVanityPath;
+            }
+        }
+
         // Whitelabel branding fields
         $stringFields = [
             'wl_title', 'wl_logo_url', 'wl_welcome_message', 'wl_placeholder',
-            'wl_legal_disclaimer_md', 'wl_footer_brand_md', 'vanity_path', 'custom_domain'
+            'wl_legal_disclaimer_md', 'wl_footer_brand_md', 'custom_domain'
         ];
         
         foreach ($stringFields as $field) {
@@ -918,9 +938,36 @@ class AgentService {
         $params[] = $id;
         
         $sql = "UPDATE agents SET " . implode(', ', $updates) . " WHERE id = ?";
-        $this->db->execute($sql, $params);
-        
+
+        try {
+            $this->db->execute($sql, $params);
+        } catch (Exception $e) {
+            if ($vanityPathProvided && (int)$e->getCode() === 409) {
+                throw new Exception('Vanity path already in use', 409, $e);
+            }
+
+            throw $e;
+        }
+
         return $this->getAgent($id);
+    }
+
+    private function sanitizeVanityPath($value) {
+        $slug = trim((string)$value);
+
+        if ($slug === '') {
+            return '';
+        }
+
+        $slug = preg_replace_callback('/[A-Z]/', function ($matches) {
+            return strtolower($matches[0]);
+        }, $slug);
+        $slug = preg_replace('/\s+/', '-', $slug);
+        $slug = preg_replace('/[^a-z0-9-]/', '', $slug);
+        $slug = preg_replace('/-+/', '-', $slug);
+        $slug = trim($slug, '-');
+
+        return $slug;
     }
     
     /**
