@@ -288,6 +288,14 @@ $config = [
         'ssl_key' => $_ENV['WEBSOCKET_SSL_KEY'] ?? getenv('WEBSOCKET_SSL_KEY') ?: '',
     ],
 
+    // Webhook Gateway Configuration
+    'webhooks' => [
+        'gateway_secret' => $_ENV['WEBHOOK_GATEWAY_SECRET'] ?? getenv('WEBHOOK_GATEWAY_SECRET') ?: '',
+        'timestamp_tolerance' => (int)($_ENV['WEBHOOK_GATEWAY_TOLERANCE'] ?? getenv('WEBHOOK_GATEWAY_TOLERANCE') ?: 300),
+        'log_payloads' => filter_var($_ENV['WEBHOOK_GATEWAY_LOG_PAYLOADS'] ?? getenv('WEBHOOK_GATEWAY_LOG_PAYLOADS') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+        'openai_signing_secret' => $_ENV['OPENAI_WEBHOOK_SIGNING_SECRET'] ?? getenv('OPENAI_WEBHOOK_SIGNING_SECRET') ?: '',
+    ],
+
     // Logging Configuration
     'logging' => [
         'level' => $_ENV['LOG_LEVEL'] ?? getenv('LOG_LEVEL') ?: 'info',
