@@ -794,8 +794,10 @@ try {
             
             if (!empty($agent['vanity_path'])) {
                 $vanityUrl = $baseUrl . '/public/whitelabel.php?path=' . urlencode($agent['vanity_path']);
+                $prettyUrl = $baseUrl . '/chat/@' . urlencode($agent['vanity_path']);
             } else {
                 $vanityUrl = null;
+                $prettyUrl = null;
             }
             
             if (!empty($agent['custom_domain'])) {
@@ -807,6 +809,7 @@ try {
             sendResponse([
                 'url' => $url,
                 'vanity_url' => $vanityUrl,
+                'pretty_url' => $prettyUrl,
                 'custom_domain_url' => $customUrl,
                 'agent_public_id' => $agent['agent_public_id']
             ]);

@@ -71,7 +71,8 @@ Response:
 ```json
 {
   "url": "http://localhost/public/whitelabel.php?id=PUB_abc123xyz",
-  "vanity_url": null,
+  "vanity_url": "http://localhost/public/whitelabel.php?path=support-chat",
+  "pretty_url": "http://localhost/chat/@support-chat",
   "custom_domain_url": null,
   "agent_public_id": "PUB_abc123xyz"
 }
@@ -79,7 +80,7 @@ Response:
 
 ### 4. Share the URL
 
-Share the `url` with your users. They can access the chatbot without authentication.
+Share the `url` with your users. If you configured a vanity path, the `vanity_url` and `pretty_url` (`/chat/@{vanity_path}`) provide shorter, human-readable links that redirect to the same chatbot page.
 
 ## Configuration Options
 
@@ -176,6 +177,7 @@ Returns the public URLs for the agent.
 ```
 GET /public/whitelabel.php?id={agent_public_id}
 GET /public/whitelabel.php?path={vanity_path}
+GET /chat/@{vanity_path}
 ```
 
 Renders the whitelabel chatbot page.

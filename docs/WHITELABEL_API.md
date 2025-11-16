@@ -139,6 +139,7 @@ Retrieves the public URLs for a whitelabel agent.
 {
   "url": "http://localhost/public/whitelabel.php?id=PUB_abc123xyz",
   "vanity_url": "http://localhost/public/whitelabel.php?path=support-chat",
+  "pretty_url": "http://localhost/chat/@support-chat",
   "custom_domain_url": "https://chat.example.com",
   "agent_public_id": "PUB_abc123xyz"
 }
@@ -147,6 +148,7 @@ Retrieves the public URLs for a whitelabel agent.
 Fields:
 - `url`: Primary public URL (always available)
 - `vanity_url`: Short vanity URL (if configured)
+- `pretty_url`: `/chat/@{vanity_path}` short link (requires vanity path)
 - `custom_domain_url`: Custom domain URL (if configured)
 - `agent_public_id`: The public identifier
 
@@ -162,7 +164,9 @@ Renders the whitelabel chatbot page for a specific agent.
 
 **Endpoint**: `GET /public/whitelabel.php?id={agent_public_id}`
 
-**Alternative**: `GET /public/whitelabel.php?path={vanity_path}`
+**Alternatives**:
+- `GET /public/whitelabel.php?path={vanity_path}`
+- `GET /chat/@{vanity_path}`
 
 **Parameters**:
 - `id`: Agent public ID (e.g., `PUB_abc123xyz`)
@@ -174,9 +178,10 @@ Renders the whitelabel chatbot page for a specific agent.
 - `404`: Agent not found, not published, or invalid ID
 - `500`: Internal server error
 
-**Example**:
+**Examples**:
 ```
 GET /public/whitelabel.php?id=PUB_abc123xyz
+GET /chat/@support-chat
 ```
 
 ---
