@@ -8,7 +8,10 @@ CGIPassAuth On
 # Enable rewrite engine
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    
+
+    # Route chat/@{slug} URLs to the whitelabel entrypoint before other rewrites
+    RewriteRule ^chat/@([A-Za-z0-9_-]+)/?$ public/whitelabel.php?path=$1 [L,QSA]
+
     # Pass Authorization header to PHP (fallback for older Apache versions)
     # This is required for Bearer token authentication in admin-api.php
     RewriteCond %{HTTP:Authorization} .
