@@ -16,6 +16,7 @@ require_once 'includes/JobQueue.php';
 require_once 'includes/AdminAuth.php';
 require_once 'includes/AuditService.php';
 require_once 'includes/ResourceAuthService.php';
+require_once 'includes/WebhookSubscriberRepository.php';
 
 // CORS headers
 header('Access-Control-Allow-Origin: *');
@@ -384,6 +385,7 @@ try {
     $agentService = new AgentService($db, $tenantId);
     $promptService = new PromptService($db, $openaiClient, $tenantId);
     $vectorStoreService = new VectorStoreService($db, $openaiClient, $tenantId);
+    $webhookSubscriberRepo = new WebhookSubscriberRepository($db, $tenantId);
     $jobQueue = new JobQueue($db);
     $tenantService = null;
     
@@ -4353,6 +4355,243 @@ try {
                 ]);
             } catch (Exception $e) {
                 sendError($e->getMessage(), 400);
+            }
+            break;
+
+        // Webhook Subscriber Management
+        case 'list_subscribers':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $active = isset($_GET['active']) ? filter_var($_GET['active'], FILTER_VALIDATE_BOOLEAN) : null;
+            $subscribers = $webhookSubscriberRepo->listAll($active);
+            sendResponse($subscribers);
+            break;
+        
+        case 'get_subscriber':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                sendError('Subscriber ID is required', 400);
+            }
+            
+            $subscriber = $webhookSubscriberRepo->getById($id);
+            if (!$subscriber) {
+                sendError('Subscriber not found', 404);
+            }
+            
+            sendResponse($subscriber);
+            break;
+        
+        case 'create_subscriber':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $body = getRequestBody();
+            
+            // Validate required fields
+            $required = ['client_id', 'url', 'secret', 'events'];
+            foreach ($required as $field) {
+                if (!isset($body[$field])) {
+                    sendError("Missing required field: $field", 400);
+                }
+            }
+            
+            try {
+                $subscriber = $webhookSubscriberRepo->save($body);
+                
+                // Log audit event
+                if ($auditService) {
+                    try {
+                        $auditService->logEvent([
+                            'event_type' => 'webhook_subscriber.created',
+                            'user_id' => $authenticatedUser['id'] ?? null,
+                            'metadata' => [
+                                'subscriber_id' => $subscriber['id'],
+                                'client_id' => $subscriber['client_id'],
+                                'url' => $subscriber['url'],
+                                'events' => $subscriber['events']
+                            ]
+                        ]);
+                    } catch (Exception $e) {
+                        log_admin('Failed to log audit event: ' . $e->getMessage(), 'warn');
+                    }
+                }
+                
+                sendResponse($subscriber, 201);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), $e->getCode() ?: 400);
+            }
+            break;
+        
+        case 'update_subscriber':
+            if ($method !== 'PUT' && $method !== 'PATCH') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                sendError('Subscriber ID is required', 400);
+            }
+            
+            // Check if subscriber exists
+            $existing = $webhookSubscriberRepo->getById($id);
+            if (!$existing) {
+                sendError('Subscriber not found', 404);
+            }
+            
+            $body = getRequestBody();
+            $body['id'] = $id;
+            
+            try {
+                $subscriber = $webhookSubscriberRepo->save($body);
+                
+                // Log audit event
+                if ($auditService) {
+                    try {
+                        $auditService->logEvent([
+                            'event_type' => 'webhook_subscriber.updated',
+                            'user_id' => $authenticatedUser['id'] ?? null,
+                            'metadata' => [
+                                'subscriber_id' => $subscriber['id'],
+                                'changes' => array_diff_assoc($body, $existing)
+                            ]
+                        ]);
+                    } catch (Exception $e) {
+                        log_admin('Failed to log audit event: ' . $e->getMessage(), 'warn');
+                    }
+                }
+                
+                sendResponse($subscriber);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), $e->getCode() ?: 400);
+            }
+            break;
+        
+        case 'delete_subscriber':
+            if ($method !== 'DELETE') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                sendError('Subscriber ID is required', 400);
+            }
+            
+            // Get subscriber before deleting for audit log
+            $subscriber = $webhookSubscriberRepo->getById($id);
+            if (!$subscriber) {
+                sendError('Subscriber not found', 404);
+            }
+            
+            try {
+                $success = $webhookSubscriberRepo->delete($id);
+                
+                if ($success && $auditService) {
+                    try {
+                        $auditService->logEvent([
+                            'event_type' => 'webhook_subscriber.deleted',
+                            'user_id' => $authenticatedUser['id'] ?? null,
+                            'metadata' => [
+                                'subscriber_id' => $id,
+                                'client_id' => $subscriber['client_id'],
+                                'url' => $subscriber['url']
+                            ]
+                        ]);
+                    } catch (Exception $e) {
+                        log_admin('Failed to log audit event: ' . $e->getMessage(), 'warn');
+                    }
+                }
+                
+                sendResponse(['message' => 'Subscriber deleted successfully']);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), $e->getCode() ?: 400);
+            }
+            break;
+        
+        case 'deactivate_subscriber':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                sendError('Subscriber ID is required', 400);
+            }
+            
+            try {
+                $subscriber = $webhookSubscriberRepo->deactivate($id);
+                
+                if (!$subscriber) {
+                    sendError('Subscriber not found', 404);
+                }
+                
+                if ($auditService) {
+                    try {
+                        $auditService->logEvent([
+                            'event_type' => 'webhook_subscriber.deactivated',
+                            'user_id' => $authenticatedUser['id'] ?? null,
+                            'metadata' => [
+                                'subscriber_id' => $id
+                            ]
+                        ]);
+                    } catch (Exception $e) {
+                        log_admin('Failed to log audit event: ' . $e->getMessage(), 'warn');
+                    }
+                }
+                
+                sendResponse($subscriber);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), $e->getCode() ?: 400);
+            }
+            break;
+        
+        case 'activate_subscriber':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'write', $adminAuth);
+            
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                sendError('Subscriber ID is required', 400);
+            }
+            
+            try {
+                $subscriber = $webhookSubscriberRepo->activate($id);
+                
+                if (!$subscriber) {
+                    sendError('Subscriber not found', 404);
+                }
+                
+                if ($auditService) {
+                    try {
+                        $auditService->logEvent([
+                            'event_type' => 'webhook_subscriber.activated',
+                            'user_id' => $authenticatedUser['id'] ?? null,
+                            'metadata' => [
+                                'subscriber_id' => $id
+                            ]
+                        ]);
+                    } catch (Exception $e) {
+                        log_admin('Failed to log audit event: ' . $e->getMessage(), 'warn');
+                    }
+                }
+                
+                sendResponse($subscriber);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), $e->getCode() ?: 400);
             }
             break;
         
