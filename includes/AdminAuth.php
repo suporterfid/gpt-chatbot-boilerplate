@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/DB.php';
+require_once __DIR__ . '/SecurityHelper.php';
 
 class AdminAuth {
     private $db;
@@ -111,54 +112,93 @@ class AdminAuth {
      * Authenticate using Bearer token
      * Supports both legacy ADMIN_TOKEN and per-user API keys
      * 
+     * Uses constant-time comparison and minimum authentication time to prevent
+     * timing attacks that could be used for token enumeration.
+     * 
      * @param string $token Bearer token
      * @return array|null User data with role, or null if invalid
      */
     public function authenticate($token) {
-        // Check legacy ADMIN_TOKEN first
-        $legacyToken = $this->config['admin']['token'] ?? null;
-        if ($legacyToken && $token === $legacyToken) {
-            error_log('Legacy ADMIN_TOKEN authentication used - this flow is deprecated and will be removed in a future release.');
-            // Return super-admin user for legacy token
+        // Record start time for timing-safe authentication
+        $startTime = microtime(true);
+        
+        try {
+            // Validate token format first
+            if (!SecurityHelper::isValidTokenFormat($token)) {
+                SecurityHelper::ensureMinimumTime($startTime);
+                return null;
+            }
+            
+            // Check legacy ADMIN_TOKEN first (with constant-time comparison)
+            $legacyToken = $this->config['admin']['token'] ?? null;
+            if ($legacyToken !== null) {
+                if (SecurityHelper::timingSafeEquals($legacyToken, $token)) {
+                    error_log('Legacy ADMIN_TOKEN authentication used - this flow is deprecated and will be removed in a future release.');
+                    SecurityHelper::ensureMinimumTime($startTime);
+                    // Return super-admin user for legacy token
+                    return [
+                        'id' => 'legacy',
+                        'email' => 'admin@legacy',
+                        'role' => self::ROLE_SUPER_ADMIN,
+                        'is_active' => true,
+                        'auth_method' => 'legacy_token_deprecated'
+                    ];
+                }
+            }
+            
+            // Check API keys using hashed token
+            $keyHash = hash('sha256', $token);
+            
+            $sql = "SELECT ak.*, au.email, au.role, au.is_active, au.tenant_id 
+                    FROM admin_api_keys ak
+                    JOIN admin_users au ON ak.user_id = au.id
+                    WHERE ak.key_hash = ? 
+                    AND ak.is_active = 1
+                    AND au.is_active = 1
+                    AND (ak.expires_at IS NULL OR ak.expires_at > ?)";
+            
+            $now = date('Y-m-d H:i:s');
+            $result = $this->db->queryOne($sql, [$keyHash, $now]);
+            
+            if (!$result) {
+                // No match found - ensure minimum time before returning
+                SecurityHelper::ensureMinimumTime($startTime);
+                return null;
+            }
+            
+            // Additional constant-time verification of the hash
+            // This prevents timing attacks on the database query results
+            $isValid = SecurityHelper::timingSafeEquals(
+                $result['key_hash'] ?? '',
+                $keyHash
+            );
+            
+            if (!$isValid) {
+                SecurityHelper::ensureMinimumTime($startTime);
+                return null;
+            }
+            
+            // Update last_used_at (non-blocking, errors are logged)
+            $this->updateKeyLastUsed($result['id']);
+            
+            // Ensure minimum time even on success
+            SecurityHelper::ensureMinimumTime($startTime);
+            
             return [
-                'id' => 'legacy',
-                'email' => 'admin@legacy',
-                'role' => self::ROLE_SUPER_ADMIN,
-                'is_active' => true,
-                'auth_method' => 'legacy_token_deprecated'
+                'id' => $result['user_id'],
+                'email' => $result['email'],
+                'role' => $result['role'],
+                'is_active' => (bool)$result['is_active'],
+                'tenant_id' => $result['tenant_id'],
+                'api_key_id' => $result['id'],
+                'auth_method' => 'api_key'
             ];
+            
+        } catch (Exception $e) {
+            // Ensure consistent timing even on exception
+            SecurityHelper::ensureMinimumTime($startTime);
+            throw $e;
         }
-        
-        // Check API keys
-        $keyHash = hash('sha256', $token);
-        
-        $sql = "SELECT ak.*, au.email, au.role, au.is_active, au.tenant_id 
-                FROM admin_api_keys ak
-                JOIN admin_users au ON ak.user_id = au.id
-                WHERE ak.key_hash = ? 
-                AND ak.is_active = 1
-                AND au.is_active = 1
-                AND (ak.expires_at IS NULL OR ak.expires_at > ?)";
-        
-        $now = date('Y-m-d H:i:s');
-        $result = $this->db->queryOne($sql, [$keyHash, $now]);
-        
-        if (!$result) {
-            return null;
-        }
-        
-        // Update last_used_at
-        $this->updateKeyLastUsed($result['id']);
-        
-        return [
-            'id' => $result['user_id'],
-            'email' => $result['email'],
-            'role' => $result['role'],
-            'is_active' => (bool)$result['is_active'],
-            'tenant_id' => $result['tenant_id'],
-            'api_key_id' => $result['id'],
-            'auth_method' => 'api_key'
-        ];
     }
     
     /**
@@ -329,57 +369,93 @@ class AdminAuth {
 
     /**
      * Validate session token and return associated user
+     * 
+     * Uses constant-time comparison and minimum authentication time to prevent
+     * timing attacks.
      */
     public function validateSession($token) {
-        if (empty($token)) {
-            return null;
-        }
-
-        $this->pruneExpiredSessions();
-
-        $tokenHash = hash('sha256', $token);
-        $sql = "SELECT s.id AS session_id, s.user_id, s.expires_at, s.user_agent, s.ip_address,"
-             . " au.email, au.role, au.tenant_id, au.is_active"
-             . " FROM admin_sessions s"
-             . " JOIN admin_users au ON s.user_id = au.id"
-             . " WHERE s.session_token_hash = ?"
-             . " LIMIT 1";
-
-        $session = $this->db->queryOne($sql, [$tokenHash]);
-        if (!$session) {
-            return null;
-        }
-
-        if (!$session['is_active']) {
-            $this->revokeSessionById($session['session_id']);
-            return null;
-        }
-
-        if (strtotime($session['expires_at']) <= time()) {
-            $this->revokeSessionById($session['session_id']);
-            return null;
-        }
-
-        $now = date('Y-m-d H:i:s');
+        // Record start time for timing-safe authentication
+        $startTime = microtime(true);
+        
         try {
-            $this->db->execute(
-                "UPDATE admin_sessions SET updated_at = ? WHERE id = ?",
-                [$now, $session['session_id']]
-            );
-        } catch (Exception $e) {
-            error_log('Failed to update admin session metadata: ' . $e->getMessage());
-        }
+            if (empty($token)) {
+                SecurityHelper::ensureMinimumTime($startTime);
+                return null;
+            }
+            
+            // Validate token format
+            if (!SecurityHelper::isValidTokenFormat($token)) {
+                SecurityHelper::ensureMinimumTime($startTime);
+                return null;
+            }
 
-        return [
-            'id' => $session['user_id'],
-            'email' => $session['email'],
-            'role' => $session['role'],
-            'tenant_id' => $session['tenant_id'],
-            'is_active' => (bool)$session['is_active'],
-            'auth_method' => 'session',
-            'session_id' => $session['session_id'],
-            'session_expires_at' => $session['expires_at']
-        ];
+            $this->pruneExpiredSessions();
+
+            $tokenHash = hash('sha256', $token);
+            $sql = "SELECT s.id AS session_id, s.session_token_hash, s.user_id, s.expires_at, s.user_agent, s.ip_address,"
+                 . " au.email, au.role, au.tenant_id, au.is_active"
+                 . " FROM admin_sessions s"
+                 . " JOIN admin_users au ON s.user_id = au.id"
+                 . " WHERE s.session_token_hash = ?"
+                 . " LIMIT 1";
+
+            $session = $this->db->queryOne($sql, [$tokenHash]);
+            if (!$session) {
+                SecurityHelper::ensureMinimumTime($startTime);
+                return null;
+            }
+            
+            // Additional constant-time verification of the hash
+            $isValid = SecurityHelper::timingSafeEquals(
+                $session['session_token_hash'] ?? '',
+                $tokenHash
+            );
+            
+            if (!$isValid) {
+                SecurityHelper::ensureMinimumTime($startTime);
+                return null;
+            }
+
+            if (!$session['is_active']) {
+                $this->revokeSessionById($session['session_id']);
+                SecurityHelper::ensureMinimumTime($startTime);
+                return null;
+            }
+
+            if (strtotime($session['expires_at']) <= time()) {
+                $this->revokeSessionById($session['session_id']);
+                SecurityHelper::ensureMinimumTime($startTime);
+                return null;
+            }
+
+            $now = date('Y-m-d H:i:s');
+            try {
+                $this->db->execute(
+                    "UPDATE admin_sessions SET updated_at = ? WHERE id = ?",
+                    [$now, $session['session_id']]
+                );
+            } catch (Exception $e) {
+                error_log('Failed to update admin session metadata: ' . $e->getMessage());
+            }
+
+            SecurityHelper::ensureMinimumTime($startTime);
+            
+            return [
+                'id' => $session['user_id'],
+                'email' => $session['email'],
+                'role' => $session['role'],
+                'tenant_id' => $session['tenant_id'],
+                'is_active' => (bool)$session['is_active'],
+                'auth_method' => 'session',
+                'session_id' => $session['session_id'],
+                'session_expires_at' => $session['expires_at']
+            ];
+            
+        } catch (Exception $e) {
+            // Ensure consistent timing even on exception
+            SecurityHelper::ensureMinimumTime($startTime);
+            throw $e;
+        }
     }
 
     /**

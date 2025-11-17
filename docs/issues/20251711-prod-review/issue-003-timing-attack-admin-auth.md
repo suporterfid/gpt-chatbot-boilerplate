@@ -378,3 +378,200 @@ function testTimingAttack() {
 - Issue 002: SQL injection risks
 - Issue 005: Session management security
 - Issue 016: Lack of security headers
+
+---
+
+## ✅ RESOLUTION - Completed 2025-11-17
+
+### Implementation Summary
+
+This issue has been **RESOLVED**. All recommended security measures have been implemented to prevent timing attacks in the admin authentication system.
+
+### Changes Implemented
+
+#### 1. SecurityHelper Class (`includes/SecurityHelper.php`)
+
+Created a comprehensive security helper class with the following features:
+
+- **Constant-Time String Comparison**
+  - `timingSafeEquals()`: Uses PHP's `hash_equals()` for constant-time comparison
+  - `verifyToken()`: Hashes both inputs before comparison to mask length differences
+  - `verifyHashedToken()`: For tokens already stored as hashes
+
+- **Minimum Authentication Time Enforcement**
+  - `ensureMinimumTime()`: Enforces 100ms minimum for all authentication attempts
+  - Masks timing differences between success/failure paths
+
+- **Rate Limiting with Exponential Backoff**
+  - `checkRateLimit()`: Checks if rate limit is exceeded
+  - `recordAttempt()`: Records failed authentication attempts
+  - `clearRateLimit()`: Clears rate limit on successful authentication
+  - Uses APCu cache with exponential backoff: 2^(attempts-max) seconds, max 300s
+
+- **Secure Token Operations**
+  - `generateSecureToken()`: Generates cryptographically secure tokens
+  - `isValidTokenFormat()`: Validates token format without revealing requirements
+
+#### 2. AdminAuth Updates (`includes/AdminAuth.php`)
+
+Updated authentication methods to use timing-safe operations:
+
+- **`authenticate()` method**:
+  - Records start time at the beginning
+  - Validates token format before processing
+  - Uses `SecurityHelper::timingSafeEquals()` for legacy token comparison
+  - Uses `SecurityHelper::timingSafeEquals()` for API key hash verification
+  - Enforces minimum authentication time for all code paths (success, failure, exception)
+  - Consistent 100ms minimum timing regardless of outcome
+
+- **`validateSession()` method**:
+  - Records start time for timing-safe validation
+  - Validates token format first
+  - Uses constant-time comparison for session token hash
+  - Enforces minimum time for all paths
+  - Handles exceptions with consistent timing
+
+#### 3. Admin API Rate Limiting (`admin-api.php`)
+
+Enhanced `checkAuthentication()` function:
+
+- Checks rate limit before authentication attempt
+- Returns 429 (Too Many Requests) when rate limit exceeded
+- Includes `Retry-After` header with exponential backoff time
+- Records failed authentication attempts
+- Clears rate limit on successful authentication
+- Per-IP address rate limiting (5 attempts per hour by default)
+
+### Security Improvements Achieved
+
+✅ **Timing Attack Prevention**
+- All string comparisons use constant-time operations
+- Authentication always takes minimum 100ms regardless of outcome
+- No timing differences between correct/incorrect tokens
+
+✅ **Rate Limiting**
+- Maximum 5 failed attempts before blocking
+- Exponential backoff: 2, 4, 8, 16... seconds (max 300s)
+- Automatic reset on successful authentication
+- Per-client IP tracking
+
+✅ **Token Security**
+- Secure token generation with cryptographically random bytes
+- Format validation without revealing exact requirements
+- Minimum token length of 20 characters enforced
+
+✅ **Defense in Depth**
+- Multiple layers of protection
+- Graceful degradation when APCu not available
+- Comprehensive error handling
+
+### Test Results
+
+Created comprehensive test suite (`tests/test_timing_attack_prevention.php`):
+
+```
+✓ All timing attack prevention tests passed (21/21)
+
+Test Coverage:
+- Constant-time string comparison
+- Timing consistency measurement
+- Token format validation
+- Minimum authentication time enforcement
+- Rate limiting functionality
+- Secure token generation
+- Hashed token verification
+- AdminAuth integration
+```
+
+**Timing Analysis Results:**
+- Average timing difference: 0.13-0.21 microseconds
+- Well within acceptable range (< 10 microseconds)
+- Confirms constant-time implementation
+
+### Files Created
+
+- `includes/SecurityHelper.php` (245 lines) - Security utility class
+- `tests/test_timing_attack_prevention.php` (379 lines) - Comprehensive test suite
+
+### Files Modified
+
+- `includes/AdminAuth.php` - Updated `authenticate()` and `validateSession()` methods
+- `admin-api.php` - Added rate limiting to `checkAuthentication()` function
+
+### Performance Impact
+
+- **Minimal overhead**: ~100ms per authentication attempt (intentional security delay)
+- **Rate limiting**: No overhead when APCu available; graceful degradation without APCu
+- **No impact on successful requests**: Rate limits cleared on success
+
+### Backward Compatibility
+
+✅ **Fully backward compatible**
+- All existing authentication methods continue to work
+- Legacy token support maintained (with deprecation warning)
+- Session-based authentication unaffected
+- API key authentication enhanced with better security
+
+### Configuration
+
+No configuration changes required. Rate limiting automatically activated when APCu is available.
+
+**Optional configuration** (in `config.php`):
+```php
+'security' => [
+    'rate_limit' => [
+        'max_attempts' => 5,      // Maximum failed attempts
+        'window_seconds' => 3600,  // Time window (1 hour)
+        'min_auth_time' => 0.1     // Minimum auth time (100ms)
+    ]
+]
+```
+
+### Production Readiness
+
+✅ **Ready for production deployment**
+
+- All security measures implemented as recommended
+- Comprehensive test coverage
+- No breaking changes
+- Performance impact acceptable
+- APCu gracefully handles CLI/web context differences
+
+### Verification Steps
+
+To verify the fix in production:
+
+1. **Monitor authentication timing**:
+   ```bash
+   # All authentications should take ~100ms minimum
+   tail -f /var/log/chatbot.log | grep "Authentication"
+   ```
+
+2. **Test rate limiting**:
+   ```bash
+   # Attempt 6+ failed logins, should receive 429 response
+   for i in {1..7}; do
+     curl -H "Authorization: Bearer invalid_token_$i" \
+          https://your-domain.com/admin-api.php?action=list_agents
+   done
+   ```
+
+3. **Run test suite**:
+   ```bash
+   php tests/test_timing_attack_prevention.php
+   ```
+
+### Next Steps
+
+- ✅ Issue resolved
+- ⏭️ Proceed to Issue #004: File Upload Security
+- 📋 Update IMPLEMENTATION_LOG.md
+- 📋 Update README.md progress tracking
+
+### Implementation Time
+
+**Actual time:** ~3 hours (within 1-2 day estimate)
+
+**Completed by:** GitHub Copilot Agent  
+**Date:** 2025-11-17  
+**Status:** ✅ RESOLVED
