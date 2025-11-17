@@ -16,6 +16,8 @@ require_once __DIR__ . '/../includes/OpenAIAdminClient.php';
 require_once __DIR__ . '/../includes/VectorStoreService.php';
 require_once __DIR__ . '/../includes/PromptService.php';
 require_once __DIR__ . '/../includes/ObservabilityMiddleware.php';
+require_once __DIR__ . '/../includes/WebhookEventProcessor.php';
+require_once __DIR__ . '/../includes/ChatHandler.php';
 
 // Parse command line arguments
 $options = getopt('', ['loop', 'daemon', 'sleep:', 'verbose']);
@@ -58,6 +60,16 @@ try {
     $vectorStoreService = new VectorStoreService($db, $openaiClient);
     $promptService = new PromptService($db, $openaiClient);
     
+    // Initialize webhook event processor for webhook job handling
+    $chatHandler = new ChatHandler($config, $db);
+    $webhookEventProcessor = new WebhookEventProcessor(
+        $config, 
+        $db, 
+        $chatHandler,
+        $observability ? $observability->getLogger() : null,
+        $observability
+    );
+    
     if ($observability) {
         $observability->getLogger()->info("Worker started", [
             'mode' => $daemon ? 'daemon' : ($loop ? 'loop' : 'single'),
@@ -77,7 +89,7 @@ try {
 }
 
 // Job processor function
-function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $verbose, $observability = null) {
+function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $webhookEventProcessor, $verbose, $observability = null) {
     $jobId = $job['id'];
     $type = $job['type'];
     $payload = $job['payload'];
@@ -140,6 +152,10 @@ function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $prompt
                 
             case 'send_webhook_event':
                 $result = handleSendWebhookEvent($payload, $verbose, $observability);
+                break;
+                
+            case 'webhook_event':
+                $result = handleWebhookEvent($payload, $webhookEventProcessor, $verbose, $observability);
                 break;
                 
             default:
@@ -384,6 +400,46 @@ function handleSendWebhookEvent($payload, $verbose, $observability = null) {
     ];
 }
 
+function handleWebhookEvent($payload, $webhookEventProcessor, $verbose, $observability = null) {
+    $eventType = $payload['event_type'] ?? 'unknown';
+    $eventId = $payload['event_id'] ?? 'unknown';
+    
+    if ($observability) {
+        $observability->getLogger()->debug("Handling webhook event", [
+            'event_type' => $eventType,
+            'event_id' => $eventId,
+        ]);
+    }
+    
+    if ($verbose) {
+        echo "[WORKER] Processing webhook event: $eventType (ID: $eventId)\n";
+    }
+    
+    // Process the normalized webhook event through the processor
+    try {
+        $result = $webhookEventProcessor->processEvent($payload);
+        
+        if ($verbose) {
+            echo "[WORKER] Webhook event processed successfully\n";
+            if (isset($result['result']) && is_array($result['result'])) {
+                echo "[WORKER] Result: " . json_encode($result['result']) . "\n";
+            }
+        }
+        
+        return $result;
+    } catch (Exception $e) {
+        if ($observability) {
+            $observability->getLogger()->error("Webhook event processing failed", [
+                'event_type' => $eventType,
+                'event_id' => $eventId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+        
+        throw new Exception("Failed to process webhook event '$eventType': " . $e->getMessage(), 0, $e);
+    }
+}
+
 // Main worker loop
 $batchCount = 0;
 do {
@@ -399,7 +455,7 @@ do {
         $job = $jobQueue->claimNext();
         
         if ($job) {
-            processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $verbose, $observability);
+            processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $webhookEventProcessor, $verbose, $observability);
             $batchCount = 0; // Reset idle counter
         } else {
             // No jobs available
