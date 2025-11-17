@@ -4393,7 +4393,7 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
-            requirePermission($authenticatedUser, 'write', $adminAuth);
+            requirePermission($authenticatedUser, 'create', $adminAuth);
             
             $body = getRequestBody();
             
@@ -4436,7 +4436,7 @@ try {
             if ($method !== 'PUT' && $method !== 'PATCH') {
                 sendError('Method not allowed', 405);
             }
-            requirePermission($authenticatedUser, 'write', $adminAuth);
+            requirePermission($authenticatedUser, 'update', $adminAuth);
             
             $id = $_GET['id'] ?? null;
             if (!$id) {
@@ -4481,7 +4481,7 @@ try {
             if ($method !== 'DELETE') {
                 sendError('Method not allowed', 405);
             }
-            requirePermission($authenticatedUser, 'write', $adminAuth);
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
             
             $id = $_GET['id'] ?? null;
             if (!$id) {
@@ -4523,7 +4523,7 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
-            requirePermission($authenticatedUser, 'write', $adminAuth);
+            requirePermission($authenticatedUser, 'update', $adminAuth);
             
             $id = $_GET['id'] ?? null;
             if (!$id) {
@@ -4561,7 +4561,7 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
-            requirePermission($authenticatedUser, 'write', $adminAuth);
+            requirePermission($authenticatedUser, 'update', $adminAuth);
             
             $id = $_GET['id'] ?? null;
             if (!$id) {
