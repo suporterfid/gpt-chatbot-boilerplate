@@ -3,15 +3,27 @@
  * Notifier - Sends notifications for qualified leads
  * 
  * Supports Slack webhooks and generic webhooks with retry logic
+ * Updated to use WebhookDispatcher for centralized webhook management
  */
+
+require_once __DIR__ . '/../WebhookDispatcher.php';
+require_once __DIR__ . '/../DB.php';
 
 class Notifier {
     private $config;
     private $redactor;
+    private $dispatcher;
+    private $db;
     
-    public function __construct($config = [], $redactor = null) {
+    public function __construct($config = [], $redactor = null, $db = null) {
         $this->config = $config;
         $this->redactor = $redactor;
+        $this->db = $db;
+        
+        // Initialize dispatcher if DB is available
+        if ($db) {
+            $this->dispatcher = new WebhookDispatcher($db, $config, 'leadsense');
+        }
     }
     
     /**
@@ -29,7 +41,7 @@ class Notifier {
             $this->redactor->redactLead($lead) : 
             $lead;
         
-        // Send to Slack if configured
+        // Send to Slack if configured (still uses direct sending for Slack format)
         $slackWebhook = $this->config['notify']['slack_webhook_url'] ?? '';
         if (!empty($slackWebhook)) {
             $results['slack'] = $this->sendSlackNotification(
@@ -39,10 +51,27 @@ class Notifier {
             );
         }
         
-        // Send to generic webhook if configured
+        // Send via WebhookDispatcher if available (for registered subscribers)
+        if ($this->dispatcher) {
+            try {
+                $dispatchResult = $this->dispatcher->dispatch(
+                    'lead.qualified',
+                    [
+                        'lead' => $notificationLead,
+                        'score' => $scoreData
+                    ]
+                );
+                $results['dispatcher'] = $dispatchResult;
+            } catch (Exception $e) {
+                error_log("LeadSense: Failed to dispatch webhook: " . $e->getMessage());
+                $results['dispatcher'] = ['error' => $e->getMessage()];
+            }
+        }
+        
+        // Legacy: Send to generic webhook if configured (backward compatibility)
         $webhook = $this->config['notify']['webhook_url'] ?? '';
         if (!empty($webhook)) {
-            $results['webhook'] = $this->sendWebhookNotification(
+            $results['webhook_legacy'] = $this->sendWebhookNotification(
                 $webhook,
                 $notificationLead,
                 $scoreData
