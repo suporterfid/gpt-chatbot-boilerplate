@@ -7,6 +7,7 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/DB.php';
 require_once __DIR__ . '/../includes/WebhookHandler.php';
+require_once __DIR__ . '/../includes/WebhookSecurityService.php';
 require_once __DIR__ . '/../includes/VectorStoreService.php';
 require_once __DIR__ . '/../includes/OpenAIAdminClient.php';
 require_once __DIR__ . '/../includes/ObservabilityMiddleware.php';
@@ -95,25 +96,66 @@ if ($observability) {
 }
 
 try {
-    // Initialize services
-    $db = new DB($config['database'] ?? []);
+    // Initialize security service (SPEC §6)
+    $securityService = new WebhookSecurityService($config);
+    
+    // Step 1: Check IP whitelist if configured
+    $clientIp = $_SERVER['REMOTE_ADDR'] ?? null;
+    if ($clientIp) {
+        try {
+            $whitelist = $config['webhooks']['ip_whitelist'] ?? [];
+            if (!empty($whitelist) && !$securityService->checkWhitelist($clientIp, $whitelist)) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Access denied: IP not in whitelist']);
+                logWebhook("IP not in whitelist: $clientIp", 'error');
+                exit;
+            }
+        } catch (InvalidArgumentException $e) {
+            logWebhook("IP whitelist check error: " . $e->getMessage(), 'warn');
+        }
+    }
+    
+    // Step 2: Verify signature using WebhookSecurityService
     $signingSecret = $config['webhooks']['openai_signing_secret'] ?? null;
     
-    // Security warning if no signing secret
-    if (!$signingSecret) {
+    if ($signingSecret) {
+        $signature = $_SERVER['HTTP_X_OPENAI_SIGNATURE'] ?? '';
+        
+        try {
+            if (!$securityService->validateSignature($signature, $rawBody, $signingSecret)) {
+                http_response_code(401);
+                echo json_encode(['error' => 'Invalid signature']);
+                logWebhook("Invalid signature for event $eventId", 'error');
+                exit;
+            }
+        } catch (InvalidArgumentException $e) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Signature validation error']);
+            logWebhook("Signature validation error for event $eventId: " . $e->getMessage(), 'error');
+            exit;
+        }
+    } else {
         logWebhook("Security warning: Webhook signature verification disabled - no signing secret configured", 'warn');
     }
     
-    $webhookHandler = new WebhookHandler($db, $signingSecret);
-    
-    // Verify signature if configured
-    $signature = $_SERVER['HTTP_X_OPENAI_SIGNATURE'] ?? '';
-    if ($signingSecret && !$webhookHandler->verifySignature($rawBody, $signature)) {
-        http_response_code(401);
-        echo json_encode(['error' => 'Invalid signature']);
-        logWebhook("Invalid signature for event $eventId", 'error');
-        exit;
+    // Step 3: Validate timestamp if present (anti-replay)
+    $timestamp = $event['timestamp'] ?? null;
+    if ($timestamp !== null && is_numeric($timestamp)) {
+        try {
+            if (!$securityService->enforceClockSkew((int)$timestamp)) {
+                http_response_code(422);
+                echo json_encode(['error' => 'Timestamp outside tolerance window']);
+                logWebhook("Timestamp outside tolerance for event $eventId", 'warn');
+                exit;
+            }
+        } catch (InvalidArgumentException $e) {
+            logWebhook("Timestamp validation error for event $eventId: " . $e->getMessage(), 'warn');
+        }
     }
+    
+    // Initialize services
+    $db = new DB($config['database'] ?? []);
+    $webhookHandler = new WebhookHandler($db, $signingSecret);
     
     // Check for duplicate event (idempotency)
     if ($webhookHandler->isEventProcessed($eventId)) {

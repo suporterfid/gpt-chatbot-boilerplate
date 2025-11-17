@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../includes/AgentService.php';
 require_once __DIR__ . '/../../includes/ChatHandler.php';
 require_once __DIR__ . '/../../includes/ChannelManager.php';
 require_once __DIR__ . '/../../includes/ConsentService.php';
+require_once __DIR__ . '/../../includes/WebhookSecurityService.php';
 
 // CORS headers
 header('Access-Control-Allow-Origin: *');
@@ -57,6 +58,40 @@ try {
     }
     
     logWebhook('Received webhook: ' . substr($rawBody, 0, 200));
+    
+    // Initialize security service (SPEC §6)
+    $securityService = new WebhookSecurityService($config);
+    
+    // Step 1: Check IP whitelist if configured
+    $clientIp = $_SERVER['REMOTE_ADDR'] ?? null;
+    if ($clientIp) {
+        try {
+            $whitelist = $config['webhooks']['ip_whitelist'] ?? [];
+            if (!empty($whitelist) && !$securityService->checkWhitelist($clientIp, $whitelist)) {
+                logWebhook("IP not in whitelist: $clientIp", 'error');
+                http_response_code(403);
+                echo json_encode(['error' => 'Access denied: IP not in whitelist']);
+                exit();
+            }
+        } catch (InvalidArgumentException $e) {
+            logWebhook("IP whitelist check error: " . $e->getMessage(), 'warn');
+        }
+    }
+    
+    // Step 2: Validate timestamp if present (anti-replay)
+    $timestamp = $payload['timestamp'] ?? null;
+    if ($timestamp !== null && is_numeric($timestamp)) {
+        try {
+            if (!$securityService->enforceClockSkew((int)$timestamp)) {
+                logWebhook("Timestamp outside tolerance", 'warn');
+                http_response_code(422);
+                echo json_encode(['error' => 'Timestamp outside tolerance window']);
+                exit();
+            }
+        } catch (InvalidArgumentException $e) {
+            logWebhook("Timestamp validation error: " . $e->getMessage(), 'warn');
+        }
+    }
     
     // Initialize services
     $db = new DB($config['storage']);
