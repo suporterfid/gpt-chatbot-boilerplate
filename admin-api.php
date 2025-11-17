@@ -17,6 +17,7 @@ require_once 'includes/AdminAuth.php';
 require_once 'includes/AuditService.php';
 require_once 'includes/ResourceAuthService.php';
 require_once 'includes/WebhookSubscriberRepository.php';
+require_once 'includes/WebhookLogRepository.php';
 
 // CORS headers
 header('Access-Control-Allow-Origin: *');
@@ -386,6 +387,7 @@ try {
     $promptService = new PromptService($db, $openaiClient, $tenantId);
     $vectorStoreService = new VectorStoreService($db, $openaiClient, $tenantId);
     $webhookSubscriberRepo = new WebhookSubscriberRepository($db, $tenantId);
+    $webhookLogRepo = new WebhookLogRepository($db, $tenantId);
     $jobQueue = new JobQueue($db);
     $tenantService = null;
     
@@ -4590,6 +4592,96 @@ try {
                 }
                 
                 sendResponse($subscriber);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), $e->getCode() ?: 400);
+            }
+            break;
+        
+        // Webhook Log Management
+        case 'list_webhook_logs':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            // Parse filters from query params
+            $filters = [];
+            if (isset($_GET['subscriber_id'])) {
+                $filters['subscriber_id'] = $_GET['subscriber_id'];
+            }
+            if (isset($_GET['event'])) {
+                $filters['event'] = $_GET['event'];
+            }
+            if (isset($_GET['response_code'])) {
+                $filters['response_code'] = (int)$_GET['response_code'];
+            }
+            if (isset($_GET['outcome'])) {
+                $filters['outcome'] = $_GET['outcome']; // 'success' or 'failure'
+            }
+            
+            // Parse pagination params
+            $limit = isset($_GET['limit']) ? min(100, max(1, (int)$_GET['limit'])) : 50;
+            $offset = isset($_GET['offset']) ? max(0, (int)$_GET['offset']) : 0;
+            
+            try {
+                $logs = $webhookLogRepo->listLogs($filters, $limit, $offset);
+                $total = $webhookLogRepo->countLogs($filters);
+                
+                sendResponse([
+                    'logs' => $logs,
+                    'pagination' => [
+                        'total' => $total,
+                        'limit' => $limit,
+                        'offset' => $offset,
+                        'has_more' => ($offset + $limit) < $total
+                    ]
+                ]);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), $e->getCode() ?: 400);
+            }
+            break;
+        
+        case 'get_webhook_log':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $id = $_GET['id'] ?? null;
+            if (!$id) {
+                sendError('Log ID is required', 400);
+            }
+            
+            try {
+                $log = $webhookLogRepo->getById($id);
+                if (!$log) {
+                    sendError('Log entry not found', 404);
+                }
+                
+                sendResponse($log);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), $e->getCode() ?: 400);
+            }
+            break;
+        
+        case 'get_webhook_statistics':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            // Parse filters from query params
+            $filters = [];
+            if (isset($_GET['subscriber_id'])) {
+                $filters['subscriber_id'] = $_GET['subscriber_id'];
+            }
+            if (isset($_GET['event'])) {
+                $filters['event'] = $_GET['event'];
+            }
+            
+            try {
+                $stats = $webhookLogRepo->getStatistics($filters);
+                sendResponse($stats);
             } catch (Exception $e) {
                 sendError($e->getMessage(), $e->getCode() ?: 400);
             }
