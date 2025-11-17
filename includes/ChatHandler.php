@@ -14,6 +14,12 @@ class ChatHandler {
     private $quotaService;
     private $rateLimitService;
     private $tenantUsageService;
+    
+    // Refactored components (Issue #001)
+    private $requestValidator;
+    private $agentConfigResolver;
+    private $conversationRepository;
+    private $chatRateLimiter;
 
     public function __construct($config, $agentService = null, $auditService = null, $observability = null, $usageTrackingService = null, $quotaService = null, $rateLimitService = null, $tenantUsageService = null) {
         $this->config = $config;
@@ -26,6 +32,17 @@ class ChatHandler {
         $this->rateLimitService = $rateLimitService;
         $this->tenantUsageService = $tenantUsageService;
         
+        // Initialize refactored components (Issue #001)
+        require_once __DIR__ . '/ChatRequestValidator.php';
+        require_once __DIR__ . '/AgentConfigResolver.php';
+        require_once __DIR__ . '/ConversationRepository.php';
+        require_once __DIR__ . '/ChatRateLimiter.php';
+        
+        $this->requestValidator = new ChatRequestValidator($config);
+        $this->agentConfigResolver = new AgentConfigResolver($config, $agentService);
+        $this->conversationRepository = new ConversationRepository($config);
+        $this->chatRateLimiter = new ChatRateLimiter($config, $rateLimitService, $quotaService);
+        
         // Initialize LeadSense if enabled
         if (isset($config['leadsense']) && ($config['leadsense']['enabled'] ?? false)) {
             require_once __DIR__ . '/LeadSense/LeadSenseService.php';
@@ -35,165 +52,22 @@ class ChatHandler {
     
     /**
      * Resolve agent configuration overrides
+     * Delegated to AgentConfigResolver (Issue #001 refactoring)
      * 
      * @param string|null $agentId
      * @return array Agent configuration or empty array if not found
      */
     private function resolveAgentOverrides($agentId) {
-        if (!$this->agentService) {
-            return [];
-        }
-        
-        try {
-            $agent = null;
-            
-            // If agent_id provided, try to load it
-            if ($agentId) {
-                $agent = $this->agentService->getAgent($agentId);
-                if (!$agent) {
-                    error_log("Agent not found: $agentId, falling back to default");
-                }
-            }
-            
-            // If no agent_id provided or agent not found, try default agent
-            if (!$agent) {
-                $agent = $this->agentService->getDefaultAgent();
-                if ($agent) {
-                    error_log("Using default agent: " . ($agent['name'] ?? 'unknown'));
-                }
-            }
-            
-            // If no agent found, return empty array (fall back to config.php)
-            if (!$agent) {
-                return [];
-            }
-            
-            $overrides = [];
-            
-            if (isset($agent['api_type'])) {
-                $overrides['api_type'] = $agent['api_type'];
-            }
-            if (isset($agent['prompt_id'])) {
-                $overrides['prompt_id'] = $agent['prompt_id'];
-            }
-            if (isset($agent['prompt_version'])) {
-                $overrides['prompt_version'] = $agent['prompt_version'];
-            }
-            if (isset($agent['model'])) {
-                $overrides['model'] = $agent['model'];
-            }
-            if (isset($agent['temperature'])) {
-                $overrides['temperature'] = $agent['temperature'];
-            }
-            if (isset($agent['top_p'])) {
-                $overrides['top_p'] = $agent['top_p'];
-            }
-            if (isset($agent['max_output_tokens'])) {
-                $overrides['max_output_tokens'] = $agent['max_output_tokens'];
-            }
-            if (isset($agent['tools'])) {
-                $overrides['tools'] = $agent['tools'];
-            }
-            if (isset($agent['vector_store_ids'])) {
-                $overrides['vector_store_ids'] = $agent['vector_store_ids'];
-            }
-            if (isset($agent['max_num_results'])) {
-                $overrides['max_num_results'] = $agent['max_num_results'];
-            }
-            if (isset($agent['system_message'])) {
-                $overrides['system_message'] = $agent['system_message'];
-            }
-            if (isset($agent['response_format'])) {
-                $overrides['response_format'] = $agent['response_format'];
-            }
-            
-            // Load active Prompt Builder specification if available
-            if (isset($agent['active_prompt_version']) && $agent['active_prompt_version'] !== null) {
-                $generatedPrompt = $this->loadActivePromptSpec($agent['id'], $agent['active_prompt_version']);
-                if ($generatedPrompt !== null) {
-                    // Inject generated prompt as system_message (overrides manual system_message)
-                    $overrides['system_message'] = $generatedPrompt;
-                    $overrides['_prompt_builder_active'] = true;
-                    error_log("Using Prompt Builder specification v{$agent['active_prompt_version']} for agent {$agent['id']}");
-                }
-            }
-            
-            return $overrides;
-        } catch (Exception $e) {
-            error_log("Error resolving agent $agentId: " . $e->getMessage());
-            return [];
-        }
-    }
-    
-    /**
-     * Load active Prompt Builder specification for an agent
-     * 
-     * @param string $agentId Agent ID
-     * @param int $version Version number
-     * @return string|null Generated prompt content or null if not found
-     */
-    private function loadActivePromptSpec($agentId, $version) {
-        try {
-            require_once __DIR__ . '/PromptBuilder/PromptSpecRepository.php';
-            require_once __DIR__ . '/DB.php';
-            
-            // Get database connection
-            $dbConfig = [
-                'database_url' => $this->config['admin']['database_url'] ?? null,
-                'database_path' => $this->config['admin']['database_path'] ?? __DIR__ . '/../data/chatbot.db'
-            ];
-            $db = new DB($dbConfig);
-            
-            // Load repository
-            $repo = new PromptSpecRepository($db->getPdo(), $this->config['prompt_builder'] ?? []);
-            
-            // Get the version
-            $promptData = $repo->getVersion($agentId, $version);
-            
-            if ($promptData === null) {
-                error_log("Prompt Builder version {$version} not found for agent {$agentId}");
-                return null;
-            }
-            
-            return $promptData['prompt_md'];
-        } catch (Exception $e) {
-            error_log("Failed to load Prompt Builder spec for agent {$agentId} v{$version}: " . $e->getMessage());
-            return null;
-        }
+        return $this->agentConfigResolver->resolveAgentOverrides($agentId);
     }
 
     public function validateRequest($message, $conversationId, $fileData = null, $agentConfig = null) {
         // Rate limiting - use legacy method for whitelabel backwards compatibility
         // The proper tenant-based rate limiting is handled in the individual handler methods
-        $this->checkRateLimitLegacy($agentConfig);
+        $this->chatRateLimiter->checkRateLimitLegacy($agentConfig);
 
-        // Validate message
-        if (empty(trim($message))) {
-            throw new Exception('Message cannot be empty', 400);
-        }
-
-        if (strlen($message) > $this->config['security']['max_message_length']) {
-            throw new Exception('Message too long', 400);
-        }
-
-        // Sanitize input if enabled
-        if ($this->config['security']['sanitize_input']) {
-            $message = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
-        }
-
-        // Validate conversation ID format
-        if (!preg_match('/^[a-zA-Z0-9_-]+$/', $conversationId)) {
-            throw new Exception('Invalid conversation ID format', 400);
-        }
-
-        // Validate file data if provided
-        if ($fileData && !$this->config['chat_config']['enable_file_upload']) {
-            throw new Exception('File upload not enabled', 400);
-        }
-
-        if ($fileData) {
-            $this->validateFileData($fileData);
-        }
+        // Delegate validation to ChatRequestValidator (Issue #001 refactoring)
+        return $this->requestValidator->validateRequest($message, $conversationId, $fileData);
     }
 
     public function handleChatCompletion($message, $conversationId, $agentId = null, $tenantId = null) {
@@ -1966,140 +1840,47 @@ class ChatHandler {
 
     /**
      * Check and enforce tenant-based rate limits (DEPRECATED)
-     * This method kept for backwards compatibility with older whitelabel integrations
+     * Delegated to ChatRateLimiter (Issue #001 refactoring)
      * 
      * @deprecated Since v2.0.0. Will be removed in v3.0.0. 
-     *             Use tenant-based rate limiting via checkRateLimitTenant() instead.
-     * 
-     * Migration Example:
-     * OLD: $this->checkRateLimitLegacy($agentConfig);
-     * NEW: $this->checkRateLimitTenant($tenantId, 'api_call');
-     * 
-     * To migrate, ensure your requests include a tenant_id or API key that can be resolved to a tenant.
-     * See docs/TENANT_RATE_LIMITING.md for details.
-     * 
      * @param array|null $agentConfig Agent configuration
      * @throws Exception if rate limit exceeded
      */
     private function checkRateLimitLegacy($agentConfig = null) {
-        // For whitelabel agents without tenant context, use IP + agent as fallback
-        $clientIP = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        
-        // Construct a pseudo-tenant ID from IP and agent for backwards compatibility
-        if ($agentConfig && isset($agentConfig['agent_public_id'])) {
-            $pseudoTenantId = 'whitelabel_' . $agentConfig['agent_public_id'] . '_' . md5($clientIP);
-            
-            // Get custom rate limits from whitelabel config
-            $limit = isset($agentConfig['wl_rate_limit_requests']) && $agentConfig['wl_rate_limit_requests'] > 0
-                ? $agentConfig['wl_rate_limit_requests']
-                : $this->config['chat_config']['rate_limit_requests'];
-            
-            $window = isset($agentConfig['wl_rate_limit_window_seconds']) && $agentConfig['wl_rate_limit_window_seconds'] > 0
-                ? $agentConfig['wl_rate_limit_window_seconds']
-                : $this->config['chat_config']['rate_limit_window'];
-        } else {
-            // No tenant context, use IP-based fallback
-            $pseudoTenantId = 'ip_' . md5($clientIP);
-            $limit = $this->config['chat_config']['rate_limit_requests'];
-            $window = $this->config['chat_config']['rate_limit_window'];
-        }
-        
-        // Use TenantRateLimitService if available, otherwise fall back to file-based
-        if ($this->rateLimitService) {
-            try {
-                $this->rateLimitService->enforceRateLimit($pseudoTenantId, 'api_call', $limit, $window);
-                return;
-            } catch (Exception $e) {
-                if ($e->getCode() == 429) {
-                    throw $e;
-                }
-                error_log("Rate limit service error: " . $e->getMessage());
-                // Fall through to file-based fallback
-            }
-        }
-        
-        // File-based fallback for backwards compatibility
-        $requestsFile = sys_get_temp_dir() . '/chatbot_requests_' . md5($pseudoTenantId);
-        $currentTime = time();
-        
-        // Read existing requests
-        $requests = [];
-        if (file_exists($requestsFile)) {
-            $requests = json_decode(file_get_contents($requestsFile), true) ?: [];
-        }
-        
-        // Remove old requests outside the window
-        $requests = array_filter($requests, function($timestamp) use ($currentTime, $window) {
-            return $currentTime - $timestamp < $window;
-        });
-        
-        // Check if rate limit exceeded
-        if (count($requests) >= $limit) {
-            throw new Exception('Rate limit exceeded. Please wait before sending another message.', 429);
-        }
-        
-        // Add current request
-        $requests[] = $currentTime;
-        file_put_contents($requestsFile, json_encode($requests));
+        $this->chatRateLimiter->checkRateLimitLegacy($agentConfig);
     }
 
+    /**
+     * Validate file data
+     * Delegated to ChatRequestValidator (Issue #001 refactoring)
+     * 
+     * @param mixed $fileData
+     * @throws Exception if validation fails
+     */
     private function validateFileData($fileData) {
-        // Load FileValidator if not already loaded
-        if (!class_exists('FileValidator')) {
-            require_once __DIR__ . '/FileValidator.php';
-        }
-        
-        $validator = new FileValidator();
-        
-        if (!is_array($fileData)) {
-            $fileData = [$fileData];
-        }
-
-        foreach ($fileData as $file) {
-            // Use comprehensive validation from FileValidator
-            // This validates: filename, size (encoded & decoded), MIME type, malware
-            $validator->validateFile($file, $this->config['chat_config']);
-        }
+        $this->requestValidator->validateFileData($fileData);
     }
 
+    /**
+     * Get conversation history
+     * Delegated to ConversationRepository (Issue #001 refactoring)
+     * 
+     * @param string $conversationId
+     * @return array
+     */
     private function getConversationHistory($conversationId) {
-        switch ($this->config['storage']['type']) {
-            case 'session':
-                session_start();
-                $sessionKey = 'chatbot_conversation_' . $conversationId;
-                return $_SESSION[$sessionKey] ?? [];
-
-            case 'file':
-                $filePath = $this->config['storage']['path'] . '/' . $conversationId . '.json';
-                if (file_exists($filePath)) {
-                    return json_decode(file_get_contents($filePath), true) ?: [];
-                }
-                return [];
-
-            default:
-                return [];
-        }
+        return $this->conversationRepository->getHistory($conversationId);
     }
 
+    /**
+     * Save conversation history
+     * Delegated to ConversationRepository (Issue #001 refactoring)
+     * 
+     * @param string $conversationId
+     * @param array $messages
+     */
     private function saveConversationHistory($conversationId, $messages) {
-        // Limit conversation history
-        $maxMessages = $this->config['chat_config']['max_messages'];
-        if (count($messages) > $maxMessages) {
-            $messages = array_slice($messages, -$maxMessages);
-        }
-
-        switch ($this->config['storage']['type']) {
-            case 'session':
-                session_start();
-                $sessionKey = 'chatbot_conversation_' . $conversationId;
-                $_SESSION[$sessionKey] = $messages;
-                break;
-
-            case 'file':
-                $filePath = $this->config['storage']['path'] . '/' . $conversationId . '.json';
-                file_put_contents($filePath, json_encode($messages));
-                break;
-        }
+        $this->conversationRepository->saveHistory($conversationId, $messages);
     }
 
     private function executeTool($toolCall, $tenantId = null, $conversationId = null, $agentId = null, $responseId = null) {
