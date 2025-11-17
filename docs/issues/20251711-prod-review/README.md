@@ -58,11 +58,12 @@ This directory contains the detailed findings from the production readiness revi
    - **Effort:** 3-5 days
    - **Completed:** 2025-11-17
 
-6. **[issue-006-websocket-reconnection-race-condition.md](./issue-006-websocket-reconnection-race-condition.md)**
+6. **[issue-006-websocket-reconnection-race-condition.md](./issue-006-websocket-reconnection-race-condition.md)** ✅ **RESOLVED**
    - **Severity:** Medium
    - **Category:** Architecture - Robustness
    - **Impact:** Message loss, poor UX
    - **Effort:** 2-3 days
+   - **Completed:** 2025-11-17
 
 7. **[issue-007-no-composer-autoloading.md](./issue-007-no-composer-autoloading.md)**
    - **Severity:** Medium
@@ -98,10 +99,10 @@ This directory contains the detailed findings from the production readiness revi
 **Total Effort to Fix:** 0 days (2 issues completed, 0 remaining) ✅ **ALL HIGH PRIORITY ISSUES RESOLVED**
 
 #### Medium (2 issues)
-- WebSocket Reconnection (#006)
+- ~~WebSocket Reconnection (#006)~~ ✅ **RESOLVED**
 - No Composer Autoloading (#007)
 
-**Total Effort to Fix:** 1.5-3 weeks
+**Total Effort to Fix:** 1-2 weeks (1 issue completed, 1 remaining)
 
 ### Issues by Category
 
@@ -116,7 +117,7 @@ This directory contains the detailed findings from the production readiness revi
 
 #### Architecture (3 issues)
 - ~~#001: ChatHandler SRP Violation~~ ✅ **RESOLVED**
-- #006: WebSocket Reconnection
+- ~~#006: WebSocket Reconnection~~ ✅ **RESOLVED**
 - #007: No Composer Autoloading
 
 ## How to Use These Documents
@@ -157,9 +158,10 @@ This directory contains the detailed findings from the production readiness revi
 - ⏳ Security audit and penetration testing (recommended)
 - ✅ Verify fixes with automated tests (69 tests passing)
 
-### Phase 2: Architecture Improvements (2 weeks)
-- Refactor ChatHandler
-- Implement Composer autoloading
+### Phase 2: Architecture Improvements (2 weeks) - ⏳ **IN PROGRESS**
+- ✅ Refactor ChatHandler (Issue #001 - Completed 2025-11-17)
+- ✅ Fix WebSocket Reconnection (Issue #006 - Completed 2025-11-17)
+- ⏳ Implement Composer autoloading (Issue #007 - Next)
 - Improve code organization
 
 ### Phase 3: Robustness & Testing (1 week)
