@@ -11,6 +11,7 @@ require_once 'includes/UsageTrackingService.php';
 require_once 'includes/QuotaService.php';
 require_once 'includes/TenantRateLimitService.php';
 require_once 'includes/TenantUsageService.php';
+require_once 'includes/SecurityValidator.php';
 
 // Initialize observability if enabled
 $observability = null;
@@ -131,7 +132,14 @@ function extractTenantId($db = null) {
     }
     
     if (!empty($headers['x-tenant-id'])) {
-        return trim($headers['x-tenant-id']);
+        $tenantId = trim($headers['x-tenant-id']);
+        try {
+            // Validate tenant_id format to prevent injection attacks
+            return SecurityValidator::validateTenantId($tenantId);
+        } catch (Exception $e) {
+            error_log("Invalid tenant_id in X-Tenant-ID header: " . $e->getMessage());
+            throw $e; // Propagate validation error
+        }
     }
     
     // Method 2: Check for API key in Authorization header or X-API-Key header
@@ -151,28 +159,58 @@ function extractTenantId($db = null) {
         $apiKey = trim($headers['x-api-key']);
     }
     
+    // Validate API key format (returns null if invalid to prevent enumeration)
+    $apiKey = SecurityValidator::validateApiKey($apiKey);
+    
     // If we have an API key and database connection, look up the tenant
     if ($apiKey && $db) {
         try {
             // Look up API key in admin_api_keys table
+            // Using prepared statements - safe from SQL injection
             $sql = "SELECT tenant_id FROM admin_api_keys WHERE api_key = ? AND (expires_at IS NULL OR expires_at > datetime('now'))";
             $result = $db->query($sql, [$apiKey]);
             
             if (!empty($result) && isset($result[0]['tenant_id'])) {
-                return $result[0]['tenant_id'];
+                // Validate tenant_id from database
+                $tenantId = $result[0]['tenant_id'];
+                try {
+                    $validatedTenantId = SecurityValidator::validateTenantId($tenantId);
+                    if ($validatedTenantId === null) {
+                        error_log("Invalid tenant_id format in database for API key");
+                        return null;
+                    }
+                    return $validatedTenantId;
+                } catch (Exception $e) {
+                    error_log("Invalid tenant_id in database: " . $e->getMessage());
+                    return null; // Don't expose database validation errors
+                }
             }
         } catch (Exception $e) {
-            error_log("Failed to lookup tenant from API key: " . $e->getMessage());
+            // Don't expose detailed error information to prevent information disclosure
+            error_log("Failed to lookup tenant from API key: " . $e->getCode());
+            return null;
         }
     }
     
     // Method 3: Check for tenant_id in request parameters (GET/POST)
     if (!empty($_GET['tenant_id'])) {
-        return trim($_GET['tenant_id']);
+        $tenantId = trim($_GET['tenant_id']);
+        try {
+            return SecurityValidator::validateTenantId($tenantId);
+        } catch (Exception $e) {
+            error_log("Invalid tenant_id in GET parameter: " . $e->getMessage());
+            throw $e; // Propagate validation error
+        }
     }
     
     if (!empty($_POST['tenant_id'])) {
-        return trim($_POST['tenant_id']);
+        $tenantId = trim($_POST['tenant_id']);
+        try {
+            return SecurityValidator::validateTenantId($tenantId);
+        } catch (Exception $e) {
+            error_log("Invalid tenant_id in POST parameter: " . $e->getMessage());
+            throw $e; // Propagate validation error
+        }
     }
     
     // No tenant ID found
