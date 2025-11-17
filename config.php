@@ -294,6 +294,10 @@ $config = [
         'timestamp_tolerance' => (int)($_ENV['WEBHOOK_GATEWAY_TOLERANCE'] ?? getenv('WEBHOOK_GATEWAY_TOLERANCE') ?: 300),
         'log_payloads' => filter_var($_ENV['WEBHOOK_GATEWAY_LOG_PAYLOADS'] ?? getenv('WEBHOOK_GATEWAY_LOG_PAYLOADS') ?: 'false', FILTER_VALIDATE_BOOLEAN),
         'openai_signing_secret' => $_ENV['OPENAI_WEBHOOK_SIGNING_SECRET'] ?? getenv('OPENAI_WEBHOOK_SIGNING_SECRET') ?: '',
+        'ip_whitelist' => parseFlexibleEnvArray(
+            $_ENV['WEBHOOK_IP_WHITELIST'] ?? getenv('WEBHOOK_IP_WHITELIST'),
+            ['delimiter' => ',', 'trim_strings' => true, 'filter_empty' => true]
+        ),
     ],
 
     // Logging Configuration

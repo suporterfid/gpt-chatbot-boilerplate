@@ -19,6 +19,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/DB.php';
 require_once __DIR__ . '/WebhookHandler.php';
 require_once __DIR__ . '/JobQueue.php';
+require_once __DIR__ . '/WebhookSecurityService.php';
 
 class WebhookGatewayException extends Exception {
     private string $errorCode;
@@ -44,6 +45,7 @@ class WebhookGateway {
     private DB $db;
     private WebhookHandler $webhookHandler;
     private JobQueue $jobQueue;
+    private WebhookSecurityService $securityService;
     private $logger;
     private $metrics;
     private bool $asyncProcessing;
@@ -78,6 +80,9 @@ class WebhookGateway {
         
         // Initialize JobQueue for async processing
         $this->jobQueue = new JobQueue($this->db);
+        
+        // Initialize WebhookSecurityService for centralized security checks
+        $this->securityService = new WebhookSecurityService($config);
     }
 
     /**
@@ -86,11 +91,16 @@ class WebhookGateway {
      * This method coordinates the entire webhook processing flow:
      * 1. Parse and validate JSON
      * 2. Validate schema (event, timestamp, data fields)
-     * 3. Verify signature if configured
-     * 4. Check idempotency (prevent duplicate processing)
-     * 5. Store event for tracking
-     * 6. Route to downstream handlers
-     * 7. Return structured response
+     * 3. Check IP whitelist (SPEC §6)
+     * 4. Validate timestamp tolerance (anti-replay, SPEC §6)
+     * 5. Verify signature if configured (SPEC §6)
+     * 6. Check idempotency (prevent duplicate processing)
+     * 7. Store event for tracking
+     * 8. Normalize payload for downstream processing
+     * 9. Route to downstream handlers
+     * 10. Mark event as processed
+     * 11. Log and collect metrics
+     * 12. Return structured response
      * 
      * @param array $headers Request headers
      * @param string $body Raw request body
@@ -109,13 +119,16 @@ class WebhookGateway {
         $data = $this->extractData($payload);
         $signature = $this->extractSignature($payload, $headers);
         
-        // Step 3: Validate timestamp tolerance (anti-replay)
+        // Step 3: Check IP whitelist if configured (SPEC §6)
+        $this->checkIpWhitelist();
+        
+        // Step 4: Validate timestamp tolerance (anti-replay)
         $this->validateTimestamp($timestamp);
         
-        // Step 4: Verify HMAC signature if configured
+        // Step 5: Verify HMAC signature if configured
         $this->verifySignature($body, $signature);
         
-        // Step 5: Check idempotency - prevent duplicate event processing
+        // Step 6: Check idempotency - prevent duplicate event processing
         $eventId = $this->generateEventId($payload);
         if ($this->webhookHandler->isEventProcessed($eventId)) {
             $this->log('Duplicate event ignored', 'info', [
@@ -132,7 +145,7 @@ class WebhookGateway {
             ];
         }
         
-        // Step 6: Store event for idempotency tracking
+        // Step 7: Store event for idempotency tracking
         try {
             $this->webhookHandler->storeEvent($eventId, $event, $payload);
         } catch (Exception $e) {
@@ -154,16 +167,16 @@ class WebhookGateway {
             );
         }
         
-        // Step 7: Normalize payload for downstream processing
+        // Step 8: Normalize payload for downstream processing
         $normalizedPayload = $this->normalizePayload($event, $timestamp, $data, $eventId);
         
-        // Step 8: Route to downstream handlers
+        // Step 9: Route to downstream handlers
         $processingResult = $this->routeEvent($normalizedPayload);
         
-        // Step 9: Mark event as processed
+        // Step 10: Mark event as processed
         $this->webhookHandler->markEventProcessed($eventId);
         
-        // Step 10: Log and collect metrics
+        // Step 11: Log and collect metrics
         $processingTime = (microtime(true) - $startTime) * 1000;
         $this->log('Webhook processed successfully', 'info', [
             'event' => $event,
@@ -182,7 +195,7 @@ class WebhookGateway {
             ]);
         }
         
-        // Step 11: Return structured response per SPEC §4
+        // Step 12: Return structured response per SPEC §4
         return [
             'status' => 'received',
             'event' => $event,
@@ -295,33 +308,87 @@ class WebhookGateway {
     }
 
     /**
-     * Validate timestamp is within tolerance window (anti-replay protection)
+     * Check IP whitelist for access control
      * 
-     * @param int $timestamp
-     * @throws WebhookGatewayException If timestamp is outside tolerance
+     * Uses centralized WebhookSecurityService per SPEC §6
+     * 
+     * @throws WebhookGatewayException If IP is not in whitelist
      */
-    private function validateTimestamp(int $timestamp): void {
-        $tolerance = max(0, (int)($this->config['webhooks']['timestamp_tolerance'] ?? 300));
+    private function checkIpWhitelist(): void {
+        // Get client IP address
+        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
         
-        // If tolerance is 0, skip validation
-        if ($tolerance === 0) {
+        if ($ip === null) {
+            // Unable to determine IP - allow if whitelist is not strictly enforced
+            $whitelist = $this->config['webhooks']['ip_whitelist'] ?? [];
+            if (!empty($whitelist)) {
+                throw new WebhookGatewayException(
+                    'Unable to determine client IP address',
+                    'ip_check_failed',
+                    403
+                );
+            }
             return;
         }
         
-        $now = time();
-        $diff = abs($now - $timestamp);
-        
-        if ($diff > $tolerance) {
+        try {
+            $isAllowed = $this->securityService->checkWhitelist($ip);
+            
+            if (!$isAllowed) {
+                $this->log('IP not in whitelist', 'warning', [
+                    'ip' => $ip
+                ]);
+                
+                throw new WebhookGatewayException(
+                    'Access denied: IP not in whitelist',
+                    'ip_not_whitelisted',
+                    403
+                );
+            }
+        } catch (InvalidArgumentException $e) {
             throw new WebhookGatewayException(
-                "Timestamp is outside tolerance window (±{$tolerance}s)",
-                'invalid_timestamp',
-                422
+                'IP validation error: ' . $e->getMessage(),
+                'ip_check_failed',
+                403,
+                $e
             );
         }
     }
 
     /**
-     * Verify HMAC signature per SPEC §4
+     * Validate timestamp is within tolerance window (anti-replay protection)
+     * 
+     * Uses centralized WebhookSecurityService per SPEC §6
+     * 
+     * @param int $timestamp
+     * @throws WebhookGatewayException If timestamp is outside tolerance
+     */
+    private function validateTimestamp(int $timestamp): void {
+        try {
+            $isValid = $this->securityService->enforceClockSkew($timestamp);
+            
+            if (!$isValid) {
+                $tolerance = max(0, (int)($this->config['webhooks']['timestamp_tolerance'] ?? 300));
+                throw new WebhookGatewayException(
+                    "Timestamp is outside tolerance window (±{$tolerance}s)",
+                    'invalid_timestamp',
+                    422
+                );
+            }
+        } catch (InvalidArgumentException $e) {
+            throw new WebhookGatewayException(
+                'Invalid timestamp: ' . $e->getMessage(),
+                'invalid_timestamp',
+                422,
+                $e
+            );
+        }
+    }
+
+    /**
+     * Verify HMAC signature per SPEC §4 and §6
+     * 
+     * Uses centralized WebhookSecurityService for signature validation
      * 
      * @param string $body Raw request body
      * @param string|null $signature Provided signature
@@ -340,17 +407,24 @@ class WebhookGateway {
             throw new WebhookGatewayException('Signature is required', 'missing_signature', 401);
         }
         
-        // Compute expected signature per SPEC §4
-        $expected = 'sha256=' . hash_hmac('sha256', $body, $secret);
-        
-        // Constant-time comparison to prevent timing attacks
-        if (!hash_equals($expected, $signature)) {
-            $this->log('Invalid signature detected', 'warning', [
-                'expected_prefix' => substr($expected, 0, 15),
-                'received_prefix' => substr($signature, 0, 15)
-            ]);
+        // Validate signature using WebhookSecurityService
+        try {
+            $isValid = $this->securityService->validateSignature($signature, $body, $secret);
             
-            throw new WebhookGatewayException('Invalid signature', 'invalid_signature', 401);
+            if (!$isValid) {
+                $this->log('Invalid signature detected', 'warning', [
+                    'received_prefix' => substr($signature, 0, 15)
+                ]);
+                
+                throw new WebhookGatewayException('Invalid signature', 'invalid_signature', 401);
+            }
+        } catch (InvalidArgumentException $e) {
+            throw new WebhookGatewayException(
+                'Signature validation error: ' . $e->getMessage(),
+                'invalid_signature',
+                401,
+                $e
+            );
         }
     }
 
