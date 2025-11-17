@@ -298,6 +298,21 @@ $config = [
             $_ENV['WEBHOOK_IP_WHITELIST'] ?? getenv('WEBHOOK_IP_WHITELIST'),
             ['delimiter' => ',', 'trim_strings' => true, 'filter_empty' => true]
         ),
+        // Inbound webhook configuration (SPEC_WEBHOOK.md §9)
+        'inbound' => [
+            'enabled' => filter_var(getEnvValue('WEBHOOK_INBOUND_ENABLED') ?? 'true', FILTER_VALIDATE_BOOLEAN),
+            'path' => getEnvValue('WEBHOOK_INBOUND_PATH') ?: '/webhook/inbound',
+            'validate_signature' => filter_var(getEnvValue('WEBHOOK_VALIDATE_SIGNATURE') ?? 'true', FILTER_VALIDATE_BOOLEAN),
+            'max_clock_skew' => (int)(getEnvValue('WEBHOOK_MAX_CLOCK_SKEW') ?: 120),
+            'ip_whitelist' => parseFlexibleEnvArray(getEnvValue('WEBHOOK_IP_WHITELIST')),
+        ],
+        // Outbound webhook configuration (SPEC_WEBHOOK.md §9)
+        'outbound' => [
+            'enabled' => filter_var(getEnvValue('WEBHOOK_OUTBOUND_ENABLED') ?? 'true', FILTER_VALIDATE_BOOLEAN),
+            'max_attempts' => (int)(getEnvValue('WEBHOOK_MAX_ATTEMPTS') ?: 6),
+            'timeout' => (int)(getEnvValue('WEBHOOK_TIMEOUT') ?: 5),
+            'concurrency' => (int)(getEnvValue('WEBHOOK_CONCURRENCY') ?: 10),
+        ],
     ],
 
     // Logging Configuration
