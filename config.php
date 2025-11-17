@@ -485,7 +485,39 @@ $config = [
     ]
 ];
 
+// Load configuration security classes
+require_once __DIR__ . '/includes/ConfigValidator.php';
+require_once __DIR__ . '/includes/ErrorHandler.php';
+
 // Validate critical configuration
+$validator = new ConfigValidator();
+if (!$validator->validate($config)) {
+    $errors = $validator->getErrors();
+    
+    // Log each error with sanitization
+    foreach ($errors as $error) {
+        ErrorHandler::logError("Configuration Error: $error");
+    }
+    
+    // Determine if we're in web or CLI context
+    $isWeb = php_sapi_name() !== 'cli';
+    
+    if ($isWeb) {
+        // In web context, show user-friendly error and exit
+        http_response_code(500);
+        echo "Application configuration error. Please contact support.";
+        exit(1);
+    } else {
+        // In CLI context, show detailed errors for admin
+        echo "Configuration Errors:\n";
+        foreach ($errors as $error) {
+            echo "  - $error\n";
+        }
+        exit(1);
+    }
+}
+
+// Legacy validation checks (keep for backwards compatibility)
 if (empty($config['openai']['api_key'])) {
     error_log('WARNING: OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.');
 }
