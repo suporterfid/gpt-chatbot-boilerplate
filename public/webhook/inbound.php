@@ -13,7 +13,7 @@ if (file_exists($vendorAutoload)) {
 }
 
 $config = require $projectRoot . '/config.php';
-require_once $projectRoot . '/includes/WebhookGatewayService.php';
+require_once $projectRoot . '/includes/WebhookGateway.php';
 require_once $projectRoot . '/includes/ObservabilityMiddleware.php';
 
 header('Content-Type: application/json');
@@ -36,18 +36,10 @@ if (stripos($contentType, 'application/json') === false) {
 }
 
 $rawBody = file_get_contents('php://input');
-if ($rawBody === false || trim($rawBody) === '') {
+if ($rawBody === false) {
     sendJsonResponse(400, [
         'error' => 'empty_body',
         'message' => 'Request body cannot be empty',
-    ]);
-}
-
-$payload = json_decode($rawBody, true);
-if (!is_array($payload)) {
-    sendJsonResponse(400, [
-        'error' => 'invalid_json',
-        'message' => 'Request body must be valid JSON',
     ]);
 }
 
@@ -61,16 +53,25 @@ if ($config['observability']['enabled'] ?? true) {
 }
 
 $headers = function_exists('getallheaders') ? getallheaders() : [];
-$gatewayService = new WebhookGatewayService(
+$gateway = new WebhookGateway(
     $config,
+    null, // DB will be created from config
     $observability ? $observability->getLogger() : null,
-    $observability ? $observability->getMetrics() : null
+    $observability ? $observability->getMetrics() : null,
+    true  // async processing enabled
 );
+
+// Extract event for tracing (parse body to get event name)
+$eventName = 'unknown';
+$parsedBody = json_decode($rawBody, true);
+if (is_array($parsedBody) && isset($parsedBody['event'])) {
+    $eventName = $parsedBody['event'];
+}
 
 $spanId = null;
 if ($observability) {
     $spanId = $observability->handleRequestStart('webhook.gateway.inbound', [
-        'event' => $payload['event'] ?? 'unknown',
+        'event' => $eventName,
     ]);
 }
 
@@ -78,11 +79,7 @@ $responseStatus = 200;
 $responseBody = [];
 
 try {
-    $responseBody = $gatewayService->handleInboundEvent($payload, [
-        'raw_body' => $rawBody,
-        'headers' => $headers,
-        'remote_ip' => $_SERVER['REMOTE_ADDR'] ?? null,
-    ]);
+    $responseBody = $gateway->handleRequest($headers, $rawBody);
 } catch (WebhookGatewayException $e) {
     $responseStatus = $e->getStatusCode();
     $responseBody = [
@@ -92,7 +89,7 @@ try {
 
     if ($observability && $spanId) {
         $observability->handleError($spanId, $e, [
-            'event' => $payload['event'] ?? 'unknown',
+            'event' => $eventName,
         ]);
     }
 } catch (Throwable $e) {
@@ -104,14 +101,14 @@ try {
 
     if ($observability && $spanId) {
         $observability->handleError($spanId, $e, [
-            'event' => $payload['event'] ?? 'unknown',
+            'event' => $eventName,
         ]);
     }
 }
 
 if ($observability && $spanId) {
     $observability->handleRequestEnd($spanId, 'webhook.gateway.inbound', $responseStatus, [
-        'event' => $payload['event'] ?? 'unknown',
+        'event' => $eventName,
     ]);
 }
 
