@@ -453,6 +453,9 @@
         </footer>
     </div>
 
+    <!-- DOMPurify for XSS protection -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js" integrity="sha384-4H6GZr/3V5e5d8qMlwxiY4xq/V8bqYnC1Z2vN8F7Bg8vfElQ8bH7f2t+i8rJG3Y3" crossorigin="anonymous"></script>
+    
     <!-- Enhanced chatbot scripts (cache-busted to avoid stale browser cache) -->
     <?php $cb_ver = @filemtime(__DIR__ . DIRECTORY_SEPARATOR . 'chatbot-enhanced.js') ?: time(); ?>
     <script src="chatbot-enhanced.js?v=<?php echo $cb_ver; ?>"></script>

@@ -170,6 +170,11 @@ class SecurityValidator {
         // Remove data: protocol with HTML content
         $message = preg_replace('/data:text\/html[^,]*,/i', '', $message);
         
+        // Remove dangerous tags: iframe, object, embed
+        $message = preg_replace('/<iframe\b[^>]*>(.*?)<\/iframe>/is', '', $message);
+        $message = preg_replace('/<object\b[^>]*>(.*?)<\/object>/is', '', $message);
+        $message = preg_replace('/<embed\b[^>]*\/?>/is', '', $message);
+        
         return $message;
     }
     

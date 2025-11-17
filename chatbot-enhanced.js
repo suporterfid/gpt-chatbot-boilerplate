@@ -10,6 +10,156 @@
 (function(window, document) {
     'use strict';
 
+    /**
+     * SecurityUtils - XSS Prevention and Input Sanitization
+     * Provides methods to sanitize HTML, URLs, and filenames to prevent XSS attacks
+     */
+    const SecurityUtils = {
+        /**
+         * Sanitize HTML content using DOMPurify if available, fallback to escaping
+         * @param {string} dirty - Untrusted HTML content
+         * @param {object} options - DOMPurify configuration options
+         * @returns {string} Sanitized HTML
+         */
+        sanitizeHTML(dirty, options = {}) {
+            if (!dirty) return '';
+            
+            const defaultOptions = {
+                ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 
+                              'code', 'pre', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                              'table', 'thead', 'tbody', 'tr', 'th', 'td', 'del'],
+                ALLOWED_ATTR: ['href', 'target', 'class', 'rel', 'data-language'],
+                ALLOW_DATA_ATTR: false,
+                ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+                KEEP_CONTENT: true
+            };
+            
+            const config = Object.assign({}, defaultOptions, options);
+            
+            // Use DOMPurify if available (loaded via CDN)
+            if (typeof DOMPurify !== 'undefined') {
+                return DOMPurify.sanitize(dirty, config);
+            }
+            
+            // Fallback to basic escaping if DOMPurify not loaded
+            console.warn('DOMPurify not loaded - using basic HTML escaping. For better security, include DOMPurify.');
+            return this.escapeHTML(dirty);
+        },
+        
+        /**
+         * Escape HTML special characters
+         * @param {string} text - Text to escape
+         * @returns {string} Escaped text
+         */
+        escapeHTML(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        },
+        
+        /**
+         * Sanitize text for use in attributes
+         * @param {string} text - Text to sanitize
+         * @returns {string} Sanitized text
+         */
+        sanitizeAttribute(text) {
+            if (!text) return '';
+            return text.replace(/[<>"']/g, char => {
+                const escapeChars = {
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#x27;'
+                };
+                return escapeChars[char];
+            });
+        },
+        
+        /**
+         * Sanitize URL to prevent dangerous protocols
+         * @param {string} url - URL to sanitize
+         * @returns {string|null} Sanitized URL or null if dangerous
+         */
+        sanitizeURL(url) {
+            if (!url) return null;
+            
+            try {
+                // Decode to catch encoded dangerous protocols
+                const decoded = decodeURIComponent(url);
+                
+                // Check for dangerous protocols
+                const dangerousProtocols = ['javascript:', 'data:', 'vbscript:', 'file:'];
+                const lowerURL = decoded.toLowerCase().trim();
+                
+                for (const protocol of dangerousProtocols) {
+                    if (lowerURL.startsWith(protocol)) {
+                        console.warn('Dangerous URL protocol detected and blocked:', protocol);
+                        return null;
+                    }
+                }
+                
+                // Only allow safe protocols
+                if (!/^(https?|mailto|tel):/.test(lowerURL) && !/^\//.test(lowerURL) && !/^#/.test(lowerURL)) {
+                    console.warn('URL protocol not in whitelist:', url);
+                    return null;
+                }
+                
+                return url;
+            } catch (e) {
+                console.error('Error sanitizing URL:', e);
+                return null;
+            }
+        },
+        
+        /**
+         * Sanitize filename for display
+         * @param {string} filename - Filename to sanitize
+         * @returns {string} Sanitized filename
+         */
+        sanitizeFilename(filename) {
+            if (!filename) return '';
+            
+            // Remove any HTML tags
+            filename = filename.replace(/<[^>]*>/g, '');
+            
+            // Escape special characters
+            return this.escapeHTML(filename);
+        },
+        
+        /**
+         * Make links safe by adding security attributes and validating URLs
+         * @param {Element} container - Container element with links to sanitize
+         */
+        makeLinksSafe(container) {
+            if (!container) return;
+            
+            const links = container.querySelectorAll('a');
+            
+            links.forEach(link => {
+                const href = link.getAttribute('href');
+                const sanitizedURL = this.sanitizeURL(href);
+                
+                if (!sanitizedURL) {
+                    // Remove dangerous link, keep text
+                    const text = document.createTextNode(link.textContent);
+                    link.parentNode.replaceChild(text, link);
+                    return;
+                }
+                
+                // Update with sanitized URL
+                link.setAttribute('href', sanitizedURL);
+                
+                // Add security attributes for external links
+                if (sanitizedURL.startsWith('http')) {
+                    link.setAttribute('rel', 'noopener noreferrer');
+                    link.setAttribute('target', '_blank');
+                    link.classList.add('external-link');
+                }
+            });
+        }
+    };
+
     // Default configuration
     const DEFAULT_CONFIG = {
         // Basic settings
@@ -903,12 +1053,12 @@
             const listContainer = this.filePreview.querySelector('.file-preview-list');
 
             listContainer.innerHTML = this.uploadedFiles.map(fileData => `
-                <div class="file-preview-item" data-file-id="${fileData.id}">
+                <div class="file-preview-item" data-file-id="${SecurityUtils.sanitizeAttribute(fileData.id)}">
                     <div class="file-info">
-                        <span class="file-name">${fileData.name}</span>
+                        <span class="file-name">${SecurityUtils.sanitizeFilename(fileData.name)}</span>
                         <span class="file-size">${this.formatFileSize(fileData.size)}</span>
                     </div>
-                    <button class="file-remove" data-file-id="${fileData.id}" title="Remove file">✕</button>
+                    <button class="file-remove" data-file-id="${SecurityUtils.sanitizeAttribute(fileData.id)}" title="Remove file">✕</button>
                 </div>
             `).join('');
 
@@ -1608,7 +1758,7 @@
                     const fileSize = file.file ? file.file.size : file.size;
                     fileItem.innerHTML = `
                         <span class="file-icon">📄</span>
-                        <span class="file-name">${file.name}</span>
+                        <span class="file-name">${SecurityUtils.sanitizeFilename(file.name)}</span>
                         <span class="file-size">${this.formatFileSize(fileSize || 0)}</span>
                     `;
                     filesContainer.appendChild(fileItem);
@@ -1658,7 +1808,7 @@
          */
         formatMessage(content) {
             if (!this.options.enableMarkdown) {
-                return this.escapeHtml(content || '');
+                return SecurityUtils.escapeHTML(content || '');
             }
 
             let text = (content || '').replace(/\r\n/g, '\n');
@@ -1666,12 +1816,12 @@
 
             text = text.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
                 const index = codeBlocks.length;
-                const languageAttr = lang ? ` data-language="${this.escapeHtml(lang)}"` : '';
-                codeBlocks.push(`<pre><code${languageAttr}>${this.escapeHtml(code.trimEnd())}</code></pre>`);
+                const languageAttr = lang ? ` data-language="${SecurityUtils.escapeHTML(lang)}"` : '';
+                codeBlocks.push(`<pre><code${languageAttr}>${SecurityUtils.escapeHTML(code.trimEnd())}</code></pre>`);
                 return `{{CODE_BLOCK_${index}}}`;
             });
 
-            text = this.escapeHtml(text);
+            text = SecurityUtils.escapeHTML(text);
 
             // Headings
             text = text.replace(/^###### (.+)$/gm, '<h6>$1</h6>')
@@ -1684,8 +1834,8 @@
             // Blockquotes
             text = text.replace(/^>\s?(.+)$/gm, '<blockquote>$1</blockquote>');
 
-            // Links
-            text = text.replace(/\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+            // Links - Only allow https:// and http:// protocols
+            text = text.replace(/\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
             // Bold / italic / strikethrough
             text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
@@ -1733,7 +1883,9 @@
                 text = text.replace(`{{CODE_BLOCK_${index}}}`, block);
             });
 
-            return text;
+            // Final sanitization pass with DOMPurify if available
+            // This provides an additional layer of security
+            return SecurityUtils.sanitizeHTML(text);
         }
 
         /**
@@ -1782,12 +1934,10 @@
         }
 
         /**
-         * Escape HTML content
+         * Escape HTML content (delegates to SecurityUtils)
          */
         escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+            return SecurityUtils.escapeHTML(text);
         }
 
         /**
