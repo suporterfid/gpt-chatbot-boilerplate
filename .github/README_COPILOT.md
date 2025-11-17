@@ -6,7 +6,7 @@ Este diretório contém configurações para GitHub Copilot, incluindo instruç�
 
 ```
 .github/
-├── README.md                    # Este arquivo
+├── README_COPILOT.md                    # Este arquivo
 ├── copilot-instructions.md      # Instruções globais do Copilot
 ├── chatmodes/                   # Personas especializadas
 │   ├── README.md
