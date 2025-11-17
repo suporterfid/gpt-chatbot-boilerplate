@@ -266,6 +266,7 @@ $config = [
         'enable_file_upload' => filter_var($_ENV['ENABLE_FILE_UPLOAD'] ?? getenv('ENABLE_FILE_UPLOAD') ?: 'false', FILTER_VALIDATE_BOOLEAN),
         'max_file_size' => (int)($_ENV['MAX_FILE_SIZE'] ?? getenv('MAX_FILE_SIZE') ?: 10485760), // 10MB
         'allowed_file_types' => explode(',', $_ENV['ALLOWED_FILE_TYPES'] ?? getenv('ALLOWED_FILE_TYPES') ?: 'txt,pdf,doc,docx,jpg,png'),
+        'upload_dir' => $_ENV['UPLOAD_DIR'] ?? getenv('UPLOAD_DIR') ?: __DIR__ . '/data/uploads', // Secure upload directory (outside web root recommended)
     ],
 
     // Security Configuration
