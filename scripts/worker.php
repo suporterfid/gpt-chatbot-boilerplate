@@ -18,6 +18,8 @@ require_once __DIR__ . '/../includes/PromptService.php';
 require_once __DIR__ . '/../includes/ObservabilityMiddleware.php';
 require_once __DIR__ . '/../includes/WebhookEventProcessor.php';
 require_once __DIR__ . '/../includes/ChatHandler.php';
+require_once __DIR__ . '/../includes/WebhookLogRepository.php';
+require_once __DIR__ . '/../includes/WebhookDispatcher.php';
 
 // Parse command line arguments
 $options = getopt('', ['loop', 'daemon', 'sleep:', 'verbose']);
@@ -70,6 +72,9 @@ try {
         $observability
     );
     
+    // Initialize webhook log repository for delivery tracking
+    $webhookLogRepo = new WebhookLogRepository($db);
+    
     if ($observability) {
         $observability->getLogger()->info("Worker started", [
             'mode' => $daemon ? 'daemon' : ($loop ? 'loop' : 'single'),
@@ -89,7 +94,7 @@ try {
 }
 
 // Job processor function
-function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $webhookEventProcessor, $verbose, $observability = null) {
+function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $webhookEventProcessor, $webhookLogRepo, $verbose, $observability = null) {
     $jobId = $job['id'];
     $type = $job['type'];
     $payload = $job['payload'];
@@ -156,6 +161,10 @@ function processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $prompt
                 
             case 'webhook_event':
                 $result = handleWebhookEvent($payload, $webhookEventProcessor, $verbose, $observability);
+                break;
+                
+            case 'webhook_delivery':
+                $result = handleWebhookDelivery($payload, $webhookLogRepo, $jobQueue, $verbose, $observability);
                 break;
                 
             default:
@@ -440,6 +449,173 @@ function handleWebhookEvent($payload, $webhookEventProcessor, $verbose, $observa
     }
 }
 
+function handleWebhookDelivery($payload, $webhookLogRepo, $jobQueue, $verbose, $observability = null) {
+    $subscriberId = $payload['subscriber_id'] ?? null;
+    $subscriberUrl = $payload['subscriber_url'] ?? null;
+    $subscriberSecret = $payload['subscriber_secret'] ?? null;
+    $eventType = $payload['event_type'] ?? 'unknown';
+    $webhookPayload = $payload['webhook_payload'] ?? [];
+    $logId = $payload['log_id'] ?? null;
+    
+    if (!$subscriberId || !$subscriberUrl || !$subscriberSecret) {
+        throw new Exception("Missing required subscriber information in webhook_delivery payload");
+    }
+    
+    if ($observability) {
+        $observability->getLogger()->debug("Delivering webhook", [
+            'subscriber_id' => $subscriberId,
+            'event_type' => $eventType,
+            'url' => $subscriberUrl,
+        ]);
+    }
+    
+    if ($verbose) {
+        echo "[WORKER] Delivering webhook to $subscriberUrl (event: $eventType)\n";
+    }
+    
+    // Get current log entry to track attempts
+    $log = null;
+    if ($logId) {
+        try {
+            $log = $webhookLogRepo->getById($logId);
+        } catch (Exception $e) {
+            error_log("[WORKER] Failed to retrieve log entry $logId: " . $e->getMessage());
+        }
+    }
+    
+    $currentAttempts = ($log['attempts'] ?? 0) + 1;
+    
+    // Prepare request body
+    $requestBody = json_encode($webhookPayload);
+    
+    // Generate HMAC signature
+    $signature = WebhookDispatcher::generateSignature($webhookPayload, $subscriberSecret);
+    
+    // Prepare headers with trace propagation
+    $headers = [
+        'Content-Type: application/json',
+        'User-Agent: AI-Agent-Webhook/1.0',
+        'X-Agent-Signature: ' . $signature,
+        'X-Agent-ID: ' . ($payload['agent_id'] ?? 'default'),
+        'X-Event-Type: ' . $eventType,
+    ];
+    
+    // Add trace propagation headers if observability is available
+    if ($observability) {
+        $traceHeaders = $observability->getTracePropagationHeaders();
+        foreach ($traceHeaders as $key => $value) {
+            $headers[] = "$key: $value";
+        }
+    }
+    
+    // Send HTTP POST to webhook URL
+    $ch = curl_init($subscriberUrl);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $requestBody);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    
+    $startTime = microtime(true);
+    $response = curl_exec($ch);
+    $duration = microtime(true) - $startTime;
+    
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+    
+    // Determine outcome
+    $success = ($httpCode >= 200 && $httpCode < 300);
+    $responseBody = $response ?: $curlError;
+    
+    // Limit response body size for storage
+    if (strlen($responseBody) > 5000) {
+        $responseBody = substr($responseBody, 0, 5000) . '... (truncated)';
+    }
+    
+    // Update log entry
+    if ($logId) {
+        try {
+            $webhookLogRepo->updateLog($logId, [
+                'response_code' => $httpCode ?: null,
+                'response_body' => $responseBody,
+                'attempts' => $currentAttempts,
+            ]);
+        } catch (Exception $e) {
+            error_log("[WORKER] Failed to update log entry $logId: " . $e->getMessage());
+        }
+    }
+    
+    if ($observability) {
+        $observability->getLogger()->info("Webhook delivery completed", [
+            'subscriber_id' => $subscriberId,
+            'event_type' => $eventType,
+            'http_code' => $httpCode,
+            'success' => $success,
+            'attempts' => $currentAttempts,
+            'duration_ms' => round($duration * 1000, 2),
+        ]);
+    }
+    
+    if ($verbose) {
+        echo "[WORKER] Webhook delivery result: HTTP $httpCode (attempt $currentAttempts)\n";
+    }
+    
+    // Handle failures with retry logic
+    if (!$success) {
+        // Determine if we should retry
+        $maxAttempts = 6; // Default max attempts from SPEC
+        $shouldRetry = $currentAttempts < $maxAttempts;
+        
+        if ($shouldRetry) {
+            // Calculate exponential backoff delay: 1s, 5s, 30s, 2min, 10min, 30min
+            $delays = [1, 5, 30, 120, 600, 1800];
+            $delaySeconds = $delays[$currentAttempts - 1] ?? 3600;
+            
+            if ($verbose) {
+                echo "[WORKER] Scheduling retry in {$delaySeconds}s (attempt " . ($currentAttempts + 1) . "/$maxAttempts)\n";
+            }
+            
+            // Re-enqueue the job with delay
+            $jobQueue->enqueue('webhook_delivery', $payload, $maxAttempts, $delaySeconds);
+            
+            if ($observability) {
+                $observability->getLogger()->info("Webhook delivery scheduled for retry", [
+                    'subscriber_id' => $subscriberId,
+                    'event_type' => $eventType,
+                    'next_attempt' => $currentAttempts + 1,
+                    'delay_seconds' => $delaySeconds,
+                ]);
+            }
+        } else {
+            if ($verbose) {
+                echo "[WORKER] Max retry attempts reached, webhook delivery failed permanently\n";
+            }
+            
+            if ($observability) {
+                $observability->getLogger()->error("Webhook delivery failed permanently", [
+                    'subscriber_id' => $subscriberId,
+                    'event_type' => $eventType,
+                    'attempts' => $currentAttempts,
+                    'http_code' => $httpCode,
+                ]);
+            }
+        }
+        
+        // Throw exception to mark job as failed
+        throw new Exception("Webhook delivery failed: HTTP $httpCode - $responseBody");
+    }
+    
+    return [
+        'http_code' => $httpCode,
+        'success' => $success,
+        'attempts' => $currentAttempts,
+        'duration_ms' => round($duration * 1000, 2),
+        'response' => substr($responseBody, 0, 200) // Abbreviated response in job result
+    ];
+}
+
 // Main worker loop
 $batchCount = 0;
 do {
@@ -455,7 +631,7 @@ do {
         $job = $jobQueue->claimNext();
         
         if ($job) {
-            processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $webhookEventProcessor, $verbose, $observability);
+            processJob($job, $jobQueue, $openaiClient, $vectorStoreService, $promptService, $webhookEventProcessor, $webhookLogRepo, $verbose, $observability);
             $batchCount = 0; // Reset idle counter
         } else {
             // No jobs available
