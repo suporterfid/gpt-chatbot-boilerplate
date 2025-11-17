@@ -1486,6 +1486,7 @@ function loadCurrentPage() {
         'whatsapp-templates': loadWhatsAppTemplatesPage,
         'consent-management': loadConsentManagementPage,
         'jobs': loadJobsPage,
+        'webhook-testing': loadWebhookTestingPage,
         'tenants': loadTenantsPage,
         'users': loadUsersPage,
         'billing': loadBillingPage,
@@ -2746,6 +2747,443 @@ async function cancelJobAction(jobId) {
     } catch (error) {
         showToast('Failed to cancel job: ' + error.message, 'error');
     }
+}
+
+// ==================== Webhook Testing Page ====================
+
+async function loadWebhookTestingPage() {
+    const content = document.getElementById('content');
+    
+    const html = `
+        <div class="card" style="margin-bottom: 1.5rem;">
+            <div class="card-header">
+                <h3 class="card-title">🔧 Webhook Testing Tools</h3>
+            </div>
+            <div class="card-body">
+                <p style="color: #6b7280; margin-bottom: 1.5rem;">
+                    Test webhook deliveries, validate signatures, and inspect delivery logs.
+                </p>
+            </div>
+        </div>
+        
+        <!-- Send Test Webhook -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+            <div class="card-header">
+                <h3 class="card-title">📤 Send Test Webhook</h3>
+            </div>
+            <div class="card-body">
+                <form id="sendWebhookForm" style="max-width: 800px;">
+                    <div class="form-group">
+                        <label for="webhookUrl">Target URL</label>
+                        <input type="url" id="webhookUrl" class="form-control" 
+                               placeholder="https://example.com/webhook" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="webhookEvent">Event Type</label>
+                        <input type="text" id="webhookEvent" class="form-control" 
+                               placeholder="ai.response" value="ai.response" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="webhookData">Event Data (JSON)</label>
+                        <textarea id="webhookData" class="form-control" rows="6" 
+                                  placeholder='{"message": "test"}'>{
+  "message": "Test webhook from admin UI",
+  "timestamp": ${Date.now()}
+}</textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="webhookSecret">HMAC Secret (Optional)</label>
+                        <input type="text" id="webhookSecret" class="form-control" 
+                               placeholder="Leave empty for no signature">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <span class="btn-icon">📤</span> Send Test Webhook
+                    </button>
+                </form>
+                
+                <div id="webhookTestResult" style="margin-top: 1.5rem; display: none;">
+                    <h4 style="margin-bottom: 1rem;">Response</h4>
+                    <div id="webhookTestResultContent"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Validate Signature -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+            <div class="card-header">
+                <h3 class="card-title">🔐 Validate Signature</h3>
+            </div>
+            <div class="card-body">
+                <form id="validateSignatureForm" style="max-width: 800px;">
+                    <div class="form-group">
+                        <label for="signatureBody">Request Body</label>
+                        <textarea id="signatureBody" class="form-control" rows="4" 
+                                  placeholder='{"event":"test","timestamp":123456789}'></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="signatureSecret">HMAC Secret</label>
+                        <input type="text" id="signatureSecret" class="form-control" 
+                               placeholder="your-webhook-secret" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="signatureProvided">Provided Signature</label>
+                        <input type="text" id="signatureProvided" class="form-control" 
+                               placeholder="sha256=..." required>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <span class="btn-icon">🔐</span> Validate Signature
+                    </button>
+                </form>
+                
+                <div id="signatureValidationResult" style="margin-top: 1.5rem; display: none;">
+                    <div id="signatureValidationResultContent"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Webhook Metrics -->
+        <div class="card" style="margin-bottom: 1.5rem;">
+            <div class="card-header">
+                <h3 class="card-title">📊 Webhook Metrics</h3>
+                <button class="btn btn-secondary btn-sm" onclick="refreshWebhookMetrics()">
+                    <span class="btn-icon">🔄</span> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="webhookMetricsContent">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Recent Logs -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📜 Recent Delivery Logs</h3>
+                <button class="btn btn-secondary btn-sm" onclick="refreshWebhookLogs()">
+                    <span class="btn-icon">🔄</span> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="webhookLogsContent">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    content.innerHTML = html;
+    
+    // Initialize event listeners
+    document.getElementById('sendWebhookForm').addEventListener('submit', handleSendTestWebhook);
+    document.getElementById('validateSignatureForm').addEventListener('submit', handleValidateSignature);
+    
+    // Load initial data
+    refreshWebhookMetrics();
+    refreshWebhookLogs();
+}
+
+async function handleSendTestWebhook(e) {
+    e.preventDefault();
+    
+    const url = document.getElementById('webhookUrl').value;
+    const event = document.getElementById('webhookEvent').value;
+    const dataText = document.getElementById('webhookData').value;
+    const secret = document.getElementById('webhookSecret').value;
+    
+    const resultDiv = document.getElementById('webhookTestResult');
+    const resultContent = document.getElementById('webhookTestResultContent');
+    
+    try {
+        // Parse JSON data
+        const data = JSON.parse(dataText);
+        
+        // Build payload
+        const payload = {
+            event: event,
+            timestamp: Math.floor(Date.now() / 1000),
+            agent_id: 'admin_ui_test',
+            data: data
+        };
+        
+        const body = JSON.stringify(payload);
+        
+        // Generate signature if secret provided
+        let signature = null;
+        if (secret) {
+            const encoder = new TextEncoder();
+            const keyData = encoder.encode(secret);
+            const messageData = encoder.encode(body);
+            
+            const cryptoKey = await crypto.subtle.importKey(
+                'raw',
+                keyData,
+                { name: 'HMAC', hash: 'SHA-256' },
+                false,
+                ['sign']
+            );
+            
+            const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+            const signatureArray = Array.from(new Uint8Array(signatureBuffer));
+            const signatureHex = signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            signature = 'sha256=' + signatureHex;
+        }
+        
+        // Send request
+        const startTime = performance.now();
+        const headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': 'AI-Agent-Admin-UI/1.0'
+        };
+        
+        if (signature) {
+            headers['X-Agent-Signature'] = signature;
+        }
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: headers,
+            body: body
+        });
+        
+        const duration = performance.now() - startTime;
+        const responseText = await response.text();
+        
+        // Try to parse as JSON
+        let responseBody;
+        try {
+            responseBody = JSON.parse(responseText);
+        } catch {
+            responseBody = responseText;
+        }
+        
+        // Display result
+        const statusClass = response.ok ? 'success' : 'error';
+        const statusIcon = response.ok ? '✓' : '✗';
+        
+        resultContent.innerHTML = `
+            <div class="alert alert-${statusClass}">
+                ${statusIcon} HTTP ${response.status} - ${duration.toFixed(2)}ms
+            </div>
+            
+            ${signature ? `<div style="margin-bottom: 1rem;">
+                <strong>Signature Sent:</strong>
+                <code style="display: block; padding: 0.5rem; background: #f3f4f6; border-radius: 4px; margin-top: 0.5rem; word-break: break-all;">
+                    ${signature}
+                </code>
+            </div>` : ''}
+            
+            <div>
+                <strong>Response Body:</strong>
+                <pre style="background: #f3f4f6; padding: 1rem; border-radius: 4px; margin-top: 0.5rem; overflow-x: auto;">${
+                    typeof responseBody === 'object' 
+                        ? JSON.stringify(responseBody, null, 2) 
+                        : responseBody
+                }</pre>
+            </div>
+        `;
+        
+        resultDiv.style.display = 'block';
+        
+    } catch (error) {
+        resultContent.innerHTML = `
+            <div class="alert alert-error">
+                ✗ Error: ${error.message}
+            </div>
+        `;
+        resultDiv.style.display = 'block';
+    }
+}
+
+async function handleValidateSignature(e) {
+    e.preventDefault();
+    
+    const body = document.getElementById('signatureBody').value;
+    const secret = document.getElementById('signatureSecret').value;
+    const providedSignature = document.getElementById('signatureProvided').value;
+    
+    const resultDiv = document.getElementById('signatureValidationResult');
+    const resultContent = document.getElementById('signatureValidationResultContent');
+    
+    try {
+        // Generate expected signature
+        const encoder = new TextEncoder();
+        const keyData = encoder.encode(secret);
+        const messageData = encoder.encode(body);
+        
+        const cryptoKey = await crypto.subtle.importKey(
+            'raw',
+            keyData,
+            { name: 'HMAC', hash: 'SHA-256' },
+            false,
+            ['sign']
+        );
+        
+        const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+        const signatureArray = Array.from(new Uint8Array(signatureBuffer));
+        const signatureHex = signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        const expectedSignature = 'sha256=' + signatureHex;
+        
+        // Compare signatures
+        const isValid = expectedSignature === providedSignature;
+        
+        resultContent.innerHTML = `
+            <div class="alert alert-${isValid ? 'success' : 'error'}">
+                ${isValid ? '✓ Signature is VALID' : '✗ Signature is INVALID'}
+            </div>
+            
+            <div style="margin-top: 1rem;">
+                <strong>Expected Signature:</strong>
+                <code style="display: block; padding: 0.5rem; background: #f3f4f6; border-radius: 4px; margin-top: 0.5rem; word-break: break-all;">
+                    ${expectedSignature}
+                </code>
+            </div>
+            
+            <div style="margin-top: 1rem;">
+                <strong>Provided Signature:</strong>
+                <code style="display: block; padding: 0.5rem; background: #f3f4f6; border-radius: 4px; margin-top: 0.5rem; word-break: break-all;">
+                    ${providedSignature}
+                </code>
+            </div>
+        `;
+        
+        resultDiv.style.display = 'block';
+        
+    } catch (error) {
+        resultContent.innerHTML = `
+            <div class="alert alert-error">
+                ✗ Error: ${error.message}
+            </div>
+        `;
+        resultDiv.style.display = 'block';
+    }
+}
+
+async function refreshWebhookMetrics() {
+    const metricsContent = document.getElementById('webhookMetricsContent');
+    
+    try {
+        const response = await fetch(`${API_BASE}/webhook/metrics.php?format=json`);
+        const metrics = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(metrics.message || 'Failed to load metrics');
+        }
+        
+        const deliveries = metrics.deliveries || {};
+        const latency = metrics.latency || {};
+        const retries = metrics.retries || {};
+        
+        metricsContent.innerHTML = `
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #3b82f6;">${deliveries.total || 0}</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Total Deliveries</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #10b981;">${deliveries.success || 0}</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Successful</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #ef4444;">${deliveries.failed || 0}</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Failed</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #f59e0b;">${deliveries.success_rate || 0}%</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Success Rate</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: bold;">${(latency.avg || 0).toFixed(3)}s</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Avg Latency</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: bold;">${(latency.p95 || 0).toFixed(3)}s</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">P95 Latency</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: bold;">${retries.total_retries || 0}</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Total Retries</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-body" style="text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: bold;">${metrics.queue_depth || 0}</div>
+                        <div style="color: #6b7280; margin-top: 0.5rem;">Queue Depth</div>
+                    </div>
+                </div>
+            </div>
+            
+            ${deliveries.by_event_type && Object.keys(deliveries.by_event_type).length > 0 ? `
+                <div style="margin-top: 1.5rem;">
+                    <h4 style="margin-bottom: 1rem;">Deliveries by Event Type</h4>
+                    <div class="table-container">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Event Type</th>
+                                    <th style="text-align: right;">Count</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${Object.entries(deliveries.by_event_type)
+                                    .sort((a, b) => b[1] - a[1])
+                                    .map(([event, count]) => `
+                                        <tr>
+                                            <td><code>${event}</code></td>
+                                            <td style="text-align: right;"><strong>${count}</strong></td>
+                                        </tr>
+                                    `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ` : ''}
+        `;
+        
+    } catch (error) {
+        metricsContent.innerHTML = `
+            <div class="alert alert-error">
+                Failed to load metrics: ${error.message}
+            </div>
+        `;
+    }
+}
+
+async function refreshWebhookLogs() {
+    const logsContent = document.getElementById('webhookLogsContent');
+    
+    // For now, show placeholder - this would need a backend endpoint
+    logsContent.innerHTML = `
+        <div style="color: #6b7280; text-align: center; padding: 2rem;">
+            <p>📝 Webhook delivery logs can be inspected using the CLI tool:</p>
+            <code style="display: block; padding: 1rem; background: #f3f4f6; border-radius: 4px; margin-top: 1rem;">
+                php scripts/test_webhook.php inspect-logs --limit 20
+            </code>
+        </div>
+    `;
 }
 
 // ==================== Tenants Page ====================

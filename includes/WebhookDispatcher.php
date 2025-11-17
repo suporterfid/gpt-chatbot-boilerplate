@@ -25,6 +25,8 @@ class WebhookDispatcher {
     private $logRepo;
     private $config;
     private $agentId;
+    private $transformHooks = [];
+    private $queueDriver;
     
     /**
      * @param DB $db Database connection
@@ -40,6 +42,80 @@ class WebhookDispatcher {
         $this->jobQueue = new JobQueue($db);
         $this->subscriberRepo = new WebhookSubscriberRepository($db);
         $this->logRepo = new WebhookLogRepository($db);
+        
+        // Initialize queue driver (default to JobQueue)
+        $this->queueDriver = $this->jobQueue;
+    }
+    
+    /**
+     * Register a payload transformation hook for a specific event type
+     * 
+     * Hooks are applied in the order they are registered.
+     * Multiple hooks can be registered for the same event type.
+     * Use '*' as event type to register a global hook for all events.
+     * 
+     * @param string $eventType Event type (e.g., 'ai.response', 'order.created') or '*' for all
+     * @param callable $transformer Function that receives and returns the payload array
+     * @return self For method chaining
+     * 
+     * @example
+     * $dispatcher->registerTransform('ai.response', function($payload) {
+     *     $payload['data']['processed_by'] = 'custom_handler';
+     *     return $payload;
+     * });
+     */
+    public function registerTransform($eventType, callable $transformer) {
+        if (!isset($this->transformHooks[$eventType])) {
+            $this->transformHooks[$eventType] = [];
+        }
+        $this->transformHooks[$eventType][] = $transformer;
+        return $this;
+    }
+    
+    /**
+     * Set a custom queue driver
+     * 
+     * This allows swapping the default JobQueue with alternative implementations
+     * such as RabbitMQ, Redis, SQS, etc.
+     * 
+     * The driver must implement the enqueue() method with the same signature as JobQueue.
+     * 
+     * @param object $driver Queue driver instance
+     * @return self For method chaining
+     * 
+     * @example
+     * $dispatcher->setQueueDriver(new RabbitMQDriver($config));
+     */
+    public function setQueueDriver($driver) {
+        if (!method_exists($driver, 'enqueue')) {
+            throw new Exception("Queue driver must implement enqueue() method");
+        }
+        $this->queueDriver = $driver;
+        return $this;
+    }
+    
+    /**
+     * Get registered transformation hooks
+     * 
+     * @return array Array of hooks by event type
+     */
+    public function getTransformHooks() {
+        return $this->transformHooks;
+    }
+    
+    /**
+     * Clear all registered transformation hooks
+     * 
+     * @param string|null $eventType Optional event type to clear, or null to clear all
+     * @return self For method chaining
+     */
+    public function clearTransformHooks($eventType = null) {
+        if ($eventType === null) {
+            $this->transformHooks = [];
+        } else {
+            unset($this->transformHooks[$eventType]);
+        }
+        return $this;
     }
     
     /**
@@ -124,8 +200,8 @@ class WebhookDispatcher {
                     'timestamp' => $timestamp,
                 ];
                 
-                // Enqueue the delivery job
-                $jobId = $this->jobQueue->enqueue(
+                // Enqueue the delivery job using the configured queue driver
+                $jobId = $this->queueDriver->enqueue(
                     'webhook_delivery',
                     $jobPayload,
                     $this->getMaxAttempts(), // Max retry attempts
@@ -168,34 +244,43 @@ class WebhookDispatcher {
     /**
      * Apply configured transformations to the webhook payload
      * 
-     * This can be extended to support custom transformation logic
-     * based on event type or subscriber preferences
+     * This method applies transformations in the following order:
+     * 1. Registered global hooks (event type '*')
+     * 2. Registered event-specific hooks
+     * 3. Config-based transformations (for backward compatibility)
      * 
      * @param array $payload Original payload
      * @param string $eventType Event type
      * @return array Transformed payload
      */
     private function applyTransformations($payload, $eventType) {
-        // Check for configured transformations
-        $transformations = $this->config['webhook_transformations'] ?? [];
-        
-        if (empty($transformations)) {
-            return $payload;
-        }
-        
-        // Apply event-specific transformations if configured
-        if (isset($transformations[$eventType])) {
-            $transform = $transformations[$eventType];
-            
-            // Support callable transformations
-            if (is_callable($transform)) {
-                return $transform($payload);
+        // Apply global transformation hooks first
+        if (isset($this->transformHooks['*'])) {
+            foreach ($this->transformHooks['*'] as $hook) {
+                $payload = $hook($payload);
             }
         }
         
-        // Apply global transformations if configured
-        if (isset($transformations['*']) && is_callable($transformations['*'])) {
-            return $transformations['*']($payload);
+        // Apply event-specific transformation hooks
+        if (isset($this->transformHooks[$eventType])) {
+            foreach ($this->transformHooks[$eventType] as $hook) {
+                $payload = $hook($payload);
+            }
+        }
+        
+        // Apply legacy config-based transformations for backward compatibility
+        $transformations = $this->config['webhook_transformations'] ?? [];
+        
+        if (!empty($transformations)) {
+            // Apply event-specific transformations if configured
+            if (isset($transformations[$eventType]) && is_callable($transformations[$eventType])) {
+                $payload = $transformations[$eventType]($payload);
+            }
+            
+            // Apply global transformations if configured
+            if (isset($transformations['*']) && is_callable($transformations['*'])) {
+                $payload = $transformations['*']($payload);
+            }
         }
         
         return $payload;
