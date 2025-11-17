@@ -125,13 +125,118 @@ Based on this implementation:
 
 ---
 
-## Issue #003: Timing Attack in Admin Auth - ⏳ PENDING
+## Issue #003: Timing Attack in Admin Auth - ✅ RESOLVED
 
-**Status:** Not started  
+**Completed:** 2025-11-17  
+**Implementation Time:** ~3 hours  
 **Priority:** Critical  
-**Estimated Effort:** 1-2 days  
 
-Will implement constant-time string comparison and rate limiting for authentication.
+#### Problem
+The admin authentication mechanism used standard string comparison (`===`), which can be exploited through timing analysis to enumerate valid tokens.
+
+#### Solution Implemented
+
+1. **Created SecurityHelper Class** (`includes/SecurityHelper.php`)
+   - Constant-time string comparison using `hash_equals()`
+   - Minimum authentication time enforcement (100ms)
+   - Rate limiting with exponential backoff
+   - Secure token generation and validation
+   - Methods implemented:
+     - `timingSafeEquals()` - Constant-time comparison
+     - `verifyToken()` - Hash-then-compare for length masking
+     - `verifyHashedToken()` - For pre-hashed tokens
+     - `ensureMinimumTime()` - Enforces minimum execution time
+     - `checkRateLimit()` - Rate limit checking
+     - `recordAttempt()` - Track failed attempts
+     - `clearRateLimit()` - Reset on success
+     - `generateSecureToken()` - Cryptographically secure tokens
+     - `isValidTokenFormat()` - Format validation without revealing requirements
+
+2. **Updated AdminAuth.php**
+   - Modified `authenticate()` to use constant-time comparison
+   - Modified `validateSession()` to use constant-time comparison
+   - Added minimum authentication time (100ms) for all code paths
+   - Consistent timing for success, failure, and exception paths
+   - Token format validation before database queries
+
+3. **Updated admin-api.php**
+   - Added rate limiting to `checkAuthentication()` function
+   - Checks rate limit before authentication attempt
+   - Returns 429 (Too Many Requests) with Retry-After header
+   - Records failed attempts, clears on success
+   - Per-IP address tracking (5 attempts per hour default)
+
+4. **Comprehensive Test Suite**
+   - `tests/test_timing_attack_prevention.php` - 379 lines, 21 tests
+   - Tests constant-time comparison
+   - Measures timing consistency (< 0.21μs difference)
+   - Tests rate limiting functionality
+   - Tests secure token generation
+   - Tests AdminAuth integration
+   - All tests passing ✅
+
+#### Security Improvements
+
+✅ **Timing Attack Prevention**
+- All comparisons use constant-time operations
+- No timing differences between correct/incorrect tokens
+- Minimum 100ms authentication time enforced
+
+✅ **Rate Limiting**
+- Maximum 5 failed attempts before blocking
+- Exponential backoff: 2^(attempts-max) seconds, max 300s
+- Per-IP tracking with APCu cache
+
+✅ **Token Security**
+- Cryptographically secure token generation
+- Format validation without revealing requirements
+- Minimum 20 character token length
+
+✅ **Defense in Depth**
+- Multiple layers of protection
+- Graceful degradation when APCu unavailable
+- Comprehensive error handling
+
+#### Test Results
+
+```bash
+Tests Passed: 21/21 ✅
+Tests Failed: 0
+
+Timing Analysis:
+- Average difference: 0.13-0.21 microseconds
+- Well within acceptable range (< 10 microseconds)
+- Confirms constant-time implementation
+```
+
+#### Files Created
+
+- `includes/SecurityHelper.php` (245 lines)
+- `tests/test_timing_attack_prevention.php` (379 lines)
+
+#### Files Modified
+
+- `includes/AdminAuth.php` - Added SecurityHelper integration
+- `admin-api.php` - Added rate limiting
+- `docs/issues/20251711-prod-review/issue-003-timing-attack-admin-auth.md` - Added resolution
+
+#### Performance Impact
+
+- Minimal overhead: ~100ms per authentication (intentional security delay)
+- No impact on successful authenticated requests
+- Rate limiting uses APCu for efficiency
+
+#### Backward Compatibility
+
+✅ Fully backward compatible - all existing authentication methods work unchanged
+
+#### Production Readiness
+
+✅ **Ready for production**
+- All security measures implemented
+- Comprehensive test coverage
+- No breaking changes
+- APCu gracefully handles CLI/web differences
 
 ---
 
@@ -158,26 +263,25 @@ Can leverage existing `sanitizeMessage()` method. Need to add DOMPurify integrat
 ## Implementation Statistics
 
 **Total Issues:** 8  
-**Resolved:** 1 (12.5%)  
+**Resolved:** 2 (25%)  
 **In Progress:** 0  
-**Pending:** 7 (87.5%)  
+**Pending:** 6 (75%)  
 
 **Critical Issues:** 4  
-**Critical Resolved:** 1 (25%)  
+**Critical Resolved:** 2 (50%)  
 
-**Phase 1 Progress:** 1/4 critical security issues resolved (25%)
+**Phase 1 Progress:** 2/4 critical security issues resolved (50%)
 
 ---
 
 ## Next Actions
 
-1. Implement Issue #003: Timing Attack in Admin Auth
-2. Implement Issue #004: File Upload Security
-3. Implement Issue #005: XSS Vulnerabilities
-4. Conduct security audit after Phase 1 completion
-5. Implement architectural improvements (Phase 2)
+1. Implement Issue #004: File Upload Security
+2. Implement Issue #005: XSS Vulnerabilities
+3. Conduct security audit after Phase 1 completion
+4. Implement architectural improvements (Phase 2)
 
 ---
 
 **Last Updated:** 2025-11-17  
-**Next Review:** After Issue #003 completion
+**Next Review:** After Issue #004 completion

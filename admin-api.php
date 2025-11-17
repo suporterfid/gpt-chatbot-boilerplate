@@ -6,6 +6,7 @@
 
 require_once 'config.php';
 require_once 'includes/DB.php';
+require_once 'includes/SecurityHelper.php';
 require_once 'includes/AgentService.php';
 require_once 'includes/OpenAIAdminClient.php';
 require_once 'includes/PromptService.php';
@@ -111,6 +112,9 @@ function checkAuthentication($config, $adminAuth) {
             if ($user) {
                 $user['auth_method'] = 'session';
                 $user['session_token'] = $sessionToken;
+                // Clear rate limit on successful authentication
+                $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+                SecurityHelper::clearRateLimit($clientIp);
                 return $user;
             }
             clearAdminSessionCookie($config);
@@ -166,10 +170,31 @@ function checkAuthentication($config, $adminAuth) {
         sendError('Authentication required', 403);
     }
 
+    // Check rate limiting before authentication attempt
+    $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $rateLimit = SecurityHelper::checkRateLimit($clientIp);
+    
+    if (!$rateLimit['allowed']) {
+        log_admin("Rate limit exceeded for $clientIp: {$rateLimit['attempts']} attempts", 'warn');
+        http_response_code(429);
+        header('Retry-After: ' . $rateLimit['retry_after']);
+        echo json_encode([
+            'error' => [
+                'message' => 'Too many authentication attempts. Please try again later.',
+                'code' => 'RATE_LIMIT_EXCEEDED',
+                'status' => 429,
+                'retry_after' => $rateLimit['retry_after']
+            ]
+        ], JSON_UNESCAPED_UNICODE);
+        exit();
+    }
+
     try {
         $user = $adminAuth->authenticate($token);
 
         if (!$user) {
+            // Record failed attempt for rate limiting
+            SecurityHelper::recordAttempt($clientIp);
             log_admin('Invalid authentication token', 'warn');
             sendError('Invalid authentication token', 403);
         }
@@ -178,8 +203,13 @@ function checkAuthentication($config, $adminAuth) {
             log_admin('Legacy ADMIN_TOKEN authentication is deprecated. Migrate to session-based login or API keys.', 'warn');
         }
 
+        // Clear rate limit on successful authentication
+        SecurityHelper::clearRateLimit($clientIp);
+
         return $user;
     } catch (Exception $e) {
+        // Record failed attempt for rate limiting
+        SecurityHelper::recordAttempt($clientIp);
         log_admin('Authentication error: ' . $e->getMessage(), 'error');
         sendError('Authentication failed', 403);
     }
