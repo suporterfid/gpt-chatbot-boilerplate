@@ -2044,23 +2044,21 @@ class ChatHandler {
     }
 
     private function validateFileData($fileData) {
+        // Load FileValidator if not already loaded
+        if (!class_exists('FileValidator')) {
+            require_once __DIR__ . '/FileValidator.php';
+        }
+        
+        $validator = new FileValidator();
+        
         if (!is_array($fileData)) {
             $fileData = [$fileData];
         }
 
         foreach ($fileData as $file) {
-            if (!isset($file['data']) || !isset($file['type'])) {
-                throw new Exception('Invalid file data format', 400);
-            }
-
-            if ($file['size'] > $this->config['chat_config']['max_file_size']) {
-                throw new Exception('File size exceeds limit', 400);
-            }
-
-            $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
-            if (!in_array(strtolower($extension), $this->config['chat_config']['allowed_file_types'])) {
-                throw new Exception('File type not allowed', 400);
-            }
+            // Use comprehensive validation from FileValidator
+            // This validates: filename, size (encoded & decoded), MIME type, malware
+            $validator->validateFile($file, $this->config['chat_config']);
         }
     }
 

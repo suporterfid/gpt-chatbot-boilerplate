@@ -244,52 +244,80 @@ class OpenAIClient {
     }
 
     public function uploadFile($fileData, $purpose = 'user_data') {
-        $ch = curl_init();
-
-        // Create temporary file
-        $tempFile = tempnam(sys_get_temp_dir(), 'chatbot_upload_');
-        file_put_contents($tempFile, base64_decode($fileData['data']));
-
-        $postFields = [
-            'purpose' => $purpose,
-            'file' => new CURLFile($tempFile, $fileData['type'], $fileData['name'])
-        ];
-
-        $headers = [
-            'Authorization: Bearer ' . $this->apiKey,
-        ];
-
-        if (!empty($this->organization)) {
-            $headers[] = 'OpenAI-Organization: ' . $this->organization;
+        // Load required classes
+        if (!class_exists('FileValidator')) {
+            require_once __DIR__ . '/FileValidator.php';
         }
-
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $this->baseUrl . '/files',
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $postFields,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_SSL_VERIFYPEER => true,
-        ]);
-
-        $result = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        // Clean up temp file
-        unlink($tempFile);
-
-        if ($result === false) {
-            throw new Exception('cURL error: ' . $error);
+        if (!class_exists('SecureFileUpload')) {
+            require_once __DIR__ . '/SecureFileUpload.php';
         }
+        
+        // Validate file first
+        $validator = new FileValidator();
+        $content = $validator->validateFile($fileData, $this->config);
+        
+        // Determine upload directory (use config or fallback to system temp)
+        $uploadDir = $this->config['chat_config']['upload_dir'] ?? sys_get_temp_dir() . '/chatbot_uploads';
+        $secureUpload = new SecureFileUpload($uploadDir);
+        
+        // Create secure temporary file
+        $tempFile = $secureUpload->createTempFile($content, $fileData['name']);
+        
+        try {
+            // Get actual MIME type from file content
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $actualMimeType = finfo_file($finfo, $tempFile);
+            finfo_close($finfo);
+            
+            if ($actualMimeType === false) {
+                $actualMimeType = $fileData['type']; // Fallback to declared type
+            }
+            
+            // Upload to OpenAI
+            $ch = curl_init();
+            
+            $postFields = [
+                'purpose' => $purpose,
+                'file' => new CURLFile($tempFile, $actualMimeType, basename($fileData['name']))
+            ];
 
-        if ($httpCode !== 200) {
-            throw new Exception('File upload error: HTTP ' . $httpCode);
+            $headers = [
+                'Authorization: Bearer ' . $this->apiKey,
+            ];
+
+            if (!empty($this->organization)) {
+                $headers[] = 'OpenAI-Organization: ' . $this->organization;
+            }
+
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $this->baseUrl . '/files',
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $postFields,
+                CURLOPT_HTTPHEADER => $headers,
+                CURLOPT_SSL_VERIFYPEER => true,
+            ]);
+
+            $result = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            if ($result === false) {
+                throw new Exception('cURL error: ' . $error);
+            }
+
+            if ($httpCode !== 200) {
+                throw new Exception('File upload error: HTTP ' . $httpCode);
+            }
+
+            $response = json_decode($result, true);
+            return $response['id'] ?? null;
+            
+        } finally {
+            // Always cleanup, even on exception
+            $secureUpload->cleanupTempFile($tempFile);
         }
-
-        $response = json_decode($result, true);
-        return $response['id'] ?? null;
     }
 
     private function makeRequest($method, $endpoint, $data = null) {
