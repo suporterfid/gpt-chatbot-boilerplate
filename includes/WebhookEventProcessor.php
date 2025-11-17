@@ -121,6 +121,29 @@ class WebhookEventProcessor {
                 'result' => $result
             ];
 
+        } catch (WebhookEventProcessorException $e) {
+            // Track failure metric
+            if ($this->observability) {
+                $this->observability->handleError($spanId, $e, [
+                    'event_type' => $eventType,
+                    'event_id' => $eventId
+                ]);
+                $this->observability->endSpan($spanId, ['status' => 'error']);
+                $this->observability->getMetrics()->incrementCounter('chatbot_webhook_events_processed_total', [
+                    'event_type' => $eventType,
+                    'status' => 'error'
+                ]);
+            }
+
+            $this->log("Failed to process webhook event", 'error', [
+                'event_type' => $eventType,
+                'event_id' => $eventId,
+                'error' => $e->getMessage()
+            ]);
+
+            // Re-throw as-is to preserve error code
+            throw $e;
+            
         } catch (Exception $e) {
             // Track failure metric
             if ($this->observability) {
