@@ -160,6 +160,673 @@
         }
     };
 
+    /**
+     * ConnectionManager - Robust connection handling with state machine, reconnection, and message queuing
+     * Manages WebSocket, SSE, and AJAX connections with automatic failover
+     */
+    class ConnectionManager {
+        constructor(options, chatbot) {
+            this.options = options;
+            this.chatbot = chatbot;
+            this.state = 'disconnected'; // disconnected, connecting, connected, reconnecting
+            this.transport = null; // 'websocket', 'sse', 'ajax', or null
+            this.connection = null;
+            this.reconnectAttempts = 0;
+            this.maxReconnectAttempts = 10;
+            this.reconnectDelay = 1000; // Start with 1s
+            this.maxReconnectDelay = 30000; // Max 30s
+            this.messageQueue = [];
+            this.heartbeatTimer = null;
+            this.heartbeatInterval = 30000; // 30s
+            this.heartbeatTimeout = null;
+            this.listeners = {};
+            this.userDisconnected = false;
+            this.reconnectTimer = null;
+            this.connectionTimeout = null;
+            this.currentRequestData = null;
+            
+            // Bind methods to preserve context
+            this.handleWebSocketMessage = this.handleWebSocketMessage.bind(this);
+            this.handleWebSocketClose = this.handleWebSocketClose.bind(this);
+            this.handleWebSocketError = this.handleWebSocketError.bind(this);
+            this.handleSSEMessage = this.handleSSEMessage.bind(this);
+            this.handleSSEError = this.handleSSEError.bind(this);
+        }
+        
+        /**
+         * Connect with automatic transport fallback
+         * @param {object} requestData - Initial request data for connection
+         * @returns {Promise<boolean>} Success status
+         */
+        async connect(requestData) {
+            if (this.state === 'connecting' || this.state === 'connected') {
+                console.log('ConnectionManager: Already connecting or connected');
+                return true;
+            }
+            
+            this.setState('connecting');
+            this.currentRequestData = requestData;
+            
+            // Determine transports to try based on streamingMode
+            const transports = this.getTransportsToTry();
+            
+            for (const transport of transports) {
+                try {
+                    console.log(`ConnectionManager: Attempting ${transport} connection...`);
+                    const success = await this.connectWithTransport(transport, requestData);
+                    
+                    if (success) {
+                        this.setState('connected');
+                        this.reconnectAttempts = 0;
+                        this.transport = transport;
+                        
+                        if (transport === 'websocket') {
+                            this.startHeartbeat();
+                        }
+                        
+                        this.flushMessageQueue();
+                        console.log(`ConnectionManager: Connected via ${transport}`);
+                        return true;
+                    }
+                } catch (error) {
+                    console.warn(`ConnectionManager: Failed to connect with ${transport}:`, error.message);
+                    continue;
+                }
+            }
+            
+            // All transports failed
+            console.error('ConnectionManager: All transports failed');
+            this.setState('disconnected');
+            this.scheduleReconnect();
+            return false;
+        }
+        
+        /**
+         * Get list of transports to try based on configuration
+         * @returns {Array<string>} Transport names in order of preference
+         */
+        getTransportsToTry() {
+            const mode = this.options.streamingMode;
+            
+            if (mode === 'websocket' && this.options.websocketEndpoint) {
+                return ['websocket'];
+            } else if (mode === 'sse') {
+                return ['sse'];
+            } else if (mode === 'ajax') {
+                return ['ajax'];
+            } else {
+                // Auto mode: try WebSocket → SSE → AJAX
+                const transports = [];
+                if (this.options.websocketEndpoint) {
+                    transports.push('websocket');
+                }
+                transports.push('sse', 'ajax');
+                return transports;
+            }
+        }
+        
+        /**
+         * Connect using specific transport
+         * @param {string} transport - Transport type
+         * @param {object} requestData - Request data
+         * @returns {Promise<boolean>} Success status
+         */
+        async connectWithTransport(transport, requestData) {
+            // Clear any existing connection timeout
+            if (this.connectionTimeout) {
+                clearTimeout(this.connectionTimeout);
+                this.connectionTimeout = null;
+            }
+            
+            switch (transport) {
+                case 'websocket':
+                    return this.connectWebSocket(requestData);
+                case 'sse':
+                    return this.connectSSE(requestData);
+                case 'ajax':
+                    // AJAX doesn't maintain a persistent connection
+                    this.transport = 'ajax';
+                    return Promise.resolve(true);
+                default:
+                    throw new Error(`Unknown transport: ${transport}`);
+            }
+        }
+        
+        /**
+         * WebSocket connection with error handling
+         * @param {object} requestData - Initial request data
+         * @returns {Promise<boolean>} Success status
+         */
+        connectWebSocket(requestData) {
+            return new Promise((resolve, reject) => {
+                if (!this.options.websocketEndpoint) {
+                    reject(new Error('WebSocket endpoint not configured'));
+                    return;
+                }
+                
+                // Check if we already have an open connection
+                if (this.connection && this.connection.readyState === WebSocket.OPEN) {
+                    console.log('ConnectionManager: Reusing existing WebSocket connection');
+                    this.connection.send(JSON.stringify(requestData));
+                    resolve(true);
+                    return;
+                }
+                
+                let endpoint = this.options.websocketEndpoint;
+                
+                // Upgrade to wss:// if page is https://
+                if (window.location.protocol === 'https:' && /^ws:\/\//i.test(endpoint)) {
+                    endpoint = endpoint.replace(/^ws:\/\//i, 'wss://');
+                }
+                
+                try {
+                    const ws = new WebSocket(endpoint);
+                    
+                    // Connection timeout
+                    this.connectionTimeout = setTimeout(() => {
+                        console.warn('ConnectionManager: WebSocket connection timeout');
+                        ws.close();
+                        reject(new Error('WebSocket connection timeout'));
+                    }, 5000);
+                    
+                    ws.onopen = () => {
+                        clearTimeout(this.connectionTimeout);
+                        this.connectionTimeout = null;
+                        
+                        this.connection = ws;
+                        this.setupWebSocketHandlers(ws);
+                        
+                        // Send initial request
+                        ws.send(JSON.stringify(requestData));
+                        resolve(true);
+                    };
+                    
+                    ws.onerror = (error) => {
+                        clearTimeout(this.connectionTimeout);
+                        this.connectionTimeout = null;
+                        reject(error);
+                    };
+                    
+                } catch (error) {
+                    clearTimeout(this.connectionTimeout);
+                    this.connectionTimeout = null;
+                    reject(error);
+                }
+            });
+        }
+        
+        /**
+         * Setup WebSocket event handlers
+         * @param {WebSocket} ws - WebSocket instance
+         */
+        setupWebSocketHandlers(ws) {
+            ws.onmessage = this.handleWebSocketMessage;
+            ws.onclose = this.handleWebSocketClose;
+            ws.onerror = this.handleWebSocketError;
+        }
+        
+        /**
+         * Handle WebSocket message
+         * @param {MessageEvent} event - Message event
+         */
+        handleWebSocketMessage(event) {
+            try {
+                const data = JSON.parse(event.data);
+                
+                // Handle pong response to ping
+                if (data.type === 'pong') {
+                    this.clearHeartbeatTimeout();
+                    return;
+                }
+                
+                // Delegate to chatbot
+                if (this.chatbot && this.chatbot.handleStreamChunk) {
+                    this.chatbot.handleStreamChunk(data);
+                }
+                
+                this.emit('message', data);
+            } catch (error) {
+                console.error('ConnectionManager: Error parsing WebSocket message:', error);
+            }
+        }
+        
+        /**
+         * Handle WebSocket close
+         * @param {CloseEvent} event - Close event
+         */
+        handleWebSocketClose(event) {
+            console.log('ConnectionManager: WebSocket closed:', event.code, event.reason);
+            this.stopHeartbeat();
+            this.connection = null;
+            
+            // Don't reconnect if this was a clean user-initiated disconnect
+            if (!this.userDisconnected && event.code !== 1000) {
+                this.handleDisconnection();
+            }
+        }
+        
+        /**
+         * Handle WebSocket error
+         * @param {Event} error - Error event
+         */
+        handleWebSocketError(error) {
+            console.error('ConnectionManager: WebSocket error:', error);
+        }
+        
+        /**
+         * SSE connection with error handling
+         * @param {object} requestData - Request data
+         * @returns {Promise<boolean>} Success status
+         */
+        connectSSE(requestData) {
+            return new Promise((resolve, reject) => {
+                try {
+                    // Close existing EventSource
+                    if (this.connection && this.connection.close) {
+                        this.connection.close();
+                    }
+                    
+                    // Skip SSE if files are present (EventSource only supports GET)
+                    if (requestData.file_data && requestData.file_data.length) {
+                        reject(new Error('SSE does not support file uploads'));
+                        return;
+                    }
+                    
+                    // Build URL with parameters
+                    const params = new URLSearchParams();
+                    params.set('message', requestData.message || '');
+                    params.set('conversation_id', requestData.conversation_id || '');
+                    params.set('api_type', requestData.api_type || this.options.apiType || 'chat');
+                    
+                    // Add other parameters
+                    const skipKeys = new Set(['message', 'conversation_id', 'api_type', 'file_data', 'stream']);
+                    Object.entries(requestData).forEach(([key, value]) => {
+                        if (skipKeys.has(key) || value === undefined || value === null) {
+                            return;
+                        }
+                        
+                        if (typeof value === 'object') {
+                            try {
+                                params.set(key, JSON.stringify(value));
+                            } catch (e) {
+                                console.warn(`ConnectionManager: Failed to stringify ${key}:`, e);
+                            }
+                        } else {
+                            params.set(key, String(value));
+                        }
+                    });
+                    
+                    const url = `${this.options.apiEndpoint}?${params.toString()}`;
+                    const eventSource = new EventSource(url);
+                    
+                    this.connection = eventSource;
+                    this.sseClosedCleanly = false;
+                    
+                    // Connection timeout
+                    this.connectionTimeout = setTimeout(() => {
+                        console.warn('ConnectionManager: SSE connection timeout');
+                        eventSource.close();
+                        reject(new Error('SSE connection timeout'));
+                    }, 5000);
+                    
+                    eventSource.onopen = () => {
+                        clearTimeout(this.connectionTimeout);
+                        this.connectionTimeout = null;
+                        resolve(true);
+                    };
+                    
+                    eventSource.onmessage = this.handleSSEMessage;
+                    eventSource.onerror = this.handleSSEError;
+                    
+                } catch (error) {
+                    clearTimeout(this.connectionTimeout);
+                    this.connectionTimeout = null;
+                    reject(error);
+                }
+            });
+        }
+        
+        /**
+         * Handle SSE message
+         * @param {MessageEvent} event - Message event
+         */
+        handleSSEMessage(event) {
+            try {
+                const data = JSON.parse(event.data);
+                
+                // Delegate to chatbot
+                if (this.chatbot && this.chatbot.handleStreamChunk) {
+                    this.chatbot.handleStreamChunk(data);
+                }
+                
+                this.emit('message', data);
+            } catch (error) {
+                // Ignore non-JSON keep-alive messages
+                if (event.data && event.data.trim()) {
+                    console.warn('ConnectionManager: Failed to parse SSE message:', event.data);
+                }
+            }
+        }
+        
+        /**
+         * Handle SSE error
+         * @param {Event} error - Error event
+         */
+        handleSSEError(error) {
+            const eventSource = this.connection;
+            const closedCleanly = this.sseClosedCleanly;
+            
+            if (eventSource) {
+                try {
+                    eventSource.close();
+                } catch (e) {
+                    console.error('ConnectionManager: Error closing EventSource:', e);
+                }
+            }
+            
+            this.connection = null;
+            
+            // Don't trigger reconnection if this was a clean close
+            if (!closedCleanly && !this.userDisconnected) {
+                console.error('ConnectionManager: SSE error:', error);
+                this.handleDisconnection();
+            }
+        }
+        
+        /**
+         * Handle disconnection and schedule reconnect
+         */
+        handleDisconnection() {
+            if (this.state === 'disconnected' || this.userDisconnected) {
+                return;
+            }
+            
+            this.stopHeartbeat();
+            this.setState('disconnected');
+            
+            this.scheduleReconnect();
+        }
+        
+        /**
+         * Schedule reconnection with exponential backoff and jitter
+         */
+        scheduleReconnect() {
+            // Clear any existing reconnect timer
+            if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = null;
+            }
+            
+            if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+                console.error('ConnectionManager: Max reconnect attempts reached');
+                this.emit('max_reconnect_attempts');
+                this.setState('disconnected');
+                return;
+            }
+            
+            // Exponential backoff with jitter to prevent thundering herd
+            const baseDelay = Math.min(
+                this.reconnectDelay * Math.pow(2, this.reconnectAttempts),
+                this.maxReconnectDelay
+            );
+            
+            // Add random jitter (±30%)
+            const jitter = baseDelay * 0.3 * (Math.random() * 2 - 1);
+            const actualDelay = Math.max(baseDelay + jitter, 1000);
+            
+            this.reconnectAttempts++;
+            
+            console.log(`ConnectionManager: Reconnecting in ${Math.round(actualDelay / 1000)}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+            this.emit('reconnecting', { attempt: this.reconnectAttempts, delay: actualDelay });
+            
+            this.reconnectTimer = setTimeout(() => {
+                this.setState('reconnecting');
+                this.connect(this.currentRequestData);
+            }, actualDelay);
+        }
+        
+        /**
+         * Send message with queuing for offline mode
+         * @param {object} messageData - Message data to send
+         * @returns {Promise<object>} Send result
+         */
+        async sendMessage(messageData) {
+            // Queue message if not connected
+            if (this.state !== 'connected') {
+                this.messageQueue.push(messageData);
+                console.log('ConnectionManager: Message queued (offline)', messageData);
+                this.emit('message_queued', { message: messageData, queueLength: this.messageQueue.length });
+                return { queued: true, queueLength: this.messageQueue.length };
+            }
+            
+            try {
+                if (this.transport === 'websocket') {
+                    return this.sendViaWebSocket(messageData);
+                } else if (this.transport === 'sse') {
+                    // SSE is request-per-message, so reconnect with new message
+                    return this.connect(messageData);
+                } else {
+                    // AJAX fallback
+                    return { success: true, transport: 'ajax' };
+                }
+            } catch (error) {
+                console.error('ConnectionManager: Failed to send message:', error);
+                // Queue and trigger reconnect
+                this.messageQueue.push(messageData);
+                this.handleDisconnection();
+                throw error;
+            }
+        }
+        
+        /**
+         * Send message via WebSocket
+         * @param {object} messageData - Message data
+         * @returns {Promise<object>} Send result
+         */
+        sendViaWebSocket(messageData) {
+            return new Promise((resolve, reject) => {
+                if (!this.connection || this.connection.readyState !== WebSocket.OPEN) {
+                    reject(new Error('WebSocket not connected'));
+                    return;
+                }
+                
+                try {
+                    this.connection.send(JSON.stringify(messageData));
+                    resolve({ success: true, transport: 'websocket' });
+                } catch (error) {
+                    reject(error);
+                }
+            });
+        }
+        
+        /**
+         * Flush queued messages after reconnection
+         */
+        flushMessageQueue() {
+            if (this.messageQueue.length === 0) {
+                return;
+            }
+            
+            console.log(`ConnectionManager: Flushing ${this.messageQueue.length} queued messages`);
+            this.emit('flushing_queue', { queueLength: this.messageQueue.length });
+            
+            const queue = [...this.messageQueue];
+            this.messageQueue = [];
+            
+            // Process queue sequentially
+            queue.forEach(async (messageData, index) => {
+                try {
+                    await this.sendMessage(messageData);
+                    console.log(`ConnectionManager: Sent queued message ${index + 1}/${queue.length}`);
+                } catch (error) {
+                    console.error(`ConnectionManager: Failed to send queued message ${index + 1}:`, error);
+                    // Re-queue on failure
+                    this.messageQueue.push(messageData);
+                }
+            });
+        }
+        
+        /**
+         * Start heartbeat/keepalive for WebSocket
+         */
+        startHeartbeat() {
+            this.stopHeartbeat();
+            
+            this.heartbeatTimer = setInterval(() => {
+                if (this.transport === 'websocket' && this.connection && this.connection.readyState === WebSocket.OPEN) {
+                    try {
+                        this.connection.send(JSON.stringify({ type: 'ping' }));
+                        
+                        // Set timeout for pong response
+                        this.heartbeatTimeout = setTimeout(() => {
+                            console.warn('ConnectionManager: Heartbeat timeout - no pong received');
+                            this.handleDisconnection();
+                        }, 5000);
+                        
+                    } catch (error) {
+                        console.error('ConnectionManager: Heartbeat failed:', error);
+                        this.handleDisconnection();
+                    }
+                }
+            }, this.heartbeatInterval);
+        }
+        
+        /**
+         * Stop heartbeat
+         */
+        stopHeartbeat() {
+            if (this.heartbeatTimer) {
+                clearInterval(this.heartbeatTimer);
+                this.heartbeatTimer = null;
+            }
+            this.clearHeartbeatTimeout();
+        }
+        
+        /**
+         * Clear heartbeat timeout
+         */
+        clearHeartbeatTimeout() {
+            if (this.heartbeatTimeout) {
+                clearTimeout(this.heartbeatTimeout);
+                this.heartbeatTimeout = null;
+            }
+        }
+        
+        /**
+         * Set connection state and notify listeners
+         * @param {string} newState - New state
+         */
+        setState(newState) {
+            const oldState = this.state;
+            if (oldState === newState) {
+                return;
+            }
+            
+            this.state = newState;
+            this.emit('state_change', { oldState, newState });
+            console.log(`ConnectionManager: State changed: ${oldState} → ${newState}`);
+        }
+        
+        /**
+         * Graceful disconnect
+         */
+        disconnect() {
+            console.log('ConnectionManager: User-initiated disconnect');
+            this.userDisconnected = true;
+            this.stopHeartbeat();
+            
+            // Clear reconnect timer
+            if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = null;
+            }
+            
+            // Close connection
+            if (this.connection) {
+                try {
+                    if (this.transport === 'websocket' && this.connection.readyState === WebSocket.OPEN) {
+                        this.connection.close(1000, 'User disconnect');
+                    } else if (this.transport === 'sse') {
+                        this.sseClosedCleanly = true;
+                        this.connection.close();
+                    }
+                } catch (error) {
+                    console.error('ConnectionManager: Error during disconnect:', error);
+                }
+                this.connection = null;
+            }
+            
+            this.setState('disconnected');
+        }
+        
+        /**
+         * Get current connection status
+         * @returns {object} Status object
+         */
+        getStatus() {
+            return {
+                state: this.state,
+                transport: this.transport,
+                reconnectAttempts: this.reconnectAttempts,
+                queuedMessages: this.messageQueue.length,
+                connected: this.state === 'connected'
+            };
+        }
+        
+        // Event emitter methods
+        
+        /**
+         * Register event listener
+         * @param {string} event - Event name
+         * @param {function} callback - Callback function
+         */
+        on(event, callback) {
+            if (!this.listeners[event]) {
+                this.listeners[event] = [];
+            }
+            this.listeners[event].push(callback);
+        }
+        
+        /**
+         * Register one-time event listener
+         * @param {string} event - Event name
+         * @param {function} callback - Callback function
+         */
+        once(event, callback) {
+            const wrapper = (...args) => {
+                this.off(event, wrapper);
+                callback(...args);
+            };
+            this.on(event, wrapper);
+        }
+        
+        /**
+         * Unregister event listener
+         * @param {string} event - Event name
+         * @param {function} callback - Callback function
+         */
+        off(event, callback) {
+            if (!this.listeners[event]) return;
+            this.listeners[event] = this.listeners[event].filter(cb => cb !== callback);
+        }
+        
+        /**
+         * Emit event to listeners
+         * @param {string} event - Event name
+         * @param {*} data - Event data
+         */
+        emit(event, data) {
+            if (!this.listeners[event]) return;
+            this.listeners[event].forEach(callback => {
+                try {
+                    callback(data);
+                } catch (error) {
+                    console.error(`ConnectionManager: Error in ${event} listener:`, error);
+                }
+            });
+        }
+    }
+
     // Default configuration
     const DEFAULT_CONFIG = {
         // Basic settings
@@ -357,6 +1024,118 @@
             }
 
             this.init();
+            
+            // Initialize ConnectionManager after widget creation
+            this.initializeConnectionManager();
+        }
+        
+        /**
+         * Initialize ConnectionManager with event listeners
+         */
+        initializeConnectionManager() {
+            this.connectionManager = new ConnectionManager(this.options, this);
+            
+            // Setup connection state change listeners
+            this.connectionManager.on('state_change', ({ oldState, newState }) => {
+                this.handleConnectionStateChange(oldState, newState);
+            });
+            
+            this.connectionManager.on('reconnecting', ({ attempt, delay }) => {
+                const seconds = Math.round(delay / 1000);
+                this.showReconnectingNotification(attempt, seconds);
+            });
+            
+            this.connectionManager.on('max_reconnect_attempts', () => {
+                this.showError('Unable to connect. Please refresh the page.');
+            });
+            
+            this.connectionManager.on('message_queued', ({ queueLength }) => {
+                this.showQueuedNotification(queueLength);
+            });
+            
+            this.connectionManager.on('flushing_queue', ({ queueLength }) => {
+                console.log(`Sending ${queueLength} queued messages...`);
+            });
+        }
+        
+        /**
+         * Handle connection state changes
+         * @param {string} oldState - Previous state
+         * @param {string} newState - New state
+         */
+        handleConnectionStateChange(oldState, newState) {
+            console.log(`Connection state: ${oldState} → ${newState}`);
+            
+            // Update connection status in UI
+            const connected = newState === 'connected';
+            this.setConnectionStatus(connected);
+            
+            // Update active mode display
+            if (newState === 'connected' && this.connectionManager.transport) {
+                this.setActiveMode(this.connectionManager.transport);
+            } else if (newState === 'disconnected' || newState === 'reconnecting') {
+                this.setActiveMode('offline');
+            } else if (newState === 'connecting') {
+                this.setActiveMode('connecting');
+            }
+            
+            // Show notifications for state changes
+            if (newState === 'connected' && oldState === 'reconnecting') {
+                this.showSuccessNotification('Reconnected successfully!');
+            } else if (newState === 'disconnected' && oldState === 'connected') {
+                this.showWarningNotification('Connection lost. Attempting to reconnect...');
+            }
+            
+            // Call user callbacks
+            if (connected && this.options.onConnect) {
+                try {
+                    this.options.onConnect();
+                } catch (error) {
+                    console.error('Error in onConnect callback:', error);
+                }
+            } else if (!connected && oldState === 'connected' && this.options.onDisconnect) {
+                try {
+                    this.options.onDisconnect();
+                } catch (error) {
+                    console.error('Error in onDisconnect callback:', error);
+                }
+            }
+        }
+        
+        /**
+         * Show reconnecting notification
+         * @param {number} attempt - Attempt number
+         * @param {number} seconds - Seconds until retry
+         */
+        showReconnectingNotification(attempt, seconds) {
+            const message = `Reconnecting... (attempt ${attempt}, waiting ${seconds}s)`;
+            this.showWarningNotification(message);
+        }
+        
+        /**
+         * Show queued message notification
+         * @param {number} queueLength - Number of queued messages
+         */
+        showQueuedNotification(queueLength) {
+            this.showWarningNotification(`Message queued. ${queueLength} message(s) waiting to send.`);
+        }
+        
+        /**
+         * Show success notification (helper method)
+         * @param {string} message - Message to display
+         */
+        showSuccessNotification(message) {
+            console.log(`✓ ${message}`);
+            // Could also show a temporary UI notification
+        }
+        
+        /**
+         * Show warning notification (helper method)
+         * @param {string} message - Message to display
+         */
+        showWarningNotification(message) {
+            console.warn(`⚠ ${message}`);
+            // Could also show a temporary UI notification
         }
 
         /**
@@ -1194,21 +1973,32 @@
                     );
                 }
 
-                // Try connection types in order of preference
-                if (this.options.streamingMode === 'auto' || this.options.streamingMode === 'websocket') {
-                    if (await this.tryWebSocket(requestData)) {
-                        return;
+                // Use ConnectionManager for robust connection handling
+                if (this.connectionManager) {
+                    // ConnectionManager handles transport selection and failover
+                    const result = await this.connectionManager.connect(requestData);
+                    
+                    if (!result && this.connectionManager.state !== 'connected') {
+                        // Connection failed, but message is queued
+                        console.log('Message queued - will be sent when connection is restored');
                     }
-                }
-
-                if (this.options.streamingMode === 'auto' || this.options.streamingMode === 'sse') {
-                    if (await this.trySSE(requestData)) {
-                        return;
+                } else {
+                    // Fallback to legacy connection logic (for backward compatibility)
+                    if (this.options.streamingMode === 'auto' || this.options.streamingMode === 'websocket') {
+                        if (await this.tryWebSocket(requestData)) {
+                            return;
+                        }
                     }
-                }
 
-                // Fallback to AJAX
-                await this.tryAjax(requestData);
+                    if (this.options.streamingMode === 'auto' || this.options.streamingMode === 'sse') {
+                        if (await this.trySSE(requestData)) {
+                            return;
+                        }
+                    }
+
+                    // Fallback to AJAX
+                    await this.tryAjax(requestData);
+                }
 
             } catch (error) {
                 this.handleError(error);
