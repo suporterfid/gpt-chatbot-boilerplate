@@ -172,16 +172,44 @@ Set to `0` to disable timestamp validation.
 
 ### Environment Variables
 
+#### Legacy Webhook Gateway Variables
 - **WEBHOOK_GATEWAY_SECRET**: Secret key for HMAC signature validation (optional)
 - **WEBHOOK_GATEWAY_TOLERANCE**: Timestamp tolerance in seconds (default: 300)
 - **WEBHOOK_GATEWAY_LOG_PAYLOADS**: Log full payloads for debugging (default: false)
 
+#### Inbound Webhook Configuration (SPEC_WEBHOOK.md §9)
+- **WEBHOOK_INBOUND_ENABLED**: Enable/disable inbound webhook processing (default: true)
+- **WEBHOOK_INBOUND_PATH**: Endpoint path for inbound webhooks (default: /webhook/inbound)
+- **WEBHOOK_VALIDATE_SIGNATURE**: Enable HMAC signature validation (default: true)
+- **WEBHOOK_MAX_CLOCK_SKEW**: Maximum allowed time difference in seconds (default: 120)
+- **WEBHOOK_IP_WHITELIST**: Comma-separated list of allowed IPs or CIDR ranges (optional)
+
+#### Outbound Webhook Configuration (SPEC_WEBHOOK.md §9)
+- **WEBHOOK_OUTBOUND_ENABLED**: Enable/disable outbound webhook dispatching (default: true)
+- **WEBHOOK_MAX_ATTEMPTS**: Maximum retry attempts for failed deliveries (default: 6)
+- **WEBHOOK_TIMEOUT**: Request timeout in seconds (default: 5)
+- **WEBHOOK_CONCURRENCY**: Maximum concurrent outbound requests (default: 10)
+
 ### Example .env Configuration
 
 ```bash
+# Legacy webhook gateway settings
 WEBHOOK_GATEWAY_SECRET=your-secret-key-here
 WEBHOOK_GATEWAY_TOLERANCE=300
 WEBHOOK_GATEWAY_LOG_PAYLOADS=false
+
+# Inbound webhook configuration
+WEBHOOK_INBOUND_ENABLED=true
+WEBHOOK_INBOUND_PATH=/webhook/inbound
+WEBHOOK_VALIDATE_SIGNATURE=true
+WEBHOOK_MAX_CLOCK_SKEW=120
+WEBHOOK_IP_WHITELIST=
+
+# Outbound webhook configuration
+WEBHOOK_OUTBOUND_ENABLED=true
+WEBHOOK_MAX_ATTEMPTS=6
+WEBHOOK_TIMEOUT=5
+WEBHOOK_CONCURRENCY=10
 ```
 
 ## Testing
