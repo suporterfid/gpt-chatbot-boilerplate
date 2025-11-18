@@ -1,6 +1,6 @@
 {
-    "name": "chatbot/gpt-boilerplate",
-    "description": "Open-source GPT chatbot web integration boilerplate",
+    "name": "suporterfid/gpt-chatbot-boilerplate",
+    "description": "Production-ready GPT chatbot boilerplate with PHP backend",
     "type": "project",
     "keywords": ["chatbot", "gpt", "openai", "websocket", "sse", "php"],
     "license": "MIT",
@@ -14,31 +14,45 @@
         "php": ">=8.0",
         "ext-curl": "*",
         "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-pdo": "*",
         "ratchet/pawl": "^0.4",
         "cboden/ratchet": "^0.4"
     },
     "require-dev": {
         "phpunit/phpunit": "^9.0",
-        "phpstan/phpstan": "^1.10"
+        "phpstan/phpstan": "^1.10",
+        "squizlabs/php_codesniffer": "^3.8",
+        "mockery/mockery": "^1.6"
     },
     "autoload": {
         "psr-4": {
-            "ChatBot\\": "src/"
-        }
+            "GPTChatbot\\": "src/"
+        },
+        "classmap": [
+            "includes/"
+        ]
     },
     "autoload-dev": {
         "psr-4": {
-            "ChatBot\\Tests\\": "tests/"
+            "GPTChatbot\\Tests\\": "tests/"
         }
     },
     "scripts": {
         "websocket": "php websocket-server.php",
-        "test": "phpunit",
-        "analyze": "phpstan analyse --level=5 includes admin-api.php chat-unified.php metrics.php || true"
+        "test": "php tests/run_tests.php",
+        "analyze": "phpstan analyse --level=5 includes admin-api.php chat-unified.php metrics.php || true",
+        "cs-check": "phpcs --standard=PSR12 includes/ || true",
+        "cs-fix": "phpcbf --standard=PSR12 includes/ || true",
+        "autoload": "composer dump-autoload --optimize"
     },
     "config": {
         "optimize-autoloader": true,
-        "sort-packages": true
+        "sort-packages": true,
+        "classmap-authoritative": false,
+        "allow-plugins": {
+            "*": true
+        }
     },
     "minimum-stability": "stable",
     "prefer-stable": true
