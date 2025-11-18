@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeadSense CRM - Admin</title>
+    <link rel="stylesheet" href="admin.css">
+    <link rel="stylesheet" href="leadsense-crm.css">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>GPT Admin</h1>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="index.html" class="nav-link">
+                    <span class="nav-icon">🤖</span>
+                    Agents
+                </a>
+                <a href="#leadsense-crm" class="nav-link active">
+                    <span class="nav-icon">📊</span>
+                    LeadSense CRM
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="#logout" class="nav-link nav-link-logout" id="logout-link" role="button">
+                    <span class="nav-icon">🚪</span>
+                    Logout
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h2>LeadSense CRM</h2>
+                </div>
+                <div class="header-right">
+                    <div class="user-session" id="current-user-pill">
+                        <span class="user-session-label">Signed in as</span>
+                        <span class="user-session-value" id="current-user-value">—</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- CRM Board Container -->
+            <div id="leadsense-crm-root" class="crm-root">
+                <!-- Pipeline Selector -->
+                <div class="crm-toolbar">
+                    <div class="pipeline-selector">
+                        <label for="pipeline-select">Pipeline:</label>
+                        <select id="pipeline-select" class="pipeline-select">
+                            <option value="">Loading...</option>
+                        </select>
+                        <button id="create-pipeline-btn" class="btn btn-secondary">+ Create Pipeline</button>
+                    </div>
+                    
+                    <div class="board-filters">
+                        <input 
+                            type="search" 
+                            id="search-leads" 
+                            placeholder="Search leads..." 
+                            class="search-input"
+                        >
+                        <select id="filter-score" class="filter-select">
+                            <option value="">All Scores</option>
+                            <option value="80">High (80+)</option>
+                            <option value="60">Medium (60+)</option>
+                            <option value="0">Low (0+)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div id="board-loading" class="board-loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Loading board...</p>
+                </div>
+
+                <!-- Kanban Board -->
+                <div id="kanban-board" class="kanban-board">
+                    <!-- Stages will be injected here -->
+                </div>
+
+                <!-- Empty State -->
+                <div id="board-empty" class="board-empty" style="display: none;">
+                    <p>No pipeline selected. Please create a pipeline to get started.</p>
+                    <button id="create-first-pipeline-btn" class="btn btn-primary">Create Your First Pipeline</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Lead Detail Modal -->
+    <div id="lead-modal" class="modal" style="display: none;">
+        <div class="modal-overlay" onclick="LeadSenseCRM.closeLead Modal()"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="lead-modal-title">Lead Details</h3>
+                <button class="modal-close" onclick="LeadSenseCRM.closeLeadModal()">×</button>
+            </div>
+            <div class="modal-body" id="lead-modal-body">
+                <!-- Lead details will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="leadsense-crm.js"></script>
+    <script>
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', function() {
+            const root = document.getElementById('leadsense-crm-root');
+            if (root) {
+                LeadSenseCRM.init(root);
+            }
+        });
+    </script>
+</body>
+</html>

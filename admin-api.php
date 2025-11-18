@@ -4731,6 +4731,352 @@ try {
             }
             break;
         
+        // =====================================================================
+        // LeadSense CRM Endpoints
+        // =====================================================================
+        
+        case 'leadsense.crm.list_pipelines':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/PipelineService.php';
+            $pipelineService = new PipelineService($db, $tenantId);
+            
+            $includeArchived = isset($_GET['include_archived']) && $_GET['include_archived'] === 'true';
+            
+            try {
+                $pipelines = $pipelineService->listPipelines($includeArchived);
+                sendResponse(['pipelines' => $pipelines]);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
+        case 'leadsense.crm.get_pipeline':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $pipelineId = $_GET['id'] ?? null;
+            if (!$pipelineId) {
+                sendError('Pipeline ID is required', 400);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/PipelineService.php';
+            $pipelineService = new PipelineService($db, $tenantId);
+            
+            try {
+                $pipeline = $pipelineService->getPipeline($pipelineId, true);
+                if (!$pipeline) {
+                    sendError('Pipeline not found', 404);
+                }
+                
+                sendResponse(['pipeline' => $pipeline, 'stages' => $pipeline['stages'] ?? []]);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
+        case 'leadsense.crm.create_pipeline':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'create', $adminAuth);
+            
+            $body = getRequestBody();
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/PipelineService.php';
+            $pipelineService = new PipelineService($db, $tenantId);
+            
+            try {
+                $result = $pipelineService->createPipeline($body);
+                
+                if (isset($result['error'])) {
+                    sendError($result['error'], 400);
+                }
+                
+                sendResponse(['pipeline' => $result, 'stages' => $result['stages'] ?? []]);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
+        case 'leadsense.crm.update_pipeline':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $body = getRequestBody();
+            $pipelineId = $body['id'] ?? null;
+            
+            if (!$pipelineId) {
+                sendError('Pipeline ID is required', 400);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/PipelineService.php';
+            $pipelineService = new PipelineService($db, $tenantId);
+            
+            try {
+                $result = $pipelineService->updatePipeline($pipelineId, $body);
+                
+                if (isset($result['error'])) {
+                    sendError($result['error'], 400);
+                }
+                
+                sendResponse(['pipeline' => $result]);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
+        case 'leadsense.crm.archive_pipeline':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
+            $body = getRequestBody();
+            $pipelineId = $body['id'] ?? null;
+            
+            if (!$pipelineId) {
+                sendError('Pipeline ID is required', 400);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/PipelineService.php';
+            $pipelineService = new PipelineService($db, $tenantId);
+            
+            try {
+                $result = $pipelineService->archivePipeline($pipelineId);
+                
+                if (isset($result['error'])) {
+                    sendError($result['error'], 400);
+                }
+                
+                sendResponse($result);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
+        case 'leadsense.crm.save_stages':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $body = getRequestBody();
+            $pipelineId = $body['pipeline_id'] ?? null;
+            $stages = $body['stages'] ?? [];
+            
+            if (!$pipelineId) {
+                sendError('Pipeline ID is required', 400);
+            }
+            
+            if (!is_array($stages)) {
+                sendError('Stages must be an array', 400);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/PipelineService.php';
+            $pipelineService = new PipelineService($db, $tenantId);
+            
+            try {
+                $result = $pipelineService->saveStages($pipelineId, $stages);
+                
+                if (isset($result['error'])) {
+                    sendError($result['error'], 400);
+                }
+                
+                sendResponse(['stages' => $result]);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
+        case 'leadsense.crm.archive_stage':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+            
+            $body = getRequestBody();
+            $stageId = $body['id'] ?? null;
+            
+            if (!$stageId) {
+                sendError('Stage ID is required', 400);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/PipelineService.php';
+            $pipelineService = new PipelineService($db, $tenantId);
+            
+            try {
+                $result = $pipelineService->archiveStage($stageId);
+                
+                if (isset($result['error'])) {
+                    sendError($result['error'], 400);
+                }
+                
+                sendResponse($result);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
+        case 'leadsense.crm.list_leads_board':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+            
+            $pipelineId = $_GET['pipeline_id'] ?? null;
+            if (!$pipelineId) {
+                sendError('Pipeline ID is required', 400);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/BoardService.php';
+            $boardService = new BoardService($db, $tenantId);
+            
+            // Parse filters
+            $filters = [];
+            if (isset($_GET['stage_ids'])) {
+                $filters['stage_ids'] = explode(',', $_GET['stage_ids']);
+            }
+            if (isset($_GET['owner_id'])) {
+                $filters['owner_id'] = $_GET['owner_id'];
+            }
+            if (isset($_GET['owner_type'])) {
+                $filters['owner_type'] = $_GET['owner_type'];
+            }
+            if (isset($_GET['min_score'])) {
+                $filters['min_score'] = (int)$_GET['min_score'];
+            }
+            if (isset($_GET['q'])) {
+                $filters['q'] = $_GET['q'];
+            }
+            
+            // Parse pagination
+            $pagination = [
+                'page' => isset($_GET['page']) ? (int)$_GET['page'] : 1,
+                'page_size' => isset($_GET['page_size']) ? (int)$_GET['page_size'] : 50
+            ];
+            
+            try {
+                $result = $boardService->getLeadsBoard($pipelineId, $filters, $pagination);
+                
+                if (isset($result['error'])) {
+                    sendError($result['error'], 400);
+                }
+                
+                sendResponse($result);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
+        case 'leadsense.crm.move_lead':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $body = getRequestBody();
+            $leadId = $body['lead_id'] ?? null;
+            $fromStageId = $body['from_stage_id'] ?? null;
+            $toStageId = $body['to_stage_id'] ?? null;
+            $pipelineId = $body['pipeline_id'] ?? null;
+            
+            if (!$leadId || !$fromStageId || !$toStageId || !$pipelineId) {
+                sendError('lead_id, from_stage_id, to_stage_id, and pipeline_id are required', 400);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/BoardService.php';
+            $boardService = new BoardService($db, $tenantId);
+            
+            $metadata = [
+                'changed_by' => $authenticatedUser['id'] ?? null,
+                'changed_by_type' => 'admin_user'
+            ];
+            
+            try {
+                $result = $boardService->moveLead($leadId, $fromStageId, $toStageId, $pipelineId, $metadata);
+                
+                if (isset($result['error'])) {
+                    sendError($result['error'], 400);
+                }
+                
+                sendResponse($result);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
+        case 'leadsense.crm.update_lead_inline':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $body = getRequestBody();
+            $leadId = $body['id'] ?? null;
+            
+            if (!$leadId) {
+                sendError('Lead ID is required', 400);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/BoardService.php';
+            $boardService = new BoardService($db, $tenantId);
+            
+            try {
+                $result = $boardService->updateLeadInline($leadId, $body);
+                
+                if (isset($result['error'])) {
+                    sendError($result['error'], 400);
+                }
+                
+                sendResponse($result);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
+        case 'leadsense.crm.add_note':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+            
+            $body = getRequestBody();
+            $leadId = $body['lead_id'] ?? null;
+            $text = $body['text'] ?? null;
+            
+            if (!$leadId || !$text) {
+                sendError('lead_id and text are required', 400);
+            }
+            
+            require_once __DIR__ . '/includes/LeadSense/CRM/BoardService.php';
+            $boardService = new BoardService($db, $tenantId);
+            
+            $metadata = [
+                'created_by' => $authenticatedUser['id'] ?? null,
+                'created_by_type' => 'admin_user'
+            ];
+            
+            try {
+                $result = $boardService->addNote($leadId, $text, $metadata);
+                
+                if (isset($result['error'])) {
+                    sendError($result['error'], 400);
+                }
+                
+                sendResponse($result);
+            } catch (Exception $e) {
+                sendError($e->getMessage(), 500);
+            }
+            break;
+        
         default:
             sendError('Unknown action: ' . $action, 400);
     }

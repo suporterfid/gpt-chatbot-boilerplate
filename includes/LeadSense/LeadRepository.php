@@ -23,6 +23,13 @@ class LeadRepository {
     }
     
     /**
+     * Set database instance (for sharing DB connection)
+     */
+    public function setDb($db) {
+        $this->db = $db;
+    }
+    
+    /**
      * Set tenant context for tenant-scoped queries
      */
     public function setTenantId($tenantId) {
@@ -67,14 +74,23 @@ class LeadRepository {
     private function createLead($leadData) {
         $id = $this->generateId();
         
+        // Assign to default pipeline and stage if not already assigned
+        if (empty($leadData['pipeline_id']) || empty($leadData['stage_id'])) {
+            $defaultPipelineAndStage = $this->getDefaultPipelineAndStage();
+            $leadData['pipeline_id'] = $leadData['pipeline_id'] ?? $defaultPipelineAndStage['pipeline_id'] ?? null;
+            $leadData['stage_id'] = $leadData['stage_id'] ?? $defaultPipelineAndStage['stage_id'] ?? null;
+        }
+        
         $sql = "INSERT INTO leads (
             id, agent_id, conversation_id, name, company, role, 
             email, phone, industry, company_size, interest, 
-            intent_level, score, qualified, status, source_channel, tenant_id, extras_json
+            intent_level, score, qualified, status, source_channel, tenant_id, extras_json,
+            pipeline_id, stage_id
         ) VALUES (
             :id, :agent_id, :conversation_id, :name, :company, :role,
             :email, :phone, :industry, :company_size, :interest,
-            :intent_level, :score, :qualified, :status, :source_channel, :tenant_id, :extras_json
+            :intent_level, :score, :qualified, :status, :source_channel, :tenant_id, :extras_json,
+            :pipeline_id, :stage_id
         )";
         
         $this->db->execute($sql, [
@@ -95,10 +111,51 @@ class LeadRepository {
             'status' => $leadData['status'] ?? 'new',
             'source_channel' => $leadData['source_channel'] ?? 'web',
             'tenant_id' => $leadData['tenant_id'] ?? $this->tenantId,
-            'extras_json' => isset($leadData['extras']) ? json_encode($leadData['extras']) : null
+            'extras_json' => isset($leadData['extras']) ? json_encode($leadData['extras']) : null,
+            'pipeline_id' => $leadData['pipeline_id'],
+            'stage_id' => $leadData['stage_id']
         ]);
         
         return $id;
+    }
+    
+    /**
+     * Get default pipeline and initial stage
+     * 
+     * @return array Pipeline ID and stage ID
+     */
+    private function getDefaultPipelineAndStage() {
+        // Get default pipeline
+        $sql = "SELECT id FROM crm_pipelines 
+                WHERE is_default = 1 
+                AND archived_at IS NULL";
+        
+        if ($this->tenantId !== null) {
+            $sql .= " AND (client_id = ? OR client_id IS NULL)";
+            $pipeline = $this->db->getOne($sql, [$this->tenantId]);
+        } else {
+            $sql .= " LIMIT 1";
+            $pipeline = $this->db->getOne($sql, []);
+        }
+        
+        if (!$pipeline) {
+            return ['pipeline_id' => null, 'stage_id' => null];
+        }
+        
+        $pipelineId = $pipeline['id'];
+        
+        // Get first stage (lowest position) for this pipeline
+        $stageSql = "SELECT id FROM crm_pipeline_stages 
+                     WHERE pipeline_id = ? 
+                     AND archived_at IS NULL 
+                     ORDER BY position ASC 
+                     LIMIT 1";
+        $stage = $this->db->getOne($stageSql, [$pipelineId]);
+        
+        return [
+            'pipeline_id' => $pipelineId,
+            'stage_id' => $stage['id'] ?? null
+        ];
     }
     
     /**
