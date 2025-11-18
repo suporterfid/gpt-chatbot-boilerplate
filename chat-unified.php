@@ -3,7 +3,13 @@
  * Unified Chat Endpoint - Supports both Chat Completions and Responses API
  */
 
+// Load Composer autoloader
+require_once __DIR__ . '/vendor/autoload.php';
+
+// Load configuration
 require_once 'config.php';
+
+// Keep manual requires temporarily for backward compatibility during migration
 require_once 'includes/OpenAIClient.php';
 require_once 'includes/ChatHandler.php';
 require_once 'includes/AuditService.php';

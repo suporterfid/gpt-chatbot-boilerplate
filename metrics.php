@@ -4,7 +4,13 @@
  * Exposes application metrics for monitoring and alerting
  */
 
+// Load Composer autoloader
+require_once __DIR__ . '/vendor/autoload.php';
+
+// Load configuration
 require_once 'config.php';
+
+// Keep manual requires temporarily for backward compatibility during migration
 require_once 'includes/DB.php';
 require_once 'includes/JobQueue.php';
 require_once 'includes/MetricsCollector.php';
