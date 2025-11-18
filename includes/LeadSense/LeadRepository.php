@@ -91,7 +91,7 @@ class LeadRepository {
             'interest' => $leadData['interest'] ?? null,
             'intent_level' => $leadData['intent_level'] ?? 'none',
             'score' => $leadData['score'] ?? 0,
-            'qualified' => $leadData['qualified'] ? 1 : 0,
+            'qualified' => isset($leadData['qualified']) && $leadData['qualified'] ? 1 : 0,
             'status' => $leadData['status'] ?? 'new',
             'source_channel' => $leadData['source_channel'] ?? 'web',
             'tenant_id' => $leadData['tenant_id'] ?? $this->tenantId,
@@ -392,5 +392,203 @@ class LeadRepository {
             $lead['extras'] = json_decode($lead['extras_json'], true);
         }
         return $lead;
+    }
+    
+    // ========================================
+    // CRM Event Recording Methods (Task 3)
+    // ========================================
+    
+    /**
+     * Record a stage change event
+     * 
+     * Tracks when a lead moves between pipeline stages (Kanban drag-and-drop)
+     * 
+     * @param string $leadId Lead ID
+     * @param array $oldStage Old stage data ['id' => ..., 'name' => ..., 'pipeline_id' => ...]
+     * @param array $newStage New stage data ['id' => ..., 'name' => ..., 'pipeline_id' => ...]
+     * @param array $changedBy Actor data ['id' => ..., 'type' => ..., 'name' => ...]
+     * @param string|null $note Optional note about the change
+     * @return string Event ID
+     */
+    public function recordStageChange($leadId, $oldStage, $newStage, $changedBy, $note = null) {
+        $payload = [
+            'old_stage_id' => $oldStage['id'] ?? null,
+            'old_stage_name' => $oldStage['name'] ?? null,
+            'new_stage_id' => $newStage['id'],
+            'new_stage_name' => $newStage['name'],
+            'pipeline_id' => $newStage['pipeline_id'] ?? null,
+            'changed_by' => $changedBy['id'] ?? null,
+            'changed_by_type' => $changedBy['type'] ?? null,
+            'changed_by_name' => $changedBy['name'] ?? null,
+            'changed_at' => date('c')
+        ];
+        
+        if ($note !== null) {
+            $payload['note'] = $note;
+        }
+        
+        return $this->addEvent($leadId, 'stage_changed', $payload);
+    }
+    
+    /**
+     * Record an owner change event
+     * 
+     * Tracks when lead ownership is reassigned
+     * 
+     * @param string $leadId Lead ID
+     * @param array|null $oldOwner Old owner data ['id' => ..., 'type' => ..., 'name' => ...] or null if unassigned
+     * @param array $newOwner New owner data ['id' => ..., 'type' => ..., 'name' => ...]
+     * @param array $changedBy Actor data ['id' => ..., 'type' => ..., 'name' => ...]
+     * @param string|null $reason Optional reason for reassignment
+     * @return string Event ID
+     */
+    public function recordOwnerChange($leadId, $oldOwner, $newOwner, $changedBy, $reason = null) {
+        $payload = [
+            'old_owner_id' => $oldOwner['id'] ?? null,
+            'old_owner_type' => $oldOwner['type'] ?? null,
+            'old_owner_name' => $oldOwner['name'] ?? null,
+            'new_owner_id' => $newOwner['id'],
+            'new_owner_type' => $newOwner['type'],
+            'new_owner_name' => $newOwner['name'] ?? null,
+            'changed_by' => $changedBy['id'] ?? null,
+            'changed_by_type' => $changedBy['type'] ?? null,
+            'changed_by_name' => $changedBy['name'] ?? null,
+            'changed_at' => date('c')
+        ];
+        
+        if ($reason !== null) {
+            $payload['reason'] = $reason;
+        }
+        
+        return $this->addEvent($leadId, 'owner_changed', $payload);
+    }
+    
+    /**
+     * Record a pipeline change event
+     * 
+     * Tracks when a lead is moved to a different pipeline (less common)
+     * 
+     * @param string $leadId Lead ID
+     * @param array $oldPipeline Old pipeline data ['id' => ..., 'name' => ...]
+     * @param array $newPipeline New pipeline data ['id' => ..., 'name' => ...]
+     * @param array $newStage Initial stage in new pipeline ['id' => ..., 'name' => ...]
+     * @param array $changedBy Actor data ['id' => ..., 'type' => ..., 'name' => ...]
+     * @param string|null $reason Optional reason for pipeline change
+     * @return string Event ID
+     */
+    public function recordPipelineChange($leadId, $oldPipeline, $newPipeline, $newStage, $changedBy, $reason = null) {
+        $payload = [
+            'old_pipeline_id' => $oldPipeline['id'] ?? null,
+            'old_pipeline_name' => $oldPipeline['name'] ?? null,
+            'new_pipeline_id' => $newPipeline['id'],
+            'new_pipeline_name' => $newPipeline['name'],
+            'new_stage_id' => $newStage['id'],
+            'new_stage_name' => $newStage['name'],
+            'changed_by' => $changedBy['id'] ?? null,
+            'changed_by_type' => $changedBy['type'] ?? null,
+            'changed_by_name' => $changedBy['name'] ?? null,
+            'changed_at' => date('c')
+        ];
+        
+        if ($reason !== null) {
+            $payload['reason'] = $reason;
+        }
+        
+        return $this->addEvent($leadId, 'pipeline_changed', $payload);
+    }
+    
+    /**
+     * Record a deal update event
+     * 
+     * Tracks changes to deal value, probability, or close date
+     * 
+     * @param string $leadId Lead ID
+     * @param array $changes Array of changes, e.g. ['deal_value' => ['old' => 5000, 'new' => 10000]]
+     * @param array $changedBy Actor data ['id' => ..., 'type' => ..., 'name' => ...]
+     * @param string|null $note Optional note about the changes
+     * @return string Event ID
+     */
+    public function recordDealUpdate($leadId, $changes, $changedBy, $note = null) {
+        $payload = [
+            'changes' => $changes,
+            'changed_by' => $changedBy['id'] ?? null,
+            'changed_by_type' => $changedBy['type'] ?? null,
+            'changed_by_name' => $changedBy['name'] ?? null,
+            'changed_at' => date('c')
+        ];
+        
+        if ($note !== null) {
+            $payload['note'] = $note;
+        }
+        
+        return $this->addEvent($leadId, 'deal_updated', $payload);
+    }
+    
+    /**
+     * Add a note to a lead (enhanced version with context)
+     * 
+     * Creates a note event with author and context information
+     * This enhances the existing addEvent() method for notes with structured data
+     * 
+     * @param string $leadId Lead ID
+     * @param string $text Note text content
+     * @param array $author Author data ['id' => ..., 'type' => ..., 'name' => ...]
+     * @param array $context Optional context data (e.g., source, stage_id, stage_name)
+     * @return string Event ID
+     */
+    public function addNote($leadId, $text, $author, $context = []) {
+        $payload = [
+            'text' => $text,
+            'author_id' => $author['id'] ?? null,
+            'author_type' => $author['type'] ?? null,
+            'author_name' => $author['name'] ?? null,
+            'created_at' => date('c')
+        ];
+        
+        if (!empty($context)) {
+            $payload['context'] = $context;
+        }
+        
+        return $this->addEvent($leadId, 'note', $payload);
+    }
+    
+    /**
+     * Get lead events with optional type filtering
+     * 
+     * Extended version of getEvents() that allows filtering by event type
+     * 
+     * @param string $leadId Lead ID
+     * @param string|array|null $types Optional event type(s) to filter by
+     * @return array Array of events
+     */
+    public function getLeadEvents($leadId, $types = null) {
+        $sql = "SELECT * FROM lead_events WHERE lead_id = :lead_id";
+        $params = ['lead_id' => $leadId];
+        
+        if ($types !== null) {
+            if (is_array($types)) {
+                $placeholders = [];
+                foreach ($types as $i => $type) {
+                    $key = "type_$i";
+                    $placeholders[] = ":$key";
+                    $params[$key] = $type;
+                }
+                $sql .= " AND type IN (" . implode(',', $placeholders) . ")";
+            } else {
+                $sql .= " AND type = :type";
+                $params['type'] = $types;
+            }
+        }
+        
+        $sql .= " ORDER BY created_at DESC";
+        
+        $results = $this->db->query($sql, $params);
+        
+        return array_map(function($event) {
+            if (isset($event['payload_json'])) {
+                $event['payload'] = json_decode($event['payload_json'], true);
+            }
+            return $event;
+        }, $results);
     }
 }

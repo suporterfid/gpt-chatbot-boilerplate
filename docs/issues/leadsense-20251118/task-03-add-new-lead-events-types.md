@@ -1,5 +1,9 @@
 # Task 3: Add New Lead Events Types
 
+## Status: Concluído
+
+## Data de Conclusão: 2025-11-18
+
 ## Objective
 Document and implement support for new lead event types required by CRM functionality: `stage_changed`, `owner_changed`, `pipeline_changed`, `deal_updated`, and structured `note` events.
 
@@ -414,3 +418,185 @@ echo "✓ PASS: Stage change event recorded\n";
 - Spec Section 2.3.2: lead_events new types
 - `db/migrations/018_create_leadsense_tables.sql`
 - `includes/LeadSense/LeadRepository.php`
+
+## Implementação Realizada
+
+### Arquivos Criados
+
+1. ✅ **`includes/LeadSense/LeadEventTypes.php`** - Classe de constantes para tipos de eventos
+   - Define 10 tipos de eventos (6 existentes + 4 novos CRM)
+   - Métodos de validação: `isValid()`, `all()`, `getCRM()`, `getExisting()`
+   - Helpers para UI: `getLabel()`, `getIcon()`
+   - Facilita manutenção e consistência dos tipos de eventos
+
+2. ✅ **`db/migrations/044_relax_lead_events_constraint.sql`** - Migração para remover restrição CHECK
+   - Remove CHECK constraint que limitava tipos de eventos
+   - Permite extensibilidade futura
+   - Mantém backward compatibility (dados existentes preservados)
+   - Recria índices corretamente
+
+3. ✅ **`tests/test_lead_events_crm.php`** - Suite completa de testes
+   - 12 grupos de testes cobrindo todas as funcionalidades
+   - Testa classe LeadEventTypes (constantes, validação, labels)
+   - Testa todos os novos métodos de gravação de eventos
+   - Verifica estrutura de payload JSON
+   - Testa backward compatibility
+   - 22 assertions passando
+
+### Arquivos Modificados
+
+1. ✅ **`includes/LeadSense/LeadRepository.php`** - Métodos estendidos
+   - `recordStageChange()` - Grava mudanças de estágio
+   - `recordOwnerChange()` - Grava mudanças de proprietário
+   - `recordPipelineChange()` - Grava mudanças de pipeline
+   - `recordDealUpdate()` - Grava atualizações de deal/oportunidade
+   - `addNote()` - Adiciona notas com contexto estruturado
+   - `getLeadEvents()` - Busca eventos com filtro opcional por tipo
+   - Fix: Corrigido warning de undefined key 'qualified'
+   - Total: ~180 linhas de código adicionadas
+
+### Testes Realizados
+
+✅ **Suite de testes CRM (test_lead_events_crm.php):**
+- Test 1: LeadEventTypes - Constantes (2 checks) ✓
+- Test 2: LeadEventTypes - Validação (3 checks) ✓
+- Test 3: LeadEventTypes - Labels e Ícones (2 checks) ✓
+- Test 4: Criação de lead de teste (1 check) ✓
+- Test 5: Record Stage Change Event (2 checks) ✓
+- Test 6: Record Owner Change Event (2 checks) ✓
+- Test 7: Record Pipeline Change Event (2 checks) ✓
+- Test 8: Record Deal Update Event (2 checks) ✓
+- Test 9: Add Note with Context (2 checks) ✓
+- Test 10: Get Events with Type Filtering (2 checks) ✓
+- Test 11: Verify Event Timestamps (1 check) ✓
+- Test 12: Backward Compatibility (2 checks) ✓
+
+**Total: 22/22 testes passando**
+
+✅ **Suite de testes do repositório (run_tests.php):**
+- Todos os 28 testes existentes continuam passando
+- Nenhuma regressão introduzida
+
+### Estruturas de Payload Implementadas
+
+**1. stage_changed:**
+```json
+{
+  "old_stage_id": "stage_lead_capture",
+  "old_stage_name": "Lead Capture",
+  "new_stage_id": "stage_support",
+  "new_stage_name": "Support",
+  "pipeline_id": "pipe_default",
+  "changed_by": "admin_user_123",
+  "changed_by_type": "admin_user",
+  "changed_by_name": "Test Admin",
+  "changed_at": "2025-11-18T11:30:00+00:00",
+  "note": "Optional note"
+}
+```
+
+**2. owner_changed:**
+```json
+{
+  "old_owner_id": "admin_user_123",
+  "old_owner_type": "admin_user",
+  "old_owner_name": "Frank Wilson",
+  "new_owner_id": "admin_user_456",
+  "new_owner_type": "admin_user",
+  "new_owner_name": "Sarah Johnson",
+  "changed_by": "admin_user_789",
+  "changed_by_type": "admin_user",
+  "changed_by_name": "Manager",
+  "changed_at": "2025-11-18T11:30:00+00:00",
+  "reason": "Optional reason"
+}
+```
+
+**3. pipeline_changed:**
+```json
+{
+  "old_pipeline_id": "pipe_default",
+  "old_pipeline_name": "Default",
+  "new_pipeline_id": "pipe_enterprise",
+  "new_pipeline_name": "Enterprise Sales",
+  "new_stage_id": "stage_discovery",
+  "new_stage_name": "Discovery",
+  "changed_by": "admin_user_123",
+  "changed_by_type": "admin_user",
+  "changed_by_name": "Test Admin",
+  "changed_at": "2025-11-18T11:30:00+00:00",
+  "reason": "Optional reason"
+}
+```
+
+**4. deal_updated:**
+```json
+{
+  "changes": {
+    "deal_value": {"old": 5000.00, "new": 10000.00},
+    "probability": {"old": 30, "new": 70},
+    "expected_close_date": {"old": "2025-02-01", "new": "2025-01-25"}
+  },
+  "changed_by": "admin_user_123",
+  "changed_by_type": "admin_user",
+  "changed_by_name": "Test Admin",
+  "changed_at": "2025-11-18T11:30:00+00:00",
+  "note": "Optional note"
+}
+```
+
+**5. note (enhanced):**
+```json
+{
+  "text": "Customer asked for follow-up demo",
+  "author_id": "admin_user_123",
+  "author_type": "admin_user",
+  "author_name": "Test Admin",
+  "created_at": "2025-11-18T11:30:00+00:00",
+  "context": {
+    "source": "crm_board",
+    "stage_id": "stage_support",
+    "stage_name": "Support"
+  }
+}
+```
+
+### Características da Implementação
+
+✅ **Backward Compatibility:**
+- Métodos existentes (`addEvent()`, `getEvents()`) continuam funcionando
+- Eventos antigos preservados após migração
+- Nenhuma quebra em funcionalidade existente
+
+✅ **Extensibilidade:**
+- CHECK constraint removido permite novos tipos no futuro
+- Validação feita em application-level via `LeadEventTypes::isValid()`
+- Estrutura de payload JSON flexível
+
+✅ **Qualidade de Código:**
+- Type hints em todos os métodos
+- Documentação PHPDoc completa
+- Parâmetros opcionais com defaults sensatos
+- Tratamento de null values apropriado
+
+✅ **Preparação para UI:**
+- Labels e ícones pré-definidos para renderização
+- Estrutura de payload consistente para parsing
+- Timestamps em formato ISO 8601
+
+### Próximos Passos (Task 4)
+
+Esta implementação prepara o terreno para:
+- Task 4: Seeding de pipeline default
+- Task 5: PipelineService (usará `recordStageChange`)
+- Task 6: LeadManagementService (usará todos os métodos)
+- Task 14: Lead detail drawer (renderizará timeline com eventos)
+
+## Commits Relacionados
+
+- Criação de LeadEventTypes.php com constantes e helpers
+- Extensão de LeadRepository com métodos CRM
+- Criação de migração 044 para remover CHECK constraint
+- Adição de suite completa de testes
+- Fix de warning undefined key 'qualified'
+- Atualização do status da task
