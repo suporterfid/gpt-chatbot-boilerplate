@@ -114,15 +114,15 @@ const AgentSummaryComponent = (() => {
 
     function renderChannelBadges(channels = []) {
         if (!channels || channels.length === 0) {
-            return '<span class="agent-summary-empty">Nenhum canal configurado</span>';
+            return '<span class="agent-summary-empty">No channels configured</span>';
         }
 
         return `<div class="agent-summary-badges">${channels.map(channel => {
             const enabled = Boolean(channel.enabled);
             const icon = CHANNEL_ICONS[channel.channel] || '🔌';
-            const label = CHANNEL_LABELS[channel.channel] || channel.display_name || channel.channel || 'Canal';
+            const label = CHANNEL_LABELS[channel.channel] || channel.display_name || channel.channel || 'Channel';
             const stateClass = enabled ? 'connected' : 'disconnected';
-            const stateLabel = enabled ? 'Conectado' : 'Desativado';
+            const stateLabel = enabled ? 'Connected' : 'Disabled';
             return `
                 <span class="channel-badge ${stateClass}" title="${stateLabel}">
                     <span class="channel-badge-dot"></span>
@@ -135,7 +135,7 @@ const AgentSummaryComponent = (() => {
 
     function renderVectorStoreBadges(vectorStores = []) {
         if (!vectorStores || vectorStores.length === 0) {
-            return '<span class="agent-summary-empty">Nenhum vector store associado</span>';
+            return '<span class="agent-summary-empty">No vector stores associated</span>';
         }
 
         return `<div class="agent-summary-badges">${vectorStores.map(store => {
@@ -147,7 +147,7 @@ const AgentSummaryComponent = (() => {
     function render(agent, options = {}) {
         const channels = options.channels || agent.channels || [];
         const vectorStores = options.vectorStores || resolveVectorStores(agent, options);
-        const title = options.title || 'Resumo do agente';
+        const title = options.title || 'Agent Summary';
         const classes = ['agent-summary'];
         if (options.compact) {
             classes.push('agent-summary-compact');
@@ -160,11 +160,11 @@ const AgentSummaryComponent = (() => {
             <div class="${classes.join(' ')}">
                 ${options.showTitle === false ? '' : `<div class="agent-summary-title">${title}</div>`}
                 <div class="agent-summary-row">
-                    <div class="agent-summary-label">Canais conectados</div>
+                    <div class="agent-summary-label">Connected Channels</div>
                     <div class="agent-summary-value">${renderChannelBadges(channels)}</div>
                 </div>
                 <div class="agent-summary-row">
-                    <div class="agent-summary-label">Vector stores</div>
+                    <div class="agent-summary-label">Vector Stores</div>
                     <div class="agent-summary-value">${renderVectorStoreBadges(vectorStores)}</div>
                 </div>
             </div>
@@ -1660,8 +1660,8 @@ function renderAgentsList() {
             bodyHtml = `
                 <div class="empty-state">
                     <div class="empty-state-icon">🤖</div>
-                    <div class="empty-state-text">${agentListState.agents.length === 0 ? 'Nenhum agente cadastrado' : 'Nenhum agente corresponde aos filtros atuais'}</div>
-                    <button class="btn btn-primary mt-2" onclick="showCreateAgentModal()">Criar agente</button>
+                    <div class="empty-state-text">${agentListState.agents.length === 0 ? 'No agents registered' : 'No agents match the current filters'}</div>
+                    <button class="btn btn-primary mt-2" onclick="showCreateAgentModal()">Create Agent</button>
                 </div>
             `;
         } else {
@@ -1673,7 +1673,7 @@ function renderAgentsList() {
                 const promptLabel = getAgentPromptLabel(agent);
                 const connectedChannels = (agent.channels || []).filter(channel => channel.enabled).length;
                 const totalChannels = (agent.channels || []).length;
-                const channelSummary = totalChannels === 0 ? 'Nenhum canal configurado' : `${connectedChannels}/${totalChannels} conectados`;
+                const channelSummary = totalChannels === 0 ? 'No channels configured' : `${connectedChannels}/${totalChannels} connected`;
                 const updatedAt = agent.updated_at ? formatDate(agent.updated_at) : '—';
                 const summaryHtml = AgentSummaryComponent.render(agent, {
                     showTitle: false,
@@ -1686,36 +1686,36 @@ function renderAgentsList() {
                         <header class="agent-card-head">
                             <div>
                                 <h4>${escapeHtml(agent.name)}</h4>
-                                <p>${escapeHtml(agent.description || 'Sem descrição')}</p>
+                                <p>${escapeHtml(agent.description || 'No description')}</p>
                             </div>
                             <div class="agent-card-tags">
                                 ${statusMeta ? `<span class="badge ${statusMeta.badgeClass}">${escapeHtml(statusMeta.label)}</span>` : ''}
-                                ${agent.is_default ? '<span class="badge badge-primary">Padrão</span>' : ''}
+                                ${agent.is_default ? '<span class="badge badge-primary">Default</span>' : ''}
                                 ${apiTypeBadge}
                             </div>
                         </header>
                         <dl class="agent-card-meta">
                             <div>
-                                <dt>Prompt ativo</dt>
+                                <dt>Active Prompt</dt>
                                 <dd>${escapeHtml(promptLabel)}</dd>
                             </div>
                             <div>
-                                <dt>Canais</dt>
+                                <dt>Channels</dt>
                                 <dd>${escapeHtml(channelSummary)}</dd>
                             </div>
                             <div>
-                                <dt>Atualizado</dt>
+                                <dt>Updated</dt>
                                 <dd>${escapeHtml(updatedAt)}</dd>
                             </div>
                         </dl>
                         ${summaryHtml}
                         <div class="agent-card-actions">
-                            <button class="btn btn-small btn-secondary" onclick="editAgent('${agent.id}')">Editar</button>
+                            <button class="btn btn-small btn-secondary" onclick="editAgent('${agent.id}')">Edit</button>
                             <button class="btn btn-small btn-purple" onclick="showPromptBuilderModal('${agent.id}', '${agent.name}')">✨ Prompt Builder</button>
-                            <button class="btn btn-small btn-info" onclick="manageChannels('${agent.id}', '${agent.name}')">Canais</button>
-                            <button class="btn btn-small btn-primary" onclick="testAgent('${agent.id}')">Testar</button>
-                            ${!agent.is_default ? `<button class="btn btn-small btn-success" onclick="makeDefaultAgent('${agent.id}')">Tornar padrão</button>` : ''}
-                            <button class="btn btn-small btn-danger" onclick="deleteAgent('${agent.id}', '${agent.name}')">Excluir</button>
+                            <button class="btn btn-small btn-info" onclick="manageChannels('${agent.id}', '${agent.name}')">Channels</button>
+                            <button class="btn btn-small btn-primary" onclick="testAgent('${agent.id}')">Test</button>
+                            ${!agent.is_default ? `<button class="btn btn-small btn-success" onclick="makeDefaultAgent('${agent.id}')">Set as Default</button>` : ''}
+                            <button class="btn btn-small btn-danger" onclick="deleteAgent('${agent.id}', '${agent.name}')">Delete</button>
                         </div>
                     </article>
                 `;
@@ -1729,10 +1729,10 @@ function renderAgentsList() {
         <div class="card agent-page-card">
             <div class="card-header">
                 <div>
-                    <h3 class="card-title">Agentes</h3>
-                    <p class="card-subtitle">Visualize status, canais conectados e fontes de conhecimento</p>
+                    <h3 class="card-title">Agents</h3>
+                    <p class="card-subtitle">View status, connected channels and knowledge sources</p>
                 </div>
-                <button class="btn btn-primary" onclick="showCreateAgentModal()">Criar agente</button>
+                <button class="btn btn-primary" onclick="showCreateAgentModal()">Create Agent</button>
             </div>
             <div class="card-body">
                 ${filterControls}
