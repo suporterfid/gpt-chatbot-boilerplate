@@ -591,4 +591,236 @@ class LeadRepository {
             return $event;
         }, $results);
     }
+    
+    /**
+     * CRM Extensions - Task 8
+     */
+    
+    /**
+     * Assign lead to pipeline and stage
+     * 
+     * @param string $leadId Lead ID
+     * @param string $pipelineId Pipeline UUID
+     * @param string $stageId Stage UUID
+     * @return bool Success
+     */
+    public function assignToPipeline($leadId, $pipelineId, $stageId) {
+        $sql = "UPDATE leads 
+            SET pipeline_id = :pipeline_id, 
+                stage_id = :stage_id,
+                updated_at = datetime('now')
+            WHERE id = :id";
+        
+        $this->db->execute($sql, [
+            'pipeline_id' => $pipelineId,
+            'stage_id' => $stageId,
+            'id' => $leadId
+        ]);
+        
+        return true;
+    }
+    
+    /**
+     * Get leads by pipeline
+     * 
+     * @param string $pipelineId Pipeline UUID
+     * @param array $filters Additional filters
+     * @return array List of leads
+     */
+    public function getLeadsByPipeline($pipelineId, $filters = []) {
+        $sql = "SELECT * FROM leads WHERE pipeline_id = :pipeline_id";
+        $params = ['pipeline_id' => $pipelineId];
+        
+        // Tenant filtering
+        if ($this->tenantId !== null) {
+            $sql .= " AND (tenant_id = :tenant_id OR tenant_id IS NULL)";
+            $params['tenant_id'] = $this->tenantId;
+        }
+        
+        // Stage filter
+        if (isset($filters['stage_id'])) {
+            $sql .= " AND stage_id = :stage_id";
+            $params['stage_id'] = $filters['stage_id'];
+        }
+        
+        // Owner filter
+        if (isset($filters['owner_id'])) {
+            $sql .= " AND owner_id = :owner_id";
+            $params['owner_id'] = $filters['owner_id'];
+        }
+        
+        // Status filter
+        if (isset($filters['status'])) {
+            $sql .= " AND status = :status";
+            $params['status'] = $filters['status'];
+        }
+        
+        $sql .= " ORDER BY updated_at DESC";
+        
+        // Pagination
+        $limit = min((int)($filters['limit'] ?? 50), 100);
+        $offset = (int)($filters['offset'] ?? 0);
+        $sql .= " LIMIT :limit OFFSET :offset";
+        $params['limit'] = $limit;
+        $params['offset'] = $offset;
+        
+        $results = $this->db->query($sql, $params);
+        return array_map([$this, 'hydrateExtras'], $results);
+    }
+    
+    /**
+     * Get leads by stage
+     * 
+     * @param string $stageId Stage UUID
+     * @param array $filters Additional filters
+     * @return array List of leads
+     */
+    public function getLeadsByStage($stageId, $filters = []) {
+        $sql = "SELECT * FROM leads WHERE stage_id = :stage_id";
+        $params = ['stage_id' => $stageId];
+        
+        // Tenant filtering
+        if ($this->tenantId !== null) {
+            $sql .= " AND (tenant_id = :tenant_id OR tenant_id IS NULL)";
+            $params['tenant_id'] = $this->tenantId;
+        }
+        
+        $sql .= " ORDER BY updated_at DESC";
+        
+        // Pagination
+        $limit = min((int)($filters['limit'] ?? 50), 100);
+        $offset = (int)($filters['offset'] ?? 0);
+        $sql .= " LIMIT :limit OFFSET :offset";
+        $params['limit'] = $limit;
+        $params['offset'] = $offset;
+        
+        $results = $this->db->query($sql, $params);
+        return array_map([$this, 'hydrateExtras'], $results);
+    }
+    
+    /**
+     * Get leads by owner
+     * 
+     * @param string $ownerId Owner UUID
+     * @param string $ownerType Owner type
+     * @param array $filters Additional filters
+     * @return array List of leads
+     */
+    public function getLeadsByOwner($ownerId, $ownerType, $filters = []) {
+        $sql = "SELECT * FROM leads WHERE owner_id = :owner_id AND owner_type = :owner_type";
+        $params = [
+            'owner_id' => $ownerId,
+            'owner_type' => $ownerType
+        ];
+        
+        // Tenant filtering
+        if ($this->tenantId !== null) {
+            $sql .= " AND (tenant_id = :tenant_id OR tenant_id IS NULL)";
+            $params['tenant_id'] = $this->tenantId;
+        }
+        
+        $sql .= " ORDER BY updated_at DESC";
+        
+        // Pagination
+        $limit = min((int)($filters['limit'] ?? 50), 100);
+        $offset = (int)($filters['offset'] ?? 0);
+        $sql .= " LIMIT :limit OFFSET :offset";
+        $params['limit'] = $limit;
+        $params['offset'] = $offset;
+        
+        $results = $this->db->query($sql, $params);
+        return array_map([$this, 'hydrateExtras'], $results);
+    }
+    
+    /**
+     * Update CRM fields on a lead
+     * 
+     * @param string $leadId Lead ID
+     * @param array $crmData CRM field data
+     * @return bool Success
+     */
+    public function updateCRMFields($leadId, $crmData) {
+        $allowedFields = [
+            'pipeline_id', 'stage_id', 'owner_id', 'owner_type',
+            'deal_value', 'currency', 'probability', 'expected_close_date', 'tags'
+        ];
+        
+        $fields = [];
+        $params = [];
+        
+        foreach ($allowedFields as $field) {
+            if (array_key_exists($field, $crmData)) {
+                if ($field === 'tags' && is_array($crmData[$field])) {
+                    $fields[] = "$field = :$field";
+                    $params[$field] = json_encode($crmData[$field]);
+                } else {
+                    $fields[] = "$field = :$field";
+                    $params[$field] = $crmData[$field];
+                }
+            }
+        }
+        
+        if (empty($fields)) {
+            return true; // No changes
+        }
+        
+        $fields[] = "updated_at = datetime('now')";
+        $params['id'] = $leadId;
+        
+        $sql = "UPDATE leads SET " . implode(', ', $fields) . " WHERE id = :id";
+        $this->db->execute($sql, $params);
+        
+        return true;
+    }
+    
+    /**
+     * Count leads by stage
+     * 
+     * @param string $pipelineId Pipeline UUID
+     * @return array Stage ID => count mapping
+     */
+    public function countLeadsByStage($pipelineId) {
+        $sql = "SELECT stage_id, COUNT(*) as count
+            FROM leads
+            WHERE pipeline_id = :pipeline_id";
+        
+        $params = ['pipeline_id' => $pipelineId];
+        
+        // Tenant filtering
+        if ($this->tenantId !== null) {
+            $sql .= " AND (tenant_id = :tenant_id OR tenant_id IS NULL)";
+            $params['tenant_id'] = $this->tenantId;
+        }
+        
+        $sql .= " GROUP BY stage_id";
+        
+        $results = $this->db->query($sql, $params);
+        
+        $counts = [];
+        foreach ($results as $row) {
+            $counts[$row['stage_id']] = (int)$row['count'];
+        }
+        
+        return $counts;
+    }
+    
+    /**
+     * Get leads without pipeline assignment
+     * 
+     * @return array List of unassigned leads
+     */
+    public function getUnassignedLeads() {
+        $sql = "SELECT * FROM leads 
+            WHERE pipeline_id IS NULL OR stage_id IS NULL";
+        
+        // Tenant filtering
+        if ($this->tenantId !== null) {
+            $sql .= " AND (tenant_id = :tenant_id OR tenant_id IS NULL)";
+            $results = $this->db->query($sql, ['tenant_id' => $this->tenantId]);
+        } else {
+            $results = $this->db->query($sql, []);
+        }
+        
+        return array_map([$this, 'hydrateExtras'], $results);
+    }
 }
