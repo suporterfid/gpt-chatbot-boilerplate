@@ -386,6 +386,9 @@ For example:
 
 An agent can override the following configuration fields:
 
+- `name`: Unique agent name (required)
+- `slug`: URL-friendly identifier (optional, lowercase letters, numbers, and hyphens, 1-64 characters)
+- `description`: Human-readable description of the agent's purpose
 - `api_type`: 'chat' or 'responses'
 - `prompt_id`: OpenAI prompt identifier
 - `prompt_version`: Specific prompt version
@@ -407,6 +410,7 @@ curl -X POST "http://localhost/admin-api.php?action=create_agent" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Customer Support Bot",
+    "slug": "customer-support",
     "api_type": "responses",
     "prompt_id": "prompt_abc123",
     "model": "gpt-4",
