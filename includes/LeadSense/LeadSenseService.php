@@ -134,9 +134,19 @@ class LeadSenseService {
                 $scoreResult['rationale']
             );
             
+            // Task 16: CRM Integration - Auto-assign to pipeline
+            if ($this->isCRMEnabled()) {
+                $this->assignLeadToPipeline($leadId, $tenantId);
+            }
+            
             // Step 5: Send notifications if qualified
             if ($scoreResult['qualified']) {
                 $this->notifyQualifiedLead($leadId, $leadData, $scoreResult);
+                
+                // Trigger automation for qualified leads (Task 17)
+                if ($this->isCRMEnabled() && ($this->config['crm']['automation_enabled'] ?? true)) {
+                    $this->triggerAutomation('lead.qualified', $leadId);
+                }
             }
             
             // Update debounce timestamp
@@ -254,5 +264,134 @@ class LeadSenseService {
         return "When you detect commercial intent (pricing inquiries, trial requests, integration questions), " .
                "naturally ask one brief clarifying question to gather missing information such as the user's " .
                "role, company, or specific needs. Keep your main answer helpful and the question unobtrusive.";
+    }
+    
+    /**
+     * Task 16: CRM Integration Methods
+     */
+    
+    /**
+     * Check if CRM features are enabled
+     * 
+     * @return bool
+     */
+    private function isCRMEnabled() {
+        return ($this->config['crm']['enabled'] ?? false) && 
+               ($this->config['crm']['auto_assign_new_leads'] ?? true);
+    }
+    
+    /**
+     * Assign a lead to the default pipeline and initial stage
+     * 
+     * @param string $leadId Lead ID
+     * @param string|null $tenantId Tenant ID
+     */
+    private function assignLeadToPipeline($leadId, $tenantId = null) {
+        try {
+            require_once __DIR__ . '/CRM/PipelineService.php';
+            require_once __DIR__ . '/LeadEventTypes.php';
+            
+            // Get database connection from repository
+            $dbConfig = [
+                'database_url' => $this->config['database_url'] ?? null,
+                'database_path' => $this->config['database_path'] ?? __DIR__ . '/../../data/chatbot.db'
+            ];
+            $db = new DB($dbConfig);
+            
+            $pipelineService = new PipelineService($db, $tenantId);
+            
+            // Get default pipeline
+            $pipeline = $pipelineService->getDefaultPipeline();
+            
+            if (!$pipeline || empty($pipeline['stages'])) {
+                error_log("LeadSense CRM: No default pipeline found for tenant $tenantId");
+                return;
+            }
+            
+            // Determine initial stage
+            $initialStageSlug = $this->config['crm']['default_stage_slug'] ?? 'lead_capture';
+            $initialStage = null;
+            
+            // Try to find stage by slug
+            foreach ($pipeline['stages'] as $stage) {
+                if ($stage['slug'] === $initialStageSlug) {
+                    $initialStage = $stage;
+                    break;
+                }
+            }
+            
+            // Fallback to first stage
+            if (!$initialStage && !empty($pipeline['stages'])) {
+                $initialStage = $pipeline['stages'][0];
+            }
+            
+            if (!$initialStage) {
+                error_log("LeadSense CRM: No initial stage found in pipeline {$pipeline['id']}");
+                return;
+            }
+            
+            // Assign lead to pipeline and stage
+            $this->leadRepository->assignToPipeline($leadId, $pipeline['id'], $initialStage['id']);
+            
+            // Record pipeline assignment event
+            $this->leadRepository->addEvent($leadId, LeadEventTypes::PIPELINE_CHANGED, [
+                'pipeline_id' => $pipeline['id'],
+                'pipeline_name' => $pipeline['name'],
+                'stage_id' => $initialStage['id'],
+                'stage_name' => $initialStage['name'],
+                'auto_assigned' => true
+            ]);
+            
+            // Trigger automation rules for lead.created event (Task 17)
+            if ($this->config['crm']['automation_enabled'] ?? true) {
+                $this->triggerAutomation('lead.created', $leadId);
+            }
+            
+        } catch (Exception $e) {
+            error_log("LeadSense CRM: Failed to assign lead to pipeline: " . $e->getMessage());
+            // Don't fail the lead detection if pipeline assignment fails
+        }
+    }
+    
+    /**
+     * Task 17: Trigger automation rules for an event
+     * 
+     * @param string $eventType Event type (e.g., 'lead.created', 'lead.qualified')
+     * @param string $leadId Lead ID
+     */
+    private function triggerAutomation($eventType, $leadId) {
+        try {
+            require_once __DIR__ . '/CRM/AutomationService.php';
+            
+            // Get database connection
+            $dbConfig = [
+                'database_url' => $this->config['database_url'] ?? null,
+                'database_path' => $this->config['database_path'] ?? __DIR__ . '/../../data/chatbot.db'
+            ];
+            $db = new DB($dbConfig);
+            
+            $automationService = new AutomationService($db, $this->config, $this->leadRepository->getTenantId());
+            
+            // Get lead with full context
+            $lead = $this->leadRepository->getById($leadId);
+            
+            if (!$lead) {
+                return;
+            }
+            
+            // Build context
+            $context = [
+                'event_type' => $eventType,
+                'lead' => $lead,
+                'timestamp' => date('c')
+            ];
+            
+            // Evaluate and execute matching rules
+            $automationService->evaluateRules($eventType, $context);
+            
+        } catch (Exception $e) {
+            error_log("LeadSense CRM: Failed to trigger automation: " . $e->getMessage());
+            // Don't fail the lead detection if automation fails
+        }
     }
 }
