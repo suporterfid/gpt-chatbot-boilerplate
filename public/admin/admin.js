@@ -1485,6 +1485,7 @@ function loadCurrentPage() {
         'vector-stores': loadVectorStoresPage,
         'whatsapp-templates': loadWhatsAppTemplatesPage,
         'consent-management': loadConsentManagementPage,
+        'leadsense-crm': loadLeadSenseCRMPage,
         'jobs': loadJobsPage,
         'webhook-testing': loadWebhookTestingPage,
         'tenants': loadTenantsPage,
@@ -6009,4 +6010,43 @@ async function handleDeactivateUserClick(event) {
 
     console.log('[agentTester] Módulo inicializado');
 })();
+
+// ==================== LeadSense CRM Page ====================
+
+async function loadLeadSenseCRMPage() {
+    const content = document.getElementById('content');
+    if (!content) return;
+    
+    content.innerHTML = `
+        <div class="leadsense-crm-page">
+            <div class="crm-header">
+                <div id="crm-pipeline-selector"></div>
+            </div>
+            <div id="leadsense-crm-content">
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>Loading CRM...</p>
+                </div>
+            </div>
+            <div id="crm-board-container"></div>
+        </div>
+    `;
+    
+    // Load the CRM JavaScript module if not already loaded
+    if (!window.LeadSenseCRM) {
+        const script = document.createElement('script');
+        script.src = 'leadsense-crm.js';
+        script.onload = function() {
+            if (window.LeadSenseCRM && typeof window.LeadSenseCRM.init === 'function') {
+                window.LeadSenseCRM.init();
+            }
+        };
+        document.head.appendChild(script);
+    } else {
+        // Already loaded, just initialize
+        if (typeof window.LeadSenseCRM.init === 'function') {
+            window.LeadSenseCRM.init();
+        }
+    }
+}
 
