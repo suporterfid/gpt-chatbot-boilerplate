@@ -247,6 +247,52 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
   "http://localhost:8088/admin-api.php?action=health"
 ```
 
+## Optional Features
+
+### LeadSense - AI Lead Detection & CRM
+
+LeadSense automatically detects commercial opportunities in conversations and provides visual CRM pipeline management.
+
+**Quick Enable:**
+```bash
+# Add to .env
+LEADSENSE_ENABLED=true
+LEADSENSE_SCORE_THRESHOLD=70
+LEADSENSE_SLACK_WEBHOOK=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+
+# Run migrations
+php scripts/run_migrations.php
+```
+
+**Access CRM:**
+- Navigate to: `http://localhost:8088/public/admin/leadsense-crm.html`
+- Or via Admin UI sidebar: "LeadSense CRM"
+
+**What it does:**
+- Detects buying intent (pricing, trials, integrations)
+- Extracts contact info (email, phone, company, role)
+- Scores leads 0-100 based on intent and data quality
+- Sends Slack/webhook notifications for qualified leads
+- Visual Kanban board for pipeline management
+- Tracks lead timeline and stage changes
+
+**Documentation:**
+- [LEADSENSE_QUICKSTART.md](LEADSENSE_QUICKSTART.md) - 5-minute setup guide
+- [leadsense-overview.md](leadsense-overview.md) - Complete feature overview
+- [LEADSENSE_CRM.md](LEADSENSE_CRM.md) - CRM capabilities
+
+### WhatsApp Integration
+
+Connect your chatbot to WhatsApp Business for omnichannel support.
+
+**Documentation:** [WHATSAPP_INTEGRATION.md](WHATSAPP_INTEGRATION.md)
+
+### Multi-Tenancy
+
+Deploy for multiple customers with complete data isolation.
+
+**Documentation:** [MULTI_TENANCY.md](MULTI_TENANCY.md)
+
 ## Next Steps
 
 After completing the quick start:

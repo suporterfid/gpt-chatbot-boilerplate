@@ -14,6 +14,8 @@ This guide covers various deployment scenarios for the GPT Chatbot Boilerplate, 
 - [Security Considerations](#security-considerations)
 - [Performance Optimization](#performance-optimization)
 - [Monitoring](#monitoring)
+- [Optional Features Configuration](#optional-features-configuration)
+- [Troubleshooting](#troubleshooting)
 
 ## Web-Based Installation
 
@@ -1165,6 +1167,156 @@ Set up alerts for:
 2. **Configuration**: Encrypted backup of `.env` files
 3. **Logs**: Regular rotation and archival
 4. **SSL Certificates**: Automated renewal with monitoring
+
+## Optional Features Configuration
+
+### LeadSense - AI Lead Detection & CRM
+
+LeadSense automatically detects commercial opportunities in conversations, scores leads, and provides visual CRM pipeline management.
+
+#### Quick Setup
+
+1. **Enable LeadSense** in `.env`:
+   ```bash
+   LEADSENSE_ENABLED=true
+   LEADSENSE_SCORE_THRESHOLD=70          # 0-100, higher = stricter qualification
+   LEADSENSE_INTENT_THRESHOLD=0.6        # 0-1, higher = require stronger signals
+   ```
+
+2. **Run Database Migrations**:
+   ```bash
+   php scripts/run_migrations.php
+   ```
+   
+   This will create the required tables:
+   - `leads` - Lead information and scores
+   - `lead_events` - Timeline of all lead activities
+   - `lead_scores` - Scoring history
+   - `crm_pipelines` - Visual pipeline definitions
+   - `crm_pipeline_stages` - Pipeline stages
+   - `crm_lead_assignments` - Owner tracking
+
+3. **Configure Notifications** (Optional):
+   ```bash
+   # Slack notifications
+   LEADSENSE_SLACK_WEBHOOK=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+   
+   # Generic webhook for CRM integration
+   LEADSENSE_WEBHOOK_URL=https://your-crm.com/webhooks/leads
+   LEADSENSE_WEBHOOK_SECRET=your-secret-key
+   ```
+
+4. **Privacy Settings**:
+   ```bash
+   LEADSENSE_PII_REDACTION=true          # Mask emails/phones in notifications
+   ```
+
+#### Production Configuration
+
+```bash
+# Core Settings
+LEADSENSE_ENABLED=true
+LEADSENSE_SCORE_THRESHOLD=70
+LEADSENSE_INTENT_THRESHOLD=0.6
+LEADSENSE_FOLLOWUP_ENABLED=true
+
+# Notifications
+LEADSENSE_SLACK_WEBHOOK=https://hooks.slack.com/services/...
+LEADSENSE_WEBHOOK_URL=https://crm.example.com/webhooks/leads
+LEADSENSE_WEBHOOK_SECRET=your-secret-key
+LEADSENSE_PII_REDACTION=true
+
+# Advanced Settings
+LEADSENSE_SCORING_MODE=rules             # 'rules' or 'ml' (future)
+LEADSENSE_DEBOUNCE_WINDOW=300            # Seconds between processing same conversation
+LEADSENSE_MAX_DAILY_NOTIFICATIONS=100    # Rate limit notifications
+LEADSENSE_CONTEXT_WINDOW=10              # Messages to analyze
+LEADSENSE_MAX_TOKENS=1000                # Max tokens for extraction
+```
+
+#### Accessing LeadSense CRM
+
+1. **Admin UI**: Navigate to `http://yourdomain.com/public/admin/leadsense-crm.html`
+2. **API Access**: Use Admin API endpoints:
+   ```bash
+   # List qualified leads
+   curl -H "Authorization: Bearer YOUR_TOKEN" \
+     "https://yourdomain.com/admin-api.php?action=list_leads&qualified=true"
+   
+   # Get Kanban board
+   curl -H "Authorization: Bearer YOUR_TOKEN" \
+     "https://yourdomain.com/admin-api.php?action=leadsense.crm.list_leads_board&pipeline_id=default"
+   ```
+
+#### Testing LeadSense
+
+```bash
+# Run unit tests
+php tests/test_leadsense_intent.php
+php tests/test_leadsense_extractor.php
+php tests/test_leadsense_scorer.php
+php tests/test_leadsense_crm_integration.php
+
+# All LeadSense tests
+php tests/run_tests.php | grep -i leadsense
+```
+
+#### Performance Considerations
+
+- **Non-blocking**: LeadSense runs after stream completion, doesn't slow responses
+- **Efficient**: Regex-based extraction, no external API calls
+- **Scalable**: Handles thousands of conversations per day
+- **Database**: Add indexes for performance:
+  ```sql
+  CREATE INDEX idx_leads_pipeline_stage ON leads(pipeline_id, stage_id);
+  CREATE INDEX idx_leads_score ON leads(score);
+  CREATE INDEX idx_leads_qualified ON leads(qualified);
+  ```
+
+#### Security & Compliance
+
+- **PII Protection**: Enable `LEADSENSE_PII_REDACTION=true` in production
+- **RBAC**: Control access to lead data via Admin API permissions
+- **Webhook Security**: Use `LEADSENSE_WEBHOOK_SECRET` for HMAC signatures
+- **Audit Trails**: All lead operations logged in `lead_events` table
+- **GDPR/CCPA**: Export/delete APIs available for compliance
+
+#### Troubleshooting
+
+**Leads not being detected:**
+1. Check `LEADSENSE_ENABLED=true`
+2. Lower thresholds temporarily for testing:
+   ```bash
+   LEADSENSE_INTENT_THRESHOLD=0.5
+   LEADSENSE_SCORE_THRESHOLD=50
+   ```
+3. Check logs: `tail -f logs/chatbot.log | grep LeadSense`
+
+**Notifications not sending:**
+1. Verify webhook URL is accessible
+2. Test Slack webhook: `curl -X POST -H "Content-Type: application/json" -d '{"text":"test"}' $LEADSENSE_SLACK_WEBHOOK`
+3. Check error logs for webhook failures
+
+**CRM board not loading:**
+1. Verify migrations completed: `ls -la db/migrations/`
+2. Check default pipeline exists: `sqlite3 data/chatbot.db "SELECT * FROM crm_pipelines WHERE is_default=1;"`
+3. Verify admin authentication
+
+#### Documentation
+
+- **Quick Start**: [docs/LEADSENSE_QUICKSTART.md](LEADSENSE_QUICKSTART.md)
+- **Architecture**: [docs/leadsense-overview.md](leadsense-overview.md)
+- **API Reference**: [docs/leadsense-api.md](leadsense-api.md)
+- **CRM Details**: [docs/LEADSENSE_CRM.md](LEADSENSE_CRM.md)
+- **Privacy**: [docs/leadsense-privacy.md](leadsense-privacy.md)
+
+### WhatsApp Integration
+
+For WhatsApp Business API integration, see [WHATSAPP_INTEGRATION.md](WHATSAPP_INTEGRATION.md).
+
+### Multi-Tenancy
+
+For multi-tenant deployments, see [MULTI_TENANCY.md](MULTI_TENANCY.md).
 
 ## Troubleshooting
 

@@ -53,10 +53,11 @@ Welcome to the GPT Chatbot Boilerplate documentation! This directory contains co
 - [WHATSAPP_ONBOARDING_PLAYBOOK.md](WHATSAPP_ONBOARDING_PLAYBOOK.md) - Complete onboarding procedures
 - [templates/WHATSAPP_DPA_TEMPLATE.md](templates/WHATSAPP_DPA_TEMPLATE.md) - Data Processing Agreement template
 
-### LeadSense (AI Lead Detection)
+### LeadSense (AI Lead Detection & CRM)
 - [LEADSENSE_QUICKSTART.md](LEADSENSE_QUICKSTART.md) - 5-minute setup guide
 - [leadsense-overview.md](leadsense-overview.md) - Feature overview and architecture
 - [leadsense-api.md](leadsense-api.md) - Complete API reference
+- [LEADSENSE_CRM.md](LEADSENSE_CRM.md) - CRM extension with visual pipelines
 - [leadsense-privacy.md](leadsense-privacy.md) - Privacy controls and PII handling
 
 ### Billing & Metering

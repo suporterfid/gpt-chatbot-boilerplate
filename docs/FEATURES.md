@@ -233,15 +233,54 @@ See [OBSERVABILITY.md](OBSERVABILITY.md) for details.
 
 See [WHATSAPP_INTEGRATION.md](WHATSAPP_INTEGRATION.md) for details.
 
-### LeadSense (AI Lead Detection)
+### LeadSense (AI Lead Detection & CRM)
 
-- **Automatic lead detection** in conversations
-- **Confidence scoring** with thresholds
-- **PII handling** with encryption and redaction
-- **CRM integration** webhooks
-- **Privacy controls** and consent management
+**Commercial Opportunity Detection:**
+- **Intent Detection**: Automatically identifies buying signals (pricing, trials, integrations)
+- **Entity Extraction**: Captures contact info, roles, company data from conversations
+- **Lead Scoring**: Rules-based scoring (0-100) with configurable weights and thresholds
+- **Qualification**: Automatic lead qualification based on score and intent level
 
-See [LEADSENSE_QUICKSTART.md](LEADSENSE_QUICKSTART.md) for details.
+**CRM Capabilities:**
+- **Visual Pipeline Management**: Kanban boards with drag-and-drop functionality
+- **Multiple Pipelines**: Different workflows (Sales, Support, Onboarding)
+- **Stage Management**: Customizable stages with colors and status indicators (won/lost/closed)
+- **Lead Attributes**: Owner assignment, deal tracking (value, probability, close date), tags
+- **Timeline Events**: Full history of stage changes, updates, and notes
+
+**Notifications & Integration:**
+- **Slack Notifications**: Real-time alerts for qualified leads with PII redaction
+- **Webhook Support**: Send leads to external CRMs (HubSpot, Salesforce, etc.)
+- **HMAC Signatures**: Secure webhook payload verification
+- **Retry Logic**: Exponential backoff for failed notifications
+
+**Admin Interface:**
+- **Kanban Board UI**: Visual lead management at `/public/admin/leadsense-crm.html`
+- **Pipeline Builder**: Create and manage pipelines with stages
+- **Lead Cards**: Display name, company, score, tags, owner with inline editing
+- **Search & Filters**: Find leads by name, company, score, or stage
+- **Bulk Operations**: Move multiple leads, assign owners, update statuses
+
+**Security & Privacy:**
+- **PII Redaction**: Mask emails/phones in notifications and logs
+- **RBAC**: Role-based access to lead data and CRM operations
+- **Tenant Isolation**: Complete data separation in multi-tenant deployments
+- **Audit Trails**: Track all lead events and CRM operations
+- **GDPR/CCPA Ready**: Data export, deletion, and consent management
+
+**Configuration:**
+- **Per-Agent Settings**: Override global config per chatbot agent
+- **Configurable Thresholds**: Intent confidence, lead score, and qualification
+- **Scoring Weights**: Customize point values for different signals
+- **Rate Limiting**: Debounce window and daily notification limits
+
+**Use Cases:**
+- Sales teams identifying prospects from support conversations
+- Inbound marketing lead capture and qualification
+- Enterprise sales pipeline management
+- Support to sales handoff automation
+
+See [LEADSENSE_QUICKSTART.md](LEADSENSE_QUICKSTART.md) for quick setup, [leadsense-overview.md](leadsense-overview.md) for architecture, [leadsense-api.md](leadsense-api.md) for API reference, and [LEADSENSE_CRM.md](LEADSENSE_CRM.md) for CRM details.
 
 ### Prompt Builder
 

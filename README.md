@@ -16,6 +16,7 @@ An open-source, production-ready boilerplate for embedding GPT-powered chatbots 
 - **🔐 Security**: RBAC, API keys, rate limiting, and comprehensive audit trails
 - **📊 Observability**: Prometheus metrics, structured logging, distributed tracing
 - **📱 WhatsApp Integration**: Connect agents to WhatsApp Business for omnichannel support
+- **💼 LeadSense CRM**: AI-powered lead detection, scoring, and visual pipeline management
 - **🚀 Production Ready**: CI/CD, backup/restore, load testing, and operational runbooks
 
 👉 **[See all features](docs/FEATURES.md)** for a complete overview.
@@ -269,6 +270,7 @@ Comprehensive documentation organized by topic:
 ### Advanced Features
 - 🏢 [Multi-Tenancy](docs/MULTI_TENANCY.md) - Tenant isolation
 - 📱 [WhatsApp Integration](docs/WHATSAPP_INTEGRATION.md) - Multi-channel support
+- 💼 [LeadSense CRM](docs/LEADSENSE_QUICKSTART.md) - AI lead detection and CRM
 - 🛡️ [Hybrid Guardrails](docs/HYBRID_GUARDRAILS.md) - Structured outputs
 - 🇧🇷 [Agent Guide (Portuguese)](docs/GUIA_CRIACAO_AGENTES.md)
 
