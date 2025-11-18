@@ -23,6 +23,13 @@ class LeadRepository {
     }
     
     /**
+     * Set database instance (for sharing DB connection)
+     */
+    public function setDb($db) {
+        $this->db = $db;
+    }
+    
+    /**
      * Set tenant context for tenant-scoped queries
      */
     public function setTenantId($tenantId) {
