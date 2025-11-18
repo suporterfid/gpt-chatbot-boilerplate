@@ -53,6 +53,9 @@ The wizard will guide you through:
 ### 3. Manual Installation
 
 ```bash
+# Install PHP dependencies (recommended)
+composer install --no-dev --optimize-autoloader
+
 # Copy environment file
 cp .env.example .env
 
@@ -65,9 +68,14 @@ nano .env
 # DEFAULT_ADMIN_EMAIL=super.admin@example.com
 # DEFAULT_ADMIN_PASSWORD=generate_a_secure_password
 
+# Run database migrations
+php scripts/run_migrations.php
+
 # Start services
 docker-compose up -d
 ```
+
+> **Note:** Composer is recommended for managing dependencies. If Composer is not installed, you can still run the project, but some development tools won't be available. [Install Composer](https://getcomposer.org/download/)
 
 ### 4. Access Your Chatbot
 
