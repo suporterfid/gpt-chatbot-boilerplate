@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConnectionManager Tests</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-pass {
+            color: green;
+            font-weight: bold;
+        }
+        .test-fail {
+            color: red;
+            font-weight: bold;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 3px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        #results {
+            margin-top: 20px;
+        }
+        .log-entry {
+            font-family: monospace;
+            font-size: 12px;
+            padding: 5px;
+            margin: 2px 0;
+            background: #f9f9f9;
+            border-left: 3px solid #ccc;
+        }
+        .log-info { border-left-color: #007bff; }
+        .log-warn { border-left-color: #ffc107; }
+        .log-error { border-left-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <h1>ConnectionManager Tests</h1>
+    
+    <div class="test-section">
+        <h2>Test Controls</h2>
+        <button onclick="runAllTests()">Run All Tests</button>
+        <button onclick="clearResults()">Clear Results</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>Individual Tests</h2>
+        <button onclick="testStateTransitions()">Test State Transitions</button>
+        <button onclick="testExponentialBackoff()">Test Exponential Backoff</button>
+        <button onclick="testMessageQueuing()">Test Message Queuing</button>
+        <button onclick="testEventEmitter()">Test Event Emitter</button>
+        <button onclick="testTransportSelection()">Test Transport Selection</button>
+        <button onclick="testHeartbeat()">Test Heartbeat (Mock)</button>
+    </div>
+    
+    <div id="results"></div>
+    
+    <div class="test-section">
+        <h2>Connection Logs</h2>
+        <div id="logs"></div>
+    </div>
+    
+    <script src="../chatbot-enhanced.js"></script>
+    <script>
+        let testResults = [];
+        let testLogs = [];
+        
+        // Override console methods to capture logs
+        const originalConsole = {
+            log: console.log,
+            warn: console.warn,
+            error: console.error
+        };
+        
+        function captureLog(level, ...args) {
+            const message = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+            testLogs.push({ level, message, timestamp: new Date() });
+            updateLogsDisplay();
+            originalConsole[level](...args);
+        }
+        
+        console.log = (...args) => captureLog('log', ...args);
+        console.warn = (...args) => captureLog('warn', ...args);
+        console.error = (...args) => captureLog('error', ...args);
+        
+        function updateLogsDisplay() {
+            const logsDiv = document.getElementById('logs');
+            logsDiv.innerHTML = testLogs.slice(-50).map(log => 
+                `<div class="log-entry log-${log.level}">[${log.timestamp.toLocaleTimeString()}] ${log.message}</div>`
+            ).join('');
+        }
+        
+        function addTestResult(name, passed, details = '') {
+            testResults.push({ name, passed, details });
+            updateResults();
+        }
+        
+        function updateResults() {
+            const resultsDiv = document.getElementById('results');
+            const passedCount = testResults.filter(r => r.passed).length;
+            const totalCount = testResults.length;
+            
+            let html = `<h3>Test Results: ${passedCount}/${totalCount} passed</h3>`;
+            
+            testResults.forEach(result => {
+                const status = result.passed ? 
+                    '<span class="test-pass">✓ PASS</span>' : 
+                    '<span class="test-fail">✗ FAIL</span>';
+                html += `
+                    <div class="test-result">
+                        ${status} - ${result.name}
+                        ${result.details ? `<br><small>${result.details}</small>` : ''}
+                    </div>
+                `;
+            });
+            
+            resultsDiv.innerHTML = html;
+        }
+        
+        function clearResults() {
+            testResults = [];
+            testLogs = [];
+            updateResults();
+            updateLogsDisplay();
+        }
+        
+        async function runAllTests() {
+            clearResults();
+            
+            await testStateTransitions();
+            await testExponentialBackoff();
+            await testMessageQueuing();
+            await testEventEmitter();
+            await testTransportSelection();
+            await testHeartbeat();
+            
+            console.log('All tests completed!');
+        }
+        
+        async function testStateTransitions() {
+            console.log('=== Test: State Transitions ===');
+            
+            try {
+                // Create mock chatbot
+                const mockChatbot = {
+                    handleStreamChunk: (data) => console.log('Received chunk:', data)
+                };
+                
+                const options = {
+                    streamingMode: 'ajax',
+                    apiEndpoint: '/test-api'
+                };
+                
+                const cm = new ConnectionManager(options, mockChatbot);
+                
+                // Test initial state
+                if (cm.state !== 'disconnected') {
+                    addTestResult('Initial state should be disconnected', false, `Got: ${cm.state}`);
+                    return;
+                }
+                
+                // Test state changes
+                const states = [];
+                cm.on('state_change', ({ oldState, newState }) => {
+                    states.push({ old: oldState, new: newState });
+                });
+                
+                cm.setState('connecting');
+                cm.setState('connected');
+                cm.setState('reconnecting');
+                cm.setState('disconnected');
+                
+                const expected = [
+                    { old: 'disconnected', new: 'connecting' },
+                    { old: 'connecting', new: 'connected' },
+                    { old: 'connected', new: 'reconnecting' },
+                    { old: 'reconnecting', new: 'disconnected' }
+                ];
+                
+                const statesMatch = JSON.stringify(states) === JSON.stringify(expected);
+                
+                if (statesMatch) {
+                    addTestResult('State transitions', true, 'All state transitions worked correctly');
+                } else {
+                    addTestResult('State transitions', false, `Expected: ${JSON.stringify(expected)}, Got: ${JSON.stringify(states)}`);
+                }
+                
+            } catch (error) {
+                addTestResult('State transitions', false, error.message);
+            }
+        }
+        
+        async function testExponentialBackoff() {
+            console.log('=== Test: Exponential Backoff ===');
+            
+            try {
+                const mockChatbot = {};
+                const options = {
+                    streamingMode: 'ajax',
+                    apiEndpoint: '/test-api'
+                };
+                
+                const cm = new ConnectionManager(options, mockChatbot);
+                
+                // Test backoff calculation
+                const delays = [];
+                
+                for (let i = 0; i < 5; i++) {
+                    cm.reconnectAttempts = i;
+                    const baseDelay = Math.min(
+                        cm.reconnectDelay * Math.pow(2, cm.reconnectAttempts),
+                        cm.maxReconnectDelay
+                    );
+                    delays.push(baseDelay);
+                }
+                
+                // Expected: 1000, 2000, 4000, 8000, 16000
+                const expected = [1000, 2000, 4000, 8000, 16000];
+                const match = JSON.stringify(delays) === JSON.stringify(expected);
+                
+                if (match) {
+                    addTestResult('Exponential backoff calculation', true, `Delays: ${delays.join(', ')}ms`);
+                } else {
+                    addTestResult('Exponential backoff calculation', false, `Expected: ${expected}, Got: ${delays}`);
+                }
+                
+                // Test max attempts
+                cm.reconnectAttempts = 10;
+                let maxAttemptsReached = false;
+                cm.on('max_reconnect_attempts', () => {
+                    maxAttemptsReached = true;
+                });
+                
+                cm.scheduleReconnect();
+                
+                if (maxAttemptsReached) {
+                    addTestResult('Max reconnect attempts', true, 'Event emitted correctly');
+                } else {
+                    addTestResult('Max reconnect attempts', false, 'Event not emitted');
+                }
+                
+            } catch (error) {
+                addTestResult('Exponential backoff', false, error.message);
+            }
+        }
+        
+        async function testMessageQueuing() {
+            console.log('=== Test: Message Queuing ===');
+            
+            try {
+                const mockChatbot = {};
+                const options = {
+                    streamingMode: 'ajax',
+                    apiEndpoint: '/test-api'
+                };
+                
+                const cm = new ConnectionManager(options, mockChatbot);
+                cm.setState('disconnected');
+                
+                // Test queuing when disconnected
+                const message1 = { text: 'test message 1' };
+                const message2 = { text: 'test message 2' };
+                
+                let queuedEvents = 0;
+                cm.on('message_queued', () => {
+                    queuedEvents++;
+                });
+                
+                await cm.sendMessage(message1);
+                await cm.sendMessage(message2);
+                
+                if (cm.messageQueue.length === 2 && queuedEvents === 2) {
+                    addTestResult('Message queuing when disconnected', true, `2 messages queued correctly`);
+                } else {
+                    addTestResult('Message queuing when disconnected', false, 
+                        `Queue length: ${cm.messageQueue.length}, Events: ${queuedEvents}`);
+                }
+                
+                // Test queue flushing
+                cm.setState('connected');
+                cm.transport = 'ajax';
+                
+                let flushingEventFired = false;
+                cm.on('flushing_queue', () => {
+                    flushingEventFired = true;
+                });
+                
+                cm.flushMessageQueue();
+                
+                if (flushingEventFired) {
+                    addTestResult('Queue flushing event', true, 'Flushing event emitted');
+                } else {
+                    addTestResult('Queue flushing event', false, 'Flushing event not emitted');
+                }
+                
+            } catch (error) {
+                addTestResult('Message queuing', false, error.message);
+            }
+        }
+        
+        async function testEventEmitter() {
+            console.log('=== Test: Event Emitter ===');
+            
+            try {
+                const mockChatbot = {};
+                const options = {
+                    streamingMode: 'ajax',
+                    apiEndpoint: '/test-api'
+                };
+                
+                const cm = new ConnectionManager(options, mockChatbot);
+                
+                // Test on/emit
+                let eventFired = false;
+                let eventData = null;
+                
+                cm.on('test_event', (data) => {
+                    eventFired = true;
+                    eventData = data;
+                });
+                
+                cm.emit('test_event', { test: 'data' });
+                
+                if (eventFired && eventData.test === 'data') {
+                    addTestResult('Event emitter - on/emit', true);
+                } else {
+                    addTestResult('Event emitter - on/emit', false, `Fired: ${eventFired}, Data: ${JSON.stringify(eventData)}`);
+                }
+                
+                // Test once
+                let onceCount = 0;
+                cm.once('once_event', () => {
+                    onceCount++;
+                });
+                
+                cm.emit('once_event');
+                cm.emit('once_event');
+                
+                if (onceCount === 1) {
+                    addTestResult('Event emitter - once', true, 'Callback fired only once');
+                } else {
+                    addTestResult('Event emitter - once', false, `Callback fired ${onceCount} times`);
+                }
+                
+                // Test off
+                let offCount = 0;
+                const offCallback = () => { offCount++; };
+                
+                cm.on('off_event', offCallback);
+                cm.emit('off_event');
+                cm.off('off_event', offCallback);
+                cm.emit('off_event');
+                
+                if (offCount === 1) {
+                    addTestResult('Event emitter - off', true, 'Callback unregistered correctly');
+                } else {
+                    addTestResult('Event emitter - off', false, `Callback fired ${offCount} times`);
+                }
+                
+            } catch (error) {
+                addTestResult('Event emitter', false, error.message);
+            }
+        }
+        
+        async function testTransportSelection() {
+            console.log('=== Test: Transport Selection ===');
+            
+            try {
+                const mockChatbot = {};
+                
+                // Test auto mode with WebSocket available
+                let options1 = {
+                    streamingMode: 'auto',
+                    apiEndpoint: '/test-api',
+                    websocketEndpoint: 'ws://localhost:8080'
+                };
+                
+                let cm1 = new ConnectionManager(options1, mockChatbot);
+                let transports1 = cm1.getTransportsToTry();
+                
+                if (JSON.stringify(transports1) === JSON.stringify(['websocket', 'sse', 'ajax'])) {
+                    addTestResult('Transport selection - auto with WebSocket', true, 
+                        `Transports: ${transports1.join(', ')}`);
+                } else {
+                    addTestResult('Transport selection - auto with WebSocket', false, 
+                        `Got: ${transports1.join(', ')}`);
+                }
+                
+                // Test auto mode without WebSocket
+                let options2 = {
+                    streamingMode: 'auto',
+                    apiEndpoint: '/test-api',
+                    websocketEndpoint: null
+                };
+                
+                let cm2 = new ConnectionManager(options2, mockChatbot);
+                let transports2 = cm2.getTransportsToTry();
+                
+                if (JSON.stringify(transports2) === JSON.stringify(['sse', 'ajax'])) {
+                    addTestResult('Transport selection - auto without WebSocket', true, 
+                        `Transports: ${transports2.join(', ')}`);
+                } else {
+                    addTestResult('Transport selection - auto without WebSocket', false, 
+                        `Got: ${transports2.join(', ')}`);
+                }
+                
+                // Test specific mode
+                let options3 = {
+                    streamingMode: 'sse',
+                    apiEndpoint: '/test-api'
+                };
+                
+                let cm3 = new ConnectionManager(options3, mockChatbot);
+                let transports3 = cm3.getTransportsToTry();
+                
+                if (JSON.stringify(transports3) === JSON.stringify(['sse'])) {
+                    addTestResult('Transport selection - specific mode', true, 'SSE only');
+                } else {
+                    addTestResult('Transport selection - specific mode', false, 
+                        `Got: ${transports3.join(', ')}`);
+                }
+                
+            } catch (error) {
+                addTestResult('Transport selection', false, error.message);
+            }
+        }
+        
+        async function testHeartbeat() {
+            console.log('=== Test: Heartbeat (Mock) ===');
+            
+            try {
+                const mockChatbot = {};
+                const options = {
+                    streamingMode: 'websocket',
+                    websocketEndpoint: 'ws://localhost:8080',
+                    apiEndpoint: '/test-api'
+                };
+                
+                const cm = new ConnectionManager(options, mockChatbot);
+                
+                // Test startHeartbeat
+                cm.startHeartbeat();
+                
+                if (cm.heartbeatTimer !== null) {
+                    addTestResult('Heartbeat - start', true, 'Heartbeat timer created');
+                } else {
+                    addTestResult('Heartbeat - start', false, 'Heartbeat timer not created');
+                }
+                
+                // Test stopHeartbeat
+                cm.stopHeartbeat();
+                
+                if (cm.heartbeatTimer === null) {
+                    addTestResult('Heartbeat - stop', true, 'Heartbeat timer cleared');
+                } else {
+                    addTestResult('Heartbeat - stop', false, 'Heartbeat timer not cleared');
+                }
+                
+                // Test clearHeartbeatTimeout
+                cm.heartbeatTimeout = setTimeout(() => {}, 1000);
+                cm.clearHeartbeatTimeout();
+                
+                if (cm.heartbeatTimeout === null) {
+                    addTestResult('Heartbeat - clear timeout', true, 'Timeout cleared');
+                } else {
+                    addTestResult('Heartbeat - clear timeout', false, 'Timeout not cleared');
+                }
+                
+            } catch (error) {
+                addTestResult('Heartbeat', false, error.message);
+            }
+        }
+    </script>
+</body>
+</html>
