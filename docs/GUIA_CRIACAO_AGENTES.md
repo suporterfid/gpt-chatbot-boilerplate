@@ -20,11 +20,14 @@ Este guia apresenta um passo a passo completo para criar, configurar e publicar 
 Os **Agentes** são configurações persistentes de IA que permitem criar múltiplas personalidades e comportamentos para o chatbot sem necessidade de alterações no código. Cada agente pode ter:
 
 - **API Type**: Responses API (avançada) ou Chat Completions API (simples)
-- **Modelo**: GPT-4o, GPT-4o-mini, etc.
+- **Modelo**: GPT-4o, GPT-4o-mini, GPT-4-turbo, etc.
 - **Prompts**: Instruções do sistema e prompts reutilizáveis
-- **Ferramentas**: File search, function calling, etc.
+- **Ferramentas**: File search, function calling, code interpreter, etc.
 - **Parâmetros**: Temperature, top_p, max tokens, etc.
 - **Vector Stores**: Bases de conhecimento para busca em arquivos
+- **Response Format**: Estrutura de saída (JSON schemas, guardrails)
+- **Multi-tenancy**: Isolamento por tenant para ambientes multi-inquilino
+- **Integrações**: WhatsApp, LeadSense CRM, webhooks personalizados
 
 ## Pré-requisitos
 
@@ -106,11 +109,41 @@ Após configurar o `.env`, acesse:
 http://seu-dominio/public/admin/
 ```
 
+#### Autenticação Moderna (Recomendado)
+
 Você será direcionado para o formulário de login. Informe o **email** e **senha** do usuário administrador criado durante a instalação. Após autenticar, o navegador receberá um cookie `admin_session` (HttpOnly, SameSite=Lax) válido por 24 horas por padrão (`ADMIN_SESSION_TTL`).
 
-> **Integrações legadas:** o cabeçalho `Authorization: Bearer <ADMIN_TOKEN>` continua funcionando, mas está **depreciado**. Migre para sessões ou chaves de API individuais o quanto antes.
+**Vantagens da autenticação por sessão:**
+- ✅ Segurança aprimorada com cookies HttpOnly
+- ✅ Suporte a RBAC (viewer, admin, super-admin)
+- ✅ Multi-tenancy nativo
+- ✅ Rotação automática de sessões
+- ✅ Auditoria completa de ações
 
-Para criar sessões manualmente (ou scripts de automação), use os novos endpoints:
+#### Chaves de API (Para Automação)
+
+Para scripts e integrações, use chaves de API individuais:
+
+```bash
+# Gerar uma nova chave de API (via interface ou API)
+curl -b cookies.txt -X POST "http://localhost/admin-api.php?action=generate_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Script de Backup",
+    "expires_at": "2025-12-31T23:59:59Z",
+    "permissions": ["read", "write"]
+  }'
+
+# Usar a chave de API gerada
+curl -H "X-API-Key: key_abc123def456..." \
+  "http://localhost/admin-api.php?action=list_agents"
+```
+
+> **⚠️ Importante:** O cabeçalho `Authorization: Bearer <ADMIN_TOKEN>` está **depreciado** e será removido em versões futuras. Migre para sessões ou chaves de API individuais.
+
+#### Login via API (Scripts de Automação)
+
+Para criar sessões manualmente:
 
 ```bash
 # Realiza login e salva o cookie de sessão
@@ -156,6 +189,7 @@ Clique no botão **"Create Agent"** ou **"Create Your First Agent"** (se não ho
 
 - **Name*** (Nome): Identificador único do agente
   - Exemplo: "Customer Support Agent", "Assistente de Vendas"
+  - Deve ser único dentro do tenant
 
 **Campos Opcionais:**
 
@@ -165,38 +199,61 @@ Clique no botão **"Create Agent"** ou **"Create Your First Agent"** (se não ho
 - **API Type*** (Tipo de API): 
   - **Responses API**: Para funcionalidades avançadas (prompts, tools, file search)
   - **Chat Completions API**: Para conversação simples e direta
+  - Padrão: `responses`
 
 - **Model** (Modelo):
-  - Exemplos: `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo`
+  - Exemplos: `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-3.5-turbo`
   - Deixe em branco para usar o modelo padrão do config.php
 
 - **Prompt ID**: ID de um prompt salvo na OpenAI (formato: `pmpt_xxxxx`)
   - Use a aba "Prompts" para criar e gerenciar prompts
+  - Suporta versionamento de prompts
 
 - **Prompt Version**: Versão do prompt (ex: "1", "latest")
+  - Permite fixar versões específicas ou usar sempre a mais recente
 
 - **System Message**: Mensagem de sistema personalizada
   - Exemplo: "Você é um assistente prestativo especializado em suporte técnico"
+  - Alternativa ao uso de Prompt ID
 
 - **Temperature** (0-2): Criatividade das respostas
-  - 0.1-0.4: Respostas precisas e factuais
-  - 0.7-1.0: Balanceado (padrão: 0.7)
-  - 1.2-2.0: Muito criativo
+  - 0.1-0.4: Respostas precisas e factuais (suporte técnico, FAQ)
+  - 0.7-1.0: Balanceado (uso geral, padrão: 0.7)
+  - 1.2-2.0: Muito criativo (brainstorming, conteúdo criativo)
 
-- **Top P** (0-1): Diversidade do vocabulário (padrão: 1)
+- **Top P** (0-1): Diversidade do vocabulário
+  - 0.5: Vocabulário mais limitado e focado
+  - 1.0: Vocabulário completo (padrão, recomendado)
 
 - **Max Output Tokens**: Limite de tokens na resposta
-  - Exemplo: 1024, 2048, 4096
+  - Exemplo: 1024, 2048, 4096, 8192
+  - Controla o tamanho máximo das respostas
 
 - **Vector Store IDs**: IDs de Vector Stores para busca em arquivos
   - Formato: `vs_abc123,vs_def456` (separados por vírgula)
   - Use a aba "Vector Stores" para criar e gerenciar
+  - Suporta múltiplos stores para diferentes bases de conhecimento
+
+- **Max Num Results**: Número máximo de resultados em buscas
+  - Padrão: 20 resultados por busca em vector stores
+  - Range recomendado: 10-50
 
 - **Enable File Search Tool**: Ativa a ferramenta de busca em arquivos
   - Requer Vector Store IDs configurados
+  - Permite que o agente busque em documentos automaticamente
+
+- **Response Format** (Guardrails): Estrutura de saída JSON
+  - Define schemas para respostas estruturadas
+  - Útil para extração de dados, formulários, validação
+  - Ver seção sobre Hybrid Guardrails
+
+- **Tenant ID**: Identificador do tenant (multi-tenancy)
+  - Atribuído automaticamente se o usuário pertence a um tenant
+  - Garante isolamento de dados entre clientes
 
 - **Set as Default Agent**: Define este agente como padrão
   - Requisições sem `agent_id` usarão este agente
+  - Apenas um agente pode ser padrão por tenant
 
 #### Passo 4: Salvar o Agente
 
@@ -218,8 +275,8 @@ Para automação ou integração com sistemas externos, use a Admin API.
 #### Criar Agente via API
 
 ```bash
-curl -X POST "http://seu-dominio/admin-api.php?action=create_agent" \
-  -H "Authorization: Bearer SEU_ADMIN_TOKEN" \
+# Com sessão autenticada (recomendado)
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=create_agent" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Customer Support Agent",
@@ -229,6 +286,23 @@ curl -X POST "http://seu-dominio/admin-api.php?action=create_agent" \
     "temperature": 0.7,
     "tools": [{"type": "file_search"}],
     "vector_store_ids": ["vs_kb_12345"],
+    "max_num_results": 20,
+    "is_default": true
+  }'
+
+# Ou com chave de API
+curl -X POST "http://seu-dominio/admin-api.php?action=create_agent" \
+  -H "X-API-Key: key_abc123def456..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Customer Support Agent",
+    "description": "Atende consultas de clientes usando nossa base de conhecimento",
+    "api_type": "responses",
+    "model": "gpt-4o-mini",
+    "temperature": 0.7,
+    "tools": [{"type": "file_search"}],
+    "vector_store_ids": ["vs_kb_12345"],
+    "max_num_results": 20,
     "is_default": true
   }'
 ```
@@ -244,11 +318,16 @@ curl -X POST "http://seu-dominio/admin-api.php?action=create_agent" \
     "api_type": "responses",
     "model": "gpt-4o-mini",
     "temperature": 0.7,
+    "top_p": 1.0,
+    "max_output_tokens": 2048,
     "tools": [{"type": "file_search"}],
     "vector_store_ids": ["vs_kb_12345"],
+    "max_num_results": 20,
+    "response_format": null,
     "is_default": true,
-    "created_at": "2025-11-05T23:10:20Z",
-    "updated_at": "2025-11-05T23:10:20Z"
+    "tenant_id": "tenant_xyz789",
+    "created_at": "2025-11-18T17:10:20Z",
+    "updated_at": "2025-11-18T17:10:20Z"
   }
 }
 ```
@@ -256,15 +335,28 @@ curl -X POST "http://seu-dominio/admin-api.php?action=create_agent" \
 #### Listar Agentes
 
 ```bash
-curl -X GET "http://seu-dominio/admin-api.php?action=list_agents" \
-  -H "Authorization: Bearer SEU_ADMIN_TOKEN"
+# Com sessão
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=list_agents"
+
+# Ou com chave de API
+curl -H "X-API-Key: key_abc123..." "http://seu-dominio/admin-api.php?action=list_agents"
 ```
 
 #### Atualizar Agente
 
 ```bash
-curl -X POST "http://seu-dominio/admin-api.php?action=update_agent&id=AGENT_ID" \
-  -H "Authorization: Bearer SEU_ADMIN_TOKEN" \
+# Com sessão
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=update_agent&id=AGENT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "temperature": 0.9,
+    "description": "Descrição atualizada",
+    "max_num_results": 30
+  }'
+
+# Ou com chave de API
+curl -H "X-API-Key: key_abc123..." -X POST \
+  "http://seu-dominio/admin-api.php?action=update_agent&id=AGENT_ID" \
   -H "Content-Type: application/json" \
   -d '{
     "temperature": 0.9,
@@ -275,15 +367,23 @@ curl -X POST "http://seu-dominio/admin-api.php?action=update_agent&id=AGENT_ID" 
 #### Definir Agente como Padrão
 
 ```bash
-curl -X POST "http://seu-dominio/admin-api.php?action=make_default&id=AGENT_ID" \
-  -H "Authorization: Bearer SEU_ADMIN_TOKEN"
+# Com sessão
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=make_default&id=AGENT_ID"
+
+# Ou com chave de API
+curl -H "X-API-Key: key_abc123..." -X POST \
+  "http://seu-dominio/admin-api.php?action=make_default&id=AGENT_ID"
 ```
 
 #### Deletar Agente
 
 ```bash
-curl -X POST "http://seu-dominio/admin-api.php?action=delete_agent&id=AGENT_ID" \
-  -H "Authorization: Bearer SEU_ADMIN_TOKEN"
+# Com sessão
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=delete_agent&id=AGENT_ID"
+
+# Ou com chave de API
+curl -H "X-API-Key: key_abc123..." -X POST \
+  "http://seu-dominio/admin-api.php?action=delete_agent&id=AGENT_ID"
 ```
 
 ## Configuração do Agente
@@ -548,6 +648,266 @@ Para respostas estruturadas:
 
 **Quando usar:** Extração de dados, formulários, validação
 
+### Exemplo 5: Agente Multi-Tenant com Isolamento
+
+Para ambientes com múltiplos clientes:
+
+```json
+{
+  "name": "Suporte Cliente Premium",
+  "description": "Agente dedicado para clientes premium com SLA diferenciado",
+  "api_type": "responses",
+  "model": "gpt-4o",
+  "temperature": 0.5,
+  "tenant_id": "tenant_premium_xyz",
+  "system_message": "Você é um assistente premium. Priorize respostas rápidas e detalhadas.",
+  "tools": [{"type": "file_search"}],
+  "vector_store_ids": ["vs_kb_premium"],
+  "max_output_tokens": 4096
+}
+```
+
+**Vantagens:**
+- ✅ Isolamento completo de dados entre tenants
+- ✅ Configurações personalizadas por cliente
+- ✅ Billing e usage tracking separados
+- ✅ Vector stores dedicados
+
+### Exemplo 6: Agente com LeadSense Integrado
+
+Para detecção automática de oportunidades comerciais:
+
+```json
+{
+  "name": "Assistente de Vendas Inteligente",
+  "description": "Identifica e qualifica leads automaticamente nas conversas",
+  "api_type": "responses",
+  "model": "gpt-4o-mini",
+  "temperature": 0.7,
+  "system_message": "Você é um assistente de vendas. Identifique oportunidades comerciais e extraia informações de contato.",
+  "tools": [{"type": "file_search"}],
+  "vector_store_ids": ["vs_produtos", "vs_precos"]
+}
+```
+
+**Configuração adicional (via `.env`):**
+```bash
+LEADSENSE_ENABLED=true
+LEADSENSE_INTENT_THRESHOLD=0.6
+LEADSENSE_SCORE_THRESHOLD=70
+```
+
+**Recursos do LeadSense:**
+- 🎯 Detecção automática de intenção de compra
+- 📊 Scoring de leads (0-100)
+- 🏢 Extração de entidades (nome, email, telefone, empresa)
+- 📈 Pipeline visual de CRM
+- 🔔 Notificações Slack para leads qualificados
+- 🔗 Webhooks para CRMs externos (HubSpot, Salesforce)
+
+Ver [LEADSENSE_QUICKSTART.md](LEADSENSE_QUICKSTART.md) para detalhes.
+
+### Exemplo 7: Agente com WhatsApp
+
+Para atendimento omnichannel via WhatsApp Business:
+
+```json
+{
+  "name": "Suporte WhatsApp",
+  "description": "Agente para atendimento via WhatsApp com contexto preservado",
+  "api_type": "responses",
+  "model": "gpt-4o-mini",
+  "temperature": 0.6,
+  "system_message": "Você é um assistente via WhatsApp. Use respostas concisas e amigáveis.",
+  "max_output_tokens": 1500
+}
+```
+
+**Configuração do canal:**
+```bash
+# Via Admin API
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=link_agent_to_channel" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "agent-whatsapp-id",
+    "channel_type": "whatsapp",
+    "channel_config": {
+      "instance_id": "sua-instancia-zapi",
+      "phone_number": "+5511999999999"
+    }
+  }'
+```
+
+**Recursos do canal WhatsApp:**
+- 📱 Suporte a texto, imagens, documentos, áudio
+- 💬 Sessões persistentes com contexto
+- 🔄 Chunking automático de mensagens longas
+- 🛑 Comandos STOP/START para opt-out
+- 🔐 Verificação de assinatura de webhook
+- ✅ Idempotência contra duplicatas
+
+Ver [WHATSAPP_INTEGRATION.md](WHATSAPP_INTEGRATION.md) para detalhes.
+
+## Recursos Avançados
+
+### Multi-Tenancy
+
+O sistema suporta isolamento completo entre tenants (clientes):
+
+**Características:**
+- Cada tenant tem seus próprios agentes, prompts, vector stores
+- Isolamento de dados garantido por tenant_id
+- Usuários administradores vinculados a tenants específicos
+- Super-admins podem acessar todos os tenants
+- Billing e quotas por tenant
+
+**Configuração:**
+```bash
+# Criar tenant via API
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=create_tenant" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Empresa XYZ",
+    "slug": "empresa-xyz",
+    "plan": "premium",
+    "billing_email": "billing@xyz.com"
+  }'
+```
+
+Ver [MULTI_TENANCY.md](MULTI_TENANCY.md) para arquitetura completa.
+
+### Observabilidade e Monitoramento
+
+Monitore o desempenho e uso dos seus agentes:
+
+**Métricas disponíveis:**
+- 📊 Requisições por agente
+- ⏱️ Latência (P95, P99)
+- 💰 Tokens consumidos e custos
+- ❌ Taxa de erros
+- 👥 Usuários ativos
+- 🔍 Uso de ferramentas (file_search, etc)
+
+**Acesso:**
+```bash
+# Métricas Prometheus
+curl "http://seu-dominio/metrics.php"
+
+# Health check
+curl "http://seu-dominio/admin-api.php?action=health"
+```
+
+**Dashboards:**
+- Grafana pré-configurado em `observability/docker/grafana/`
+- 15+ regras de alerta automáticas
+- Logs estruturados com trace IDs
+- Integração com Loki, Prometheus, Jaeger
+
+Ver [OBSERVABILITY.md](OBSERVABILITY.md) para setup completo.
+
+### Webhooks e Background Jobs
+
+Execute tarefas assíncronas e integre com sistemas externos:
+
+**Background Worker:**
+```bash
+# Iniciar worker para processar jobs
+php scripts/worker.php
+
+# Ou via systemd
+sudo systemctl start chatbot-worker
+```
+
+**Webhooks customizados:**
+```bash
+# Registrar webhook
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=create_webhook_subscriber" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://seu-sistema.com/webhook",
+    "events": ["agent.created", "lead.qualified", "vector_store.completed"],
+    "secret": "webhook-secret-key"
+  }'
+```
+
+**Eventos disponíveis:**
+- `agent.*` - Criação, atualização, exclusão
+- `lead.*` - Lead criado, qualificado, atualizado
+- `vector_store.*` - Ingestion completa, falha
+- `conversation.*` - Nova conversa, mensagem
+- `job.*` - Job completado, falhou
+
+Ver [WEBHOOK_EXTENSIBILITY.md](WEBHOOK_EXTENSIBILITY.md) para detalhes.
+
+### Compliance e Privacidade
+
+Recursos para adequação a GDPR, LGPD e regulamentações:
+
+**Recursos disponíveis:**
+- 🔒 Criptografia AES-256-GCM at rest
+- 🗑️ Deleção completa de dados via API
+- 📤 Exportação de dados de usuário
+- ✅ Gestão de consentimento
+- 🎭 Redação automática de PII em logs
+- 📝 Audit trails completos
+- ⏳ Políticas de retenção configuráveis
+- 🛡️ Legal hold para investigações
+
+**Exemplo - Exportar dados de usuário:**
+```bash
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=export_user_data&user_id=USER_ID" \
+  -o user_data.zip
+```
+
+**Exemplo - Deletar dados (GDPR/LGPD):**
+```bash
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=delete_user_data" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "USER_ID",
+    "reason": "User GDPR deletion request",
+    "confirmation": "I confirm permanent deletion"
+  }'
+```
+
+Ver [COMPLIANCE_OPERATIONS.md](COMPLIANCE_OPERATIONS.md) para detalhes.
+
+### Billing e Quotas
+
+Controle custos e estabeleça limites de uso:
+
+**Configuração de quotas:**
+```bash
+# Definir quota por tenant
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=set_tenant_quota" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenant_id": "tenant_xyz",
+    "quotas": {
+      "max_tokens_per_month": 1000000,
+      "max_requests_per_day": 10000,
+      "max_vector_stores": 5,
+      "max_agents": 10
+    }
+  }'
+```
+
+**Monitoramento de uso:**
+```bash
+# Obter uso atual do tenant
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=get_tenant_usage&tenant_id=tenant_xyz"
+```
+
+**Recursos:**
+- 📊 Tracking de tokens, requests, storage
+- 💰 Cálculo automático de custos
+- 🚨 Alertas de limite (80%, 90%, 100%)
+- 📈 Relatórios de billing mensais
+- 🔒 Hard limits e soft limits
+- 💳 Integração com gateways de pagamento
+
+Ver [BILLING_METERING.md](BILLING_METERING.md) para detalhes.
+
 ## Melhores Práticas
 
 ### 1. Nomeação e Organização
@@ -618,26 +978,126 @@ Para respostas estruturadas:
 - Defina um agente padrão robusto
 - Use configurações conservadoras
 - Documente qual é o padrão
+- Um padrão por tenant em multi-tenancy
 
 ❌ **Evite:**
-- Múltiplos defaults (só pode haver um)
+- Múltiplos defaults por tenant (só pode haver um)
 - Agente experimental como default
 - Trocar default frequentemente em produção
 
+### 7. Multi-Tenancy
+
+✅ **Faça:**
+- Sempre especifique tenant_id ao criar recursos
+- Use isolamento de tenant para dados sensíveis
+- Configure quotas adequadas por tenant
+- Monitore uso individual de cada tenant
+- Documente relacionamentos entre tenants e agentes
+
+❌ **Evite:**
+- Compartilhar vector stores entre tenants sem necessidade
+- Expor dados de um tenant para outro
+- Quotas globais (use por tenant)
+- Misturar dados de produção e teste no mesmo tenant
+
+### 8. Segurança
+
+✅ **Faça:**
+- Use sessões ou API keys (não ADMIN_TOKEN legado)
+- Implemente RBAC apropriado (viewer, admin, super-admin)
+- Rotacione credenciais periodicamente
+- Monitore audit logs regularmente
+- Configure rate limiting por tenant
+- Use HTTPS em produção
+- Valide permissões antes de operações sensíveis
+
+❌ **Evite:**
+- Compartilhar API keys entre usuários
+- Dar permissões de super-admin desnecessariamente
+- Ignorar audit trails
+- Expor secrets em logs ou respostas
+- Rate limits muito permissivos
+
+### 9. Observabilidade
+
+✅ **Faça:**
+- Configure Prometheus + Grafana
+- Estabeleça alertas para métricas críticas
+- Monitore custos por agente e tenant
+- Rastreie erros com trace IDs
+- Configure log aggregation (Loki, CloudWatch, etc)
+- Revise dashboards regularmente
+
+❌ **Evite:**
+- Produção sem monitoramento
+- Ignorar alertas de performance
+- Logs excessivos em produção
+- PII em logs (use redação automática)
+
+### 10. Performance
+
+✅ **Faça:**
+- Configure max_output_tokens adequadamente
+- Use models mais leves quando possível (gpt-4o-mini)
+- Otimize vector stores (remova duplicatas)
+- Configure caching quando apropriado
+- Monitore latência por agente
+- Execute load tests antes de mudanças grandes
+
+❌ **Evite:**
+- max_output_tokens muito alto sem necessidade
+- Vector stores gigantes não otimizados
+- Múltiplas chamadas sequenciais (use batch quando possível)
+- Modelos caros para tarefas simples
+
 ## Solução de Problemas
 
-### Erro: "Invalid admin token"
+### Erro: "Unauthorized" ou "Invalid session"
 
-**Causa:** Token não configurado ou incorreto
+**Causa:** Sessão expirada ou não autenticado
 
 **Solução:**
 ```bash
-# Verifique o token no .env
+# Fazer login novamente
+curl -i -c cookies.txt -X POST "http://seu-dominio/admin-api.php?action=login" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "seu@email.com", "password": "sua-senha"}'
+
+# Ou gerar uma nova chave de API
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=generate_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Minha Chave", "expires_at": "2025-12-31T23:59:59Z"}'
+```
+
+### Erro: "Forbidden" ou "Permission denied"
+
+**Causa:** Usuário não tem permissão para a operação (RBAC)
+
+**Solução:**
+```bash
+# Verificar suas permissões
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=current_user"
+
+# Solicitar ao super-admin que atualize suas permissões
+# Roles disponíveis: viewer (leitura), admin (leitura+escrita), super-admin (todos)
+```
+
+### Erro: "Invalid admin token" (Legado)
+
+**Causa:** Token legado ADMIN_TOKEN não configurado ou incorreto
+
+**Solução:**
+```bash
+# ⚠️ ADMIN_TOKEN está depreciado. Migre para sessões ou API keys!
+
+# Se ainda precisar usar (temporário):
 grep ADMIN_TOKEN .env
 
 # Certifique-se de que tem pelo menos 32 caracteres
 # Use o header correto:
 curl -H "Authorization: Bearer SEU_TOKEN_AQUI" ...
+
+# Recomendado: Migrar para autenticação moderna
 ```
 
 ### Erro: "Agent not found"
@@ -696,7 +1156,7 @@ grep DATABASE_PATH .env
 
 ### Admin UI não carrega
 
-**Causa:** Apache/Nginx não está servindo arquivos estáticos
+**Causa:** Apache/Nginx não está servindo arquivos estáticos ou redirecionamento incorreto
 
 **Solução:**
 ```apache
@@ -708,22 +1168,221 @@ grep DATABASE_PATH .env
 </Directory>
 ```
 
+```nginx
+# Nginx - configuração correta
+location /public/admin/ {
+    alias /var/www/html/public/admin/;
+    index index.html;
+    try_files $uri $uri/ /public/admin/index.html;
+}
+
+location /admin-api.php {
+    fastcgi_pass php-fpm:9000;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    include fastcgi_params;
+}
+```
+
+### Erro: "Tenant not found" ou "Invalid tenant"
+
+**Causa:** Requisição de usuário vinculado a tenant que não existe ou foi desativado
+
+**Solução:**
+```bash
+# Verificar tenant do usuário
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=current_user"
+
+# Verificar status do tenant
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=get_tenant&id=TENANT_ID"
+
+# Reativar tenant (super-admin apenas)
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=update_tenant&id=TENANT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "active"}'
+```
+
+### Erro: "Quota exceeded"
+
+**Causa:** Tenant atingiu limite de uso configurado
+
+**Solução:**
+```bash
+# Verificar uso atual
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=get_tenant_usage&tenant_id=TENANT_ID"
+
+# Aumentar quotas (super-admin ou billing admin)
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=set_tenant_quota" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenant_id": "TENANT_ID",
+    "quotas": {
+      "max_tokens_per_month": 2000000,
+      "max_requests_per_day": 20000
+    }
+  }'
+```
+
+### Webhook não está sendo recebido
+
+**Causa:** URL incorreta, SSL inválido, ou assinatura não validada
+
+**Solução:**
+```bash
+# 1. Verificar registro do webhook
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=list_webhook_subscribers"
+
+# 2. Verificar logs de webhook
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=list_webhook_logs&subscriber_id=SUB_ID"
+
+# 3. Testar webhook manualmente
+curl -X POST "https://seu-dominio/webhooks/openai.php" \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Signature: test" \
+  -d '{"event": "test"}'
+
+# 4. Verificar que a URL é acessível publicamente (HTTPS obrigatório)
+```
+
+### Job queue está congestionada
+
+**Causa:** Worker não está rodando ou há muitos jobs falhando
+
+**Solução:**
+```bash
+# Verificar status do worker
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=health"
+
+# Ver jobs pendentes
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=list_jobs&status=pending"
+
+# Iniciar worker
+php scripts/worker.php
+
+# Ou via systemd
+sudo systemctl start chatbot-worker
+sudo systemctl status chatbot-worker
+
+# Reprocessar jobs falhados
+curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=retry_job&id=JOB_ID"
+
+# Verificar dead letter queue
+curl -b cookies.txt "http://seu-dominio/admin-api.php?action=list_dead_letter_queue"
+```
+
 ## Recursos Adicionais
 
 ### Documentação Relacionada
 
+**Primeiros Passos:**
 - [README.md](../README.md) - Visão geral do projeto
-- [PHASE1_DB_AGENT.md](PHASE1_DB_AGENT.md) - Detalhes técnicos da implementação
-- [PHASE2_ADMIN_UI.md](PHASE2_ADMIN_UI.md) - Documentação completa do Admin UI
-- [customization-guide.md](customization-guide.md) - Guia de customização (English)
-- [api.md](api.md) - Referência completa da API
+- [QUICK_START.md](QUICK_START.md) - Guia de início rápido
+- [INSTALLATION_WIZARD.md](INSTALLATION_WIZARD.md) - Instalação via interface web
 
-### Suporte
+**Arquitetura e Desenvolvimento:**
+- [PROJECT_DESCRIPTION.md](PROJECT_DESCRIPTION.md) - Descrição completa do projeto
+- [FEATURES.md](FEATURES.md) - Lista completa de features
+- [PHASE1_DB_AGENT.md](PHASE1_DB_AGENT.md) - Agentes e banco de dados
+- [PHASE2_ADMIN_UI.md](PHASE2_ADMIN_UI.md) - Interface administrativa
+- [PHASE3_WORKERS_WEBHOOKS.md](PHASE3_WORKERS_WEBHOOKS.md) - Workers e RBAC
+- [api.md](api.md) - Referência completa da API (37 endpoints)
+- [customization-guide.md](customization-guide.md) - Guia de customização (English)
+
+**Recursos Avançados:**
+- [MULTI_TENANCY.md](MULTI_TENANCY.md) - Arquitetura multi-tenant
+- [WHATSAPP_INTEGRATION.md](WHATSAPP_INTEGRATION.md) - Integração WhatsApp
+- [LEADSENSE_QUICKSTART.md](LEADSENSE_QUICKSTART.md) - LeadSense CRM
+- [LEADSENSE_CRM.md](LEADSENSE_CRM.md) - Pipeline visual de CRM
+- [HYBRID_GUARDRAILS.md](HYBRID_GUARDRAILS.md) - Structured outputs
+- [prompt_builder_overview.md](prompt_builder_overview.md) - Construtor de prompts
+- [WEBHOOK_EXTENSIBILITY.md](WEBHOOK_EXTENSIBILITY.md) - Webhooks customizados
+
+**Segurança e Compliance:**
+- [SECURITY_MODEL.md](SECURITY_MODEL.md) - Modelo de segurança
+- [RESOURCE_AUTHORIZATION.md](RESOURCE_AUTHORIZATION.md) - Autorização de recursos
+- [COMPLIANCE_OPERATIONS.md](COMPLIANCE_OPERATIONS.md) - GDPR/LGPD compliance
+- [AUDIT_TRAILS.md](AUDIT_TRAILS.md) - Auditoria completa
+
+**Operações e Produção:**
+- [OPERATIONS_GUIDE.md](OPERATIONS_GUIDE.md) - Guia operacional
+- [deployment.md](deployment.md) - Deploy em produção
+- [OBSERVABILITY.md](OBSERVABILITY.md) - Monitoramento e métricas
+- [ops/backup_restore.md](ops/backup_restore.md) - Backup e restore
+- [ops/disaster_recovery.md](ops/disaster_recovery.md) - Disaster recovery
+- [ops/secrets_management.md](ops/secrets_management.md) - Gestão de secrets
+
+**Billing e Monetização:**
+- [BILLING_METERING.md](BILLING_METERING.md) - Sistema de billing
+- [MULTI_TENANT_BILLING.md](MULTI_TENANT_BILLING.md) - Billing multi-tenant
+- [WHITELABEL_PUBLISHING.md](WHITELABEL_PUBLISHING.md) - Publicação whitelabel
+
+### Exemplos de Código
+
+```bash
+# Exemplos completos no repositório
+examples/
+├── basic-integration.html      # Integração básica
+├── advanced-agent.js           # Agente com todas features
+├── multi-tenant-setup.sh       # Setup multi-tenant
+├── leadsense-config.json       # Configuração LeadSense
+└── whatsapp-agent.json         # Agente WhatsApp completo
+```
+
+### Scripts Úteis
+
+```bash
+# Operacionais
+scripts/worker.php              # Background worker
+scripts/db_backup.sh            # Backup automático
+scripts/db_restore.sh           # Restore de backup
+scripts/run_migrations.php      # Executar migrations
+scripts/smoke_test.sh           # Smoke tests
+
+# Desenvolvimento
+tests/run_tests.php             # Suite de testes (183 tests)
+composer run analyze            # PHPStan static analysis
+npm run lint                    # ESLint frontend
+
+# Load testing
+tests/load/chat_api.js          # K6 load test
+```
+
+### Suporte e Comunidade
 
 - 📖 [Documentação Completa](../docs/)
 - 🐛 [Reportar Issues](https://github.com/suporterfid/gpt-chatbot-boilerplate/issues)
 - 💬 [Discussões](https://github.com/suporterfid/gpt-chatbot-boilerplate/discussions)
+- 🤝 [Guia de Contribuição](CONTRIBUTING.md)
+- 📊 [Roadmap Público](https://github.com/suporterfid/gpt-chatbot-boilerplate/projects)
+- ⭐ [Dar uma Estrela](https://github.com/suporterfid/gpt-chatbot-boilerplate)
+
+### Dicas de Produção
+
+**Antes de ir para produção:**
+- ✅ Use MySQL/PostgreSQL (não SQLite)
+- ✅ Configure backup automático (`scripts/db_backup.sh`)
+- ✅ Habilite monitoramento (Prometheus + Grafana)
+- ✅ Configure HTTPS com certificado válido
+- ✅ Inicie o background worker (`scripts/worker.php`)
+- ✅ Configure rate limiting adequado
+- ✅ Rode smoke tests (`scripts/smoke_test.sh`)
+- ✅ Execute load tests (`k6 run tests/load/chat_api.js`)
+- ✅ Configure alertas no Grafana
+- ✅ Documente seu disaster recovery plan
+- ✅ Configure rotação de logs
+- ✅ Revise segurança com [SECURITY_MODEL.md](SECURITY_MODEL.md)
+
+**Métricas recomendadas para monitorar:**
+- 📊 Latência P95 e P99 por agente
+- 💰 Custo por tenant (tokens consumidos)
+- ❌ Taxa de erro e tipos de erro
+- 👥 Usuários ativos e conversas por dia
+- 🔍 Taxa de uso de ferramentas (file_search, etc)
+- ⚡ Health do worker e jobs pendentes
+- 💾 Uso de storage (vector stores, arquivos)
+- 🔐 Tentativas de autenticação falhadas
 
 ---
 
 **Desenvolvido com ❤️ pela comunidade open source**
+
+Se este guia foi útil, considere dar uma ⭐ no [repositório](https://github.com/suporterfid/gpt-chatbot-boilerplate)!

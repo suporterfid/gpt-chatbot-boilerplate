@@ -4651,7 +4651,7 @@ async function loadTemplates() {
         }
         
         const data = await response.json();
-        displayTemplates(data || []);
+        displayTemplates(data.data || []);
     } catch (error) {
         console.error('Error loading templates:', error);
         document.getElementById('templates-list').innerHTML = `
@@ -4990,7 +4990,7 @@ async function loadConsents() {
         }
         
         const data = await response.json();
-        displayConsents(data || []);
+        displayConsents(data.data || []);
     } catch (error) {
         console.error('Error loading consents:', error);
         document.getElementById('consents-list').innerHTML = `
@@ -5083,7 +5083,8 @@ async function viewConsent(consentId) {
             throw new Error('Failed to load consent');
         }
         
-        const consent = await response.json();
+        const result = await response.json();
+        const consent = result.data;
         
         const modalContent = `
             <div class="consent-details">
@@ -5150,7 +5151,8 @@ async function viewConsentAudit(consentId) {
             throw new Error('Failed to load consent audit');
         }
         
-        const auditLog = await response.json();
+        const result = await response.json();
+        const auditLog = result.data || [];
         
         const modalContent = `
             <div class="audit-log">

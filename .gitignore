@@ -1,5 +1,5 @@
 .env
-logs/chatbot.log
+logs/
 
 # Database files (Phase 1)
 data/
