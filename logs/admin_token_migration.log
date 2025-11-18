@@ -1,1 +1,0 @@
-[2025-11-18T17:12:10+00:00] [ERROR] No ADMIN_TOKEN value detected in .env. Re-run with --force to continue without a legacy token.
