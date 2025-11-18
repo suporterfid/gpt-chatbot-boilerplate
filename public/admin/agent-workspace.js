@@ -52,6 +52,7 @@
     function getDefaultFormState() {
         return {
             name: '',
+            slug: '',
             description: '',
             is_default: false,
             status: '',
@@ -167,6 +168,7 @@
             wizardState.data = {
                 ...getDefaultFormState(),
                 ...agentData,
+                slug: agentData.vanity_path || agentData.slug || '',
                 temperature: agentData.temperature !== null && agentData.temperature !== undefined ? String(agentData.temperature) : '',
                 top_p: agentData.top_p !== null && agentData.top_p !== undefined ? String(agentData.top_p) : '',
                 max_output_tokens: agentData.max_output_tokens !== null && agentData.max_output_tokens !== undefined ? String(agentData.max_output_tokens) : '',
@@ -1029,6 +1031,11 @@
                         <small class="form-help">Este nome será exibido nas listagens e integrações.</small>
                     </div>
                     <div class="form-group">
+                        <label class="form-label" for="wizard-slug">Slug (identificador único)</label>
+                        <input id="wizard-slug" data-field="slug" type="text" class="form-input" placeholder="Ex.: atendimento-premium" value="${escapeHtml(data.slug || data.vanity_path || '')}" pattern="[a-z0-9-]{3,64}" />
+                        <small class="form-help">3-64 caracteres: letras minúsculas, números e hífens. Deixe em branco para não usar slug.</small>
+                    </div>
+                    <div class="form-group">
                         <label class="form-label" for="wizard-description">Descrição</label>
                         <textarea id="wizard-description" data-field="description" class="form-textarea" rows="4" placeholder="Resumo da missão do agente">${escapeHtml(data.description)}</textarea>
                     </div>
@@ -1211,6 +1218,10 @@
             if (element.tagName === 'SELECT' && element.dataset.fieldType === 'multiselect') {
                 element.addEventListener('change', handleFieldChange);
             }
+            // Add blur event for slug field to sanitize
+            if (element.dataset.field === 'slug') {
+                element.addEventListener('blur', handleFieldChange);
+            }
         });
 
         body.addEventListener('click', event => {
@@ -1280,6 +1291,12 @@
         } else {
             value = element.value;
         }
+        
+        // Sanitize slug field on blur
+        if (field === 'slug' && event.type === 'blur') {
+            value = sanitizeSlug(value);
+            element.value = value;
+        }
 
         wizardState.data[field] = value;
 
@@ -1290,6 +1307,30 @@
         if (wizardState.stepIndex === wizardSteps.length - 1) {
             updateReviewSummary();
         }
+    }
+    
+    function sanitizeSlug(value) {
+        if (!value || typeof value !== 'string') {
+            return '';
+        }
+        
+        let slug = value.trim();
+        if (slug === '') {
+            return '';
+        }
+        
+        // Convert to lowercase
+        slug = slug.toLowerCase();
+        // Replace spaces with hyphens
+        slug = slug.replace(/\s+/g, '-');
+        // Remove any characters that aren't lowercase letters, numbers, or hyphens
+        slug = slug.replace(/[^a-z0-9-]/g, '');
+        // Replace multiple consecutive hyphens with single hyphen
+        slug = slug.replace(/-+/g, '-');
+        // Remove leading and trailing hyphens
+        slug = slug.replace(/^-+|-+$/g, '');
+        
+        return slug;
     }
 
     function handleOpenPromptBuilder() {
@@ -1356,6 +1397,15 @@
             system_message: data.system_message ? data.system_message : null,
             is_default: Boolean(data.is_default)
         };
+        
+        // Include slug if provided (will be sent as vanity_path to backend)
+        const slug = data.slug?.trim() || data.vanity_path?.trim();
+        if (slug) {
+            payload.vanity_path = slug;
+        } else {
+            // Explicitly set to null to clear if empty
+            payload.vanity_path = null;
+        }
 
         const temperature = data.temperature !== '' && data.temperature !== null && data.temperature !== undefined ? Number(data.temperature) : null;
         const topP = data.top_p !== '' && data.top_p !== null && data.top_p !== undefined ? Number(data.top_p) : null;
@@ -1480,8 +1530,10 @@
             ? `${connectedChannels}/${channels.length} canais conectados`
             : 'Nenhum canal configurado';
 
+        const slug = data.slug || data.vanity_path;
         const rows = [
             { label: 'Nome', value: data.name || '—' },
+            { label: 'Slug', value: slug ? `<code>${escapeHtml(slug)}</code>` : '—' },
             { label: 'Descrição', value: data.description || '—' },
             { label: 'API', value: data.api_type || '—' },
             { label: 'Modelo', value: data.model || 'Padrão' },

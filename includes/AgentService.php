@@ -38,6 +38,20 @@ class AgentService {
         // Generate UUID
         $id = $this->generateUUID();
         
+        // Process vanity_path/slug if provided
+        $vanityPath = null;
+        if (array_key_exists('vanity_path', $data) || array_key_exists('slug', $data)) {
+            $rawSlug = $data['vanity_path'] ?? $data['slug'] ?? null;
+            if ($rawSlug !== null && trim($rawSlug) !== '') {
+                $vanityPath = $this->sanitizeVanityPath($rawSlug);
+                if (!preg_match('/^[a-z0-9-]{3,64}$/', $vanityPath)) {
+                    throw new Exception('Invalid slug format: must be 3-64 characters, lowercase letters, numbers and hyphens only', 400);
+                }
+                // Check uniqueness
+                $this->validateVanityPathUniqueness($vanityPath, null);
+            }
+        }
+        
         // Prepare data
         $now = date('c'); // ISO 8601 format
         
@@ -45,8 +59,8 @@ class AgentService {
             id, name, description, api_type, prompt_id, prompt_version,
             system_message, model, temperature, top_p, max_output_tokens,
             tools_json, vector_store_ids_json, max_num_results, response_format_json, is_default,
-            tenant_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            vanity_path, tenant_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $params = [
             $id,
@@ -65,6 +79,7 @@ class AgentService {
             isset($data['max_num_results']) ? (int)$data['max_num_results'] : null,
             isset($data['response_format']) ? json_encode($data['response_format']) : null,
             isset($data['is_default']) ? (int)(bool)$data['is_default'] : 0,
+            $vanityPath,
             $data['tenant_id'] ?? $this->tenantId,
             $now,
             $now
@@ -162,6 +177,24 @@ class AgentService {
         if (array_key_exists('response_format', $data)) {
             $updates[] = 'response_format_json = ?';
             $params[] = isset($data['response_format']) ? json_encode($data['response_format']) : null;
+        }
+        
+        // Handle vanity_path/slug
+        if (array_key_exists('vanity_path', $data) || array_key_exists('slug', $data)) {
+            $rawSlug = $data['vanity_path'] ?? $data['slug'] ?? null;
+            if ($rawSlug === null || (is_string($rawSlug) && trim($rawSlug) === '')) {
+                $updates[] = 'vanity_path = ?';
+                $params[] = null;
+            } else {
+                $sanitizedSlug = $this->sanitizeVanityPath($rawSlug);
+                if (!preg_match('/^[a-z0-9-]{3,64}$/', $sanitizedSlug)) {
+                    throw new Exception('Invalid slug format: must be 3-64 characters, lowercase letters, numbers and hyphens only', 400);
+                }
+                // Check uniqueness (excluding current agent)
+                $this->validateVanityPathUniqueness($sanitizedSlug, $id);
+                $updates[] = 'vanity_path = ?';
+                $params[] = $sanitizedSlug;
+            }
         }
         
         // Always update updated_at
@@ -677,6 +710,60 @@ class AgentService {
     // ============================================================
     // Whitelabel Publishing Methods
     // ============================================================
+    
+    /**
+     * Get agent by slug (vanity_path)
+     * 
+     * @param string $slug Agent slug/vanity path
+     * @return array|null Agent data or null if not found
+     */
+    public function getAgentBySlug($slug) {
+        $sql = "SELECT * FROM agents WHERE vanity_path = ?";
+        $params = [$slug];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $agent = $this->db->getOne($sql, $params);
+        
+        if ($agent) {
+            return $this->normalizeAgent($agent);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Validate vanity path uniqueness
+     * 
+     * @param string $vanityPath Vanity path to validate
+     * @param string|null $excludeId Agent ID to exclude from check (for updates)
+     * @throws Exception If vanity path is not unique
+     */
+    private function validateVanityPathUniqueness($vanityPath, $excludeId = null) {
+        $sql = "SELECT id FROM agents WHERE vanity_path = ?";
+        $params = [$vanityPath];
+        
+        if ($excludeId !== null) {
+            $sql .= " AND id != ?";
+            $params[] = $excludeId;
+        }
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $existing = $this->db->getOne($sql, $params);
+        
+        if ($existing) {
+            throw new Exception('Slug already in use', 409);
+        }
+    }
     
     /**
      * Get agent by public ID
