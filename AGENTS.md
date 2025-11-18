@@ -533,12 +533,31 @@ When opening issues:
 2. Authenticate with admin token
 3. Click "Create Agent" and configure:
    - Name, description, API type
+   - **Slug (optional):** Unique identifier for accessing the agent (e.g., `customer-support`)
    - Model (gpt-4o, gpt-4o-mini, etc.)
    - Temperature (0-2)
    - Tools (file_search, etc.)
    - Vector store IDs for knowledge bases
    - System message or prompt ID
 4. Set as default if desired
+
+**Agent Slug Feature:**
+
+The slug (also known as `vanity_path` internally) provides a human-readable, unique identifier for agents. This is useful for:
+- Creating friendly URLs for agent access
+- Referencing agents in integrations without using UUIDs
+- Organizing and identifying agents in multi-tenant environments
+
+**Slug Format Rules:**
+- 3-64 characters long
+- Lowercase letters (a-z), numbers (0-9), and hyphens (-) only
+- Must be unique across all agents in the same tenant
+- Optional field (agents can be created without a slug)
+
+**Example slugs:**
+- `customer-support`
+- `sales-assistant-2024`
+- `technical-help`
 
 **Via Admin API:**
 ```
@@ -548,6 +567,7 @@ curl -X POST "http://localhost/admin-api.php?action=create_agent" \
   -d '{
     "name": "Knowledge Base Agent",
     "description": "Searches company knowledge base",
+    "vanity_path": "knowledge-base",
     "api_type": "responses",
     "model": "gpt-4o-mini",
     "temperature": 0.7,
@@ -556,6 +576,13 @@ curl -X POST "http://localhost/admin-api.php?action=create_agent" \
     "prompt_id": "prompt_xyz789",
     "is_default": false
   }'
+```
+
+**Getting Agent by Slug:**
+```php
+// PHP example
+$agentService = new AgentService($db);
+$agent = $agentService->getAgentBySlug('knowledge-base');
 ```
 
 ### Frontend Integration Contract
