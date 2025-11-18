@@ -52,6 +52,7 @@
     function getDefaultFormState() {
         return {
             name: '',
+            slug: '',
             description: '',
             is_default: false,
             status: '',
@@ -1027,6 +1028,11 @@
                         <label class="form-label" for="wizard-name">Nome *</label>
                         <input id="wizard-name" data-field="name" type="text" class="form-input" placeholder="Ex.: Atendimento Premium" value="${escapeHtml(data.name)}" required />
                         <small class="form-help">Este nome será exibido nas listagens e integrações.</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="wizard-slug">Slug (identificador único)</label>
+                        <input id="wizard-slug" data-field="slug" type="text" class="form-input" placeholder="Ex.: atendimento-premium" value="${escapeHtml(data.slug)}" pattern="[a-z0-9-]{1,64}" />
+                        <small class="form-help">URL amigável para acessar este agente. Use apenas letras minúsculas, números e hífens (opcional).</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="wizard-description">Descrição</label>
