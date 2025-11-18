@@ -42,15 +42,16 @@ class AgentService {
         $now = date('c'); // ISO 8601 format
         
         $sql = "INSERT INTO agents (
-            id, name, description, api_type, prompt_id, prompt_version,
+            id, name, slug, description, api_type, prompt_id, prompt_version,
             system_message, model, temperature, top_p, max_output_tokens,
             tools_json, vector_store_ids_json, max_num_results, response_format_json, is_default,
             tenant_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         
         $params = [
             $id,
             $data['name'],
+            $data['slug'] ?? null,
             $data['description'] ?? null,
             $data['api_type'] ?? 'responses',
             $data['prompt_id'] ?? null,
@@ -94,14 +95,17 @@ class AgentService {
      * Update an existing agent
      */
     public function updateAgent($id, $data) {
-        // Validate data
-        $this->validateAgentData($data, false);
-        
         // Check if agent exists
         $existing = $this->getAgent($id);
         if (!$existing) {
             throw new Exception('Agent not found', 404);
         }
+        
+        // Add agent ID to data for validation
+        $data['id'] = $id;
+        
+        // Validate data
+        $this->validateAgentData($data, false);
         
         $updates = [];
         $params = [];
@@ -110,6 +114,10 @@ class AgentService {
         if (isset($data['name'])) {
             $updates[] = 'name = ?';
             $params[] = $data['name'];
+        }
+        if (array_key_exists('slug', $data)) {
+            $updates[] = 'slug = ?';
+            $params[] = $data['slug'];
         }
         if (array_key_exists('description', $data)) {
             $updates[] = 'description = ?';
@@ -354,6 +362,38 @@ class AgentService {
             }
             if (strlen($data['name']) > 255) {
                 throw new Exception('Agent name is too long (max 255 characters)', 400);
+            }
+        }
+        
+        // Validate slug if provided
+        if (isset($data['slug']) && $data['slug'] !== null && $data['slug'] !== '') {
+            // Use SecurityValidator for slug validation
+            require_once __DIR__ . '/SecurityValidator.php';
+            try {
+                SecurityValidator::validateAgentSlug($data['slug']);
+            } catch (Exception $e) {
+                throw new Exception('Invalid slug format. Use only lowercase letters, numbers, and hyphens (1-64 characters)', 400);
+            }
+            
+            // Check for slug uniqueness
+            $checkSql = "SELECT COUNT(*) as count FROM agents WHERE slug = ?";
+            $checkParams = [$data['slug']];
+            
+            // If updating, exclude the current agent
+            if (!$isCreate && isset($data['id'])) {
+                $checkSql .= " AND id != ?";
+                $checkParams[] = $data['id'];
+            }
+            
+            // Add tenant filter if tenant context is set
+            if ($this->tenantId !== null) {
+                $checkSql .= " AND tenant_id = ?";
+                $checkParams[] = $this->tenantId;
+            }
+            
+            $result = $this->db->getOne($checkSql, $checkParams);
+            if ($result && $result['count'] > 0) {
+                throw new Exception('This slug is already in use', 400);
             }
         }
         

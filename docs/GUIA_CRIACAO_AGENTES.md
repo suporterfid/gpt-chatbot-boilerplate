@@ -193,6 +193,13 @@ Clique no botão **"Create Agent"** ou **"Create Your First Agent"** (se não ho
 
 **Campos Opcionais:**
 
+- **Slug** (Identificador URL): Slug único para acessar o agente
+  - Formato: apenas letras minúsculas, números e hífens
+  - Exemplo: "customer-support", "assistente-vendas"
+  - Usado para criar URLs amigáveis
+  - Deve ser único dentro do tenant
+  - Máximo 64 caracteres
+
 - **Description** (Descrição): Breve descrição do propósito do agente
   - Exemplo: "Atende consultas de clientes usando nossa base de conhecimento"
 
@@ -280,6 +287,7 @@ curl -b cookies.txt -X POST "http://seu-dominio/admin-api.php?action=create_agen
   -H "Content-Type: application/json" \
   -d '{
     "name": "Customer Support Agent",
+    "slug": "customer-support",
     "description": "Atende consultas de clientes usando nossa base de conhecimento",
     "api_type": "responses",
     "model": "gpt-4o-mini",
@@ -296,6 +304,7 @@ curl -X POST "http://seu-dominio/admin-api.php?action=create_agent" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Customer Support Agent",
+    "slug": "customer-support",
     "description": "Atende consultas de clientes usando nossa base de conhecimento",
     "api_type": "responses",
     "model": "gpt-4o-mini",
@@ -314,6 +323,7 @@ curl -X POST "http://seu-dominio/admin-api.php?action=create_agent" \
   "data": {
     "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "name": "Customer Support Agent",
+    "slug": "customer-support",
     "description": "Atende consultas de clientes usando nossa base de conhecimento",
     "api_type": "responses",
     "model": "gpt-4o-mini",
