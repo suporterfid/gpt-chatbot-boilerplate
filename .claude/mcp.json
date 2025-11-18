@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\alexa\\Dropbox\\workspace\\dev\\gpt-chatbot-boilerplate"]
+    },
+    "git": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-git", "--repository", "C:\\Users\\alexa\\Dropbox\\workspace\\dev\\gpt-chatbot-boilerplate"]
+    }
+  }
+}
