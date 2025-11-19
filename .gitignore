@@ -1,10 +1,20 @@
+# Environment files - NEVER commit credentials
 .env
+.env.local
+.env.production
+.env.*.local
+*.env
+
+# Logs - may contain sensitive information
 logs/
+*.log
 
 # Database files (Phase 1)
 data/
 *.db
 *.db-journal
+*.sqlite
+*.sqlite3
 
 # Composer dependencies
 vendor/
@@ -33,3 +43,21 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 *.pyo
+
+# Secrets and sensitive files
+secrets/
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+
+# Backup files
+*.bak
+*.backup
+*.sql.gz
+*.dump
+
+# User uploads
+uploads/
+tmp/

@@ -2,11 +2,49 @@
 
 This guide covers various deployment scenarios for the GPT Chatbot Boilerplate, from development to production environments.
 
+## 🚨 Production Deployment - Quick Links
+
+**Before deploying to production, review these critical documents:**
+
+- **[PRODUCTION_SECURITY_CHECKLIST.md](../PRODUCTION_SECURITY_CHECKLIST.md)** - ⚠️ **MANDATORY** - Complete this checklist first
+- **[PRODUCTION_RELEASE_NOTES.md](../PRODUCTION_RELEASE_NOTES.md)** - Production deployment guide
+- **[.env.production](../.env.production)** - Production environment template
+- **[docker-compose.prod.yml](../docker-compose.prod.yml)** - Production Docker configuration
+
+### Production Quick Start (10 minutes)
+
+```bash
+# 1. Copy production template
+cp .env.production .env
+
+# 2. Generate encryption keys
+echo "AUDIT_ENC_KEY=$(openssl rand -base64 32)" >> .env
+echo "WEBHOOK_GATEWAY_SECRET=$(openssl rand -hex 32)" >> .env
+
+# 3. Configure required variables in .env:
+#    - OPENAI_API_KEY (required)
+#    - APP_ENV=production (required)
+#    - CORS_ORIGINS=https://yourdomain.com (required)
+#    - DATABASE_URL (use managed database service)
+#    - Strong database passwords (min 20 chars)
+
+# 4. Deploy with production configuration
+docker-compose -f docker-compose.prod.yml up -d
+
+# 5. Complete security checklist
+# See: PRODUCTION_SECURITY_CHECKLIST.md
+```
+
+**⚠️ WARNING:** The standard `docker-compose.yml` file is for **DEVELOPMENT ONLY**. Always use `docker-compose.prod.yml` for production deployments.
+
+---
+
 ## Table of Contents
 
+- [Production Deployment Quick Start](#production-deployment-quick-start)
 - [Web-Based Installation](#web-based-installation)
 - [Development Setup](#development-setup)
-- [Production Deployment](#production-deployment)
+- [Production Deployment (Detailed)](#production-deployment)
 - [Docker Deployment](#docker-deployment)
 - [MySQL Database Setup](#mysql-database-setup)
 - [Cloud Deployment](#cloud-deployment)

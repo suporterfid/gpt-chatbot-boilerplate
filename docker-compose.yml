@@ -1,3 +1,17 @@
+# Development Docker Compose Configuration
+#
+# ⚠️  WARNING: This configuration is for DEVELOPMENT ONLY
+# For production deployment, use docker-compose.prod.yml
+#
+# Security Notes:
+# - Default credentials are used (MUST change for production)
+# - Debug mode may be enabled
+# - Ports are exposed publicly
+# - No resource limits set
+# - No security hardening applied
+#
+# See: PRODUCTION_SECURITY_CHECKLIST.md before deploying to production
+
 services:
   chatbot:
     build: .
@@ -105,9 +119,17 @@ services:
       retries: 3
       start_period: 40s
 
+  # ⚠️  WARNING: This MySQL configuration is for DEVELOPMENT ONLY
+  # Production should use:
+  # - Managed database service (AWS RDS, Google Cloud SQL, etc.)
+  # - Strong, unique passwords (min 20 characters)
+  # - SSL/TLS encryption
+  # - Automated backups
+  # - No public port exposure
   mysql:
     image: mysql:8.0
     environment:
+      # ⚠️  INSECURE DEFAULT PASSWORDS - Change immediately!
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
       MYSQL_DATABASE: ${DB_NAME:-chatbot}
       MYSQL_USER: ${DB_USER:-chatbot}

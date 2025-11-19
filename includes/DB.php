@@ -7,10 +7,23 @@
 class DB {
     private $pdo;
     private $config;
-    
+    private $isProduction;
+
     public function __construct($config = []) {
         $this->config = $config;
+        // Determine if we're in production mode
+        $this->isProduction = ($config['app_env'] ?? 'development') === 'production';
         $this->connect();
+    }
+
+    /**
+     * Get safe error message for user display
+     */
+    private function getSafeErrorMessage(string $devMessage): string {
+        if ($this->isProduction) {
+            return 'A database error occurred. Please try again later.';
+        }
+        return $devMessage;
     }
     
     /**
@@ -57,7 +70,7 @@ class DB {
             return $stmt->fetchAll();
         } catch (PDOException $e) {
             error_log('Query failed: ' . $e->getMessage() . ' SQL: ' . $sql);
-            throw new Exception('Database query failed: ' . $e->getMessage(), 500);
+            throw new Exception($this->getSafeErrorMessage('Database query failed: ' . $e->getMessage()), 500);
         }
     }
     
@@ -76,7 +89,7 @@ class DB {
                 throw new Exception('Duplicate entry: record already exists', 409);
             }
 
-            throw new Exception('Database execute failed: ' . $e->getMessage(), 500);
+            throw new Exception($this->getSafeErrorMessage('Database execute failed: ' . $e->getMessage()), 500);
         }
     }
     
@@ -90,14 +103,14 @@ class DB {
             return $this->pdo->lastInsertId();
         } catch (PDOException $e) {
             error_log('Insert failed: ' . $e->getMessage() . ' SQL: ' . $sql);
-            
+
             // Check for unique constraint violation
-            if (strpos($e->getMessage(), 'UNIQUE constraint') !== false || 
+            if (strpos($e->getMessage(), 'UNIQUE constraint') !== false ||
                 strpos($e->getMessage(), 'Duplicate entry') !== false) {
                 throw new Exception('Duplicate entry: record already exists', 409);
             }
-            
-            throw new Exception('Database insert failed: ' . $e->getMessage(), 500);
+
+            throw new Exception($this->getSafeErrorMessage('Database insert failed: ' . $e->getMessage()), 500);
         }
     }
     
@@ -112,7 +125,7 @@ class DB {
             return $result ?: null;
         } catch (PDOException $e) {
             error_log('GetOne failed: ' . $e->getMessage() . ' SQL: ' . $sql);
-            throw new Exception('Database query failed: ' . $e->getMessage(), 500);
+            throw new Exception($this->getSafeErrorMessage('Database query failed: ' . $e->getMessage()), 500);
         }
     }
     

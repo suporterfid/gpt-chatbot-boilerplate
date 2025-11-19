@@ -1,0 +1,224 @@
+# Production Docker Compose Configuration
+#
+# IMPORTANT PRODUCTION SETUP:
+# 1. Copy this to docker-compose.override.yml or use: docker-compose -f docker-compose.prod.yml up
+# 2. Set all secrets via environment variables or Docker secrets
+# 3. Configure reverse proxy (nginx/traefik) for SSL termination
+# 4. Use external database (managed MySQL/PostgreSQL) instead of local container
+# 5. Set up monitoring, logging aggregation, and backups
+# 6. Review and restrict CORS_ORIGINS to your specific domains
+# 7. Enable rate limiting at reverse proxy level
+
+version: '3.8'
+
+services:
+  chatbot:
+    build: .
+    ports:
+      # Do NOT expose directly in production - use reverse proxy
+      - "127.0.0.1:8088:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # OpenAI Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+
+      # API Configuration
+      - API_TYPE=${API_TYPE:-responses}
+
+      # Security - CRITICAL FOR PRODUCTION
+      - CORS_ORIGINS=${CORS_ORIGINS:?CORS_ORIGINS must be set to specific domains}
+      - VALIDATE_REFERER=${VALIDATE_REFERER:-true}
+      - API_KEY_VALIDATION=true
+      - SANITIZE_INPUT=true
+      - MAX_MESSAGE_LENGTH=4000
+
+      # Environment
+      - APP_ENV=production
+      - DEBUG=false
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-warning}
+      - LOG_FILE=/var/www/html/logs/chatbot.log
+      - LOG_FORMAT=json
+
+      # Database - Use external managed database in production
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
+      - DB_HOST=${DB_HOST:?DB_HOST is required}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME:?DB_NAME is required}
+      - DB_USER=${DB_USER:?DB_USER is required}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+
+      # Admin (Bootstrap only - remove after setup)
+      - ADMIN_ENABLED=true
+      - DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL:-}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-}
+
+      # Security Keys - MUST be generated and stored securely
+      - AUDIT_ENC_KEY=${AUDIT_ENC_KEY:?AUDIT_ENC_KEY is required}
+      - WEBHOOK_GATEWAY_SECRET=${WEBHOOK_GATEWAY_SECRET:-}
+
+      # Rate Limiting
+      - CHAT_RATE_LIMIT=${CHAT_RATE_LIMIT:-30}
+      - CHAT_RATE_WINDOW=${CHAT_RATE_WINDOW:-60}
+      - ADMIN_RATE_LIMIT_REQUESTS=${ADMIN_RATE_LIMIT_REQUESTS:-100}
+      - ADMIN_RATE_LIMIT_WINDOW=${ADMIN_RATE_LIMIT_WINDOW:-60}
+
+      # Features
+      - ENABLE_FILE_UPLOAD=${ENABLE_FILE_UPLOAD:-true}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-10485760}
+      - ALLOWED_FILE_TYPES=${ALLOWED_FILE_TYPES:-pdf,doc,docx,txt,jpg,png}
+
+      # Observability
+      - OBSERVABILITY_ENABLED=true
+      - TRACING_ENABLED=true
+      - METRICS_ENABLED=true
+
+      # Audit
+      - AUDIT_ENABLED=true
+      - AUDIT_ENCRYPT=true
+      - AUDIT_RETENTION_DAYS=${AUDIT_RETENTION_DAYS:-90}
+
+      # Webhooks
+      - WEBHOOK_GATEWAY_LOG_PAYLOADS=false
+      - WEBHOOK_VALIDATE_SIGNATURE=true
+
+      # Performance
+      - CACHE_ENABLED=${CACHE_ENABLED:-true}
+      - CACHE_TTL=${CACHE_TTL:-3600}
+      - COMPRESSION_ENABLED=true
+
+    volumes:
+      - ./logs:/var/www/html/logs
+      - ./data:/var/www/html/data
+      # Use named volume for uploads in production
+      - upload_data:/var/www/html/data/uploads
+
+    restart: always
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # MySQL - For development/testing only
+  # In production, use managed database service (AWS RDS, Google Cloud SQL, etc.)
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${DB_NAME:-chatbot}
+      MYSQL_USER: ${DB_USER:-chatbot}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+      - mysql_data:/var/lib/mysql
+    # Do NOT expose in production - use internal networking only
+    # ports:
+    #   - "3306:3306"
+    restart: always
+
+    # Security
+    security_opt:
+      - no-new-privileges:true
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Background worker for async jobs
+  worker:
+    build: .
+    command: php scripts/worker.php
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - APP_ENV=production
+      - DEBUG=false
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - JOBS_ENABLED=true
+    volumes:
+      - ./logs:/var/www/html/logs
+      - ./data:/var/www/html/data
+      - upload_data:/var/www/html/data/uploads
+    restart: always
+
+    security_opt:
+      - no-new-privileges:true
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  mysql_data:
+    driver: local
+  upload_data:
+    driver: local
+
+networks:
+  default:
+    driver: bridge

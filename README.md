@@ -2,9 +2,11 @@
 
 An open-source, production-ready boilerplate for embedding GPT-powered chatbots on any website. Features dual API support (Chat Completions + Responses API), real-time streaming, agent management, multi-tenancy, and comprehensive admin tools.
 
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PHP Version](https://img.shields.io/badge/PHP-8.0%2B-blue)](https://www.php.net/)
 [![Tests](https://img.shields.io/badge/tests-183%20passing-green)](tests/)
+[![Production Ready](https://img.shields.io/badge/production-ready-brightgreen.svg)](PRODUCTION_SECURITY_CHECKLIST.md)
 
 ## ✨ Key Features
 
@@ -21,7 +23,29 @@ An open-source, production-ready boilerplate for embedding GPT-powered chatbots 
 
 👉 **[See all features](docs/FEATURES.md)** for a complete overview.
 
-## 🚀 Quick Start
+## 🚨 Production Deployment
+
+**Deploying to production?** Start here:
+
+1. 📋 **[PRODUCTION_SECURITY_CHECKLIST.md](PRODUCTION_SECURITY_CHECKLIST.md)** - Complete this first (**MANDATORY**)
+2. 📖 **[PRODUCTION_RELEASE_NOTES.md](PRODUCTION_RELEASE_NOTES.md)** - v1.0.0 production deployment guide
+3. ⚙️ **[.env.production](.env.production)** - Production environment template
+4. 🐳 **[docker-compose.prod.yml](docker-compose.prod.yml)** - Production Docker configuration
+5. 📝 **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
+
+**Quick Production Deploy (10 minutes):**
+```bash
+cp .env.production .env
+# Configure .env with your production values (see checklist)
+docker-compose -f docker-compose.prod.yml up -d
+# Complete PRODUCTION_SECURITY_CHECKLIST.md
+```
+
+**⚠️ CRITICAL:** Never use `docker-compose.yml` (development) in production. Always use `docker-compose.prod.yml`.
+
+---
+
+## 🚀 Quick Start (Development)
 
 Get up and running in 5 minutes:
 
@@ -51,7 +75,7 @@ The wizard will guide you through:
 - 🔐 Admin credentials
 - 🎯 Optional features
 
-### 3. Manual Installation
+### 3. Manual Installation (Development)
 
 ```bash
 # Install PHP dependencies (recommended)
@@ -68,15 +92,18 @@ nano .env
 # ADMIN_ENABLED=true
 # DEFAULT_ADMIN_EMAIL=super.admin@example.com
 # DEFAULT_ADMIN_PASSWORD=generate_a_secure_password
+# APP_ENV=development (for local development)
 
 # Run database migrations
 php scripts/run_migrations.php
 
-# Start services
+# Start services (DEVELOPMENT ONLY)
 docker-compose up -d
 ```
 
 > **Note:** Composer is recommended for managing dependencies. If Composer is not installed, you can still run the project, but some development tools won't be available. [Install Composer](https://getcomposer.org/download/)
+
+> **⚠️ Production:** For production deployment, use `.env.production` template and `docker-compose.prod.yml` instead.
 
 ### 4. Access Your Chatbot
 
@@ -183,32 +210,41 @@ See [SECURITY_MODEL.md](docs/SECURITY_MODEL.md) for complete security documentat
 
 ## 🚀 Deployment
 
-### Production Checklist
+### Production Deployment (v1.0.0)
 
-- ✅ Use MySQL/PostgreSQL (not SQLite) for production
-- ✅ Configure automated backups with `scripts/db_backup.sh`
-- ✅ Set up monitoring with Prometheus/Grafana
-- ✅ Enable HTTPS with production Nginx config
-- ✅ Run background worker for async jobs
-- ✅ Configure rate limiting and security headers
-- ✅ Set up log aggregation (ELK, CloudWatch, etc.)
-- ✅ Test with load testing scripts (`tests/load/`)
+**Before deploying to production:**
 
-### Quick Deploy
+1. ✅ **Complete [PRODUCTION_SECURITY_CHECKLIST.md](PRODUCTION_SECURITY_CHECKLIST.md)** - All critical items mandatory
+2. ✅ Set `APP_ENV=production` and `DEBUG=false`
+3. ✅ Use MySQL/PostgreSQL (not SQLite) for production
+4. ✅ Change `CORS_ORIGINS` to specific domains (not `*`)
+5. ✅ Generate strong encryption keys (`openssl rand -base64 32`)
+6. ✅ Configure automated backups with `scripts/db_backup.sh`
+7. ✅ Set up monitoring with Prometheus/Grafana
+8. ✅ Enable HTTPS with production Nginx config
+9. ✅ Run background worker for async jobs
+10. ✅ Configure rate limiting and security headers
+11. ✅ Set up log aggregation (ELK, CloudWatch, etc.)
+12. ✅ Test with load testing scripts (`tests/load/`)
+
+### Production Quick Deploy
 
 ```bash
-# Docker deployment
+# Use production configuration
 docker-compose -f docker-compose.prod.yml up -d
 
 # Or with Kubernetes/Helm
 helm install chatbot ./helm/chatbot
 ```
 
-For detailed deployment instructions, see:
+### Essential Production Documentation
+
+- **[PRODUCTION_SECURITY_CHECKLIST.md](PRODUCTION_SECURITY_CHECKLIST.md)** - Security checklist (start here)
+- **[PRODUCTION_RELEASE_NOTES.md](PRODUCTION_RELEASE_NOTES.md)** - v1.0.0 release notes
 - **[Deployment Guide](docs/deployment.md)** - Complete deployment documentation
 - **[Operations Guide](docs/OPERATIONS_GUIDE.md)** - Daily operations and maintenance
-- **[Backup & Restore](docs/ops/backup_restore.md)** - Backup automation
-- **[Disaster Recovery](docs/ops/disaster_recovery.md)** - DR procedures
+- **[Security Model](docs/SECURITY_MODEL.md)** - Security architecture
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history
 
 ## 🧪 Testing
 

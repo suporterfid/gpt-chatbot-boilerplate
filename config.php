@@ -211,6 +211,9 @@ $defaultMaxNumResults = parseIntFromEnv($responsesMaxResultsEnv, 1, 200);
 $defaultResponseFormat = parseResponseFormatEnv($responsesResponseFormatEnv);
 
 $config = [
+    // Environment - determines error handling behavior
+    'app_env' => $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'development',
+
     // API Configuration - Choose between 'chat' or 'responses'
     'api_type' => $_ENV['API_TYPE'] ?? getenv('API_TYPE') ?: 'responses',
 
@@ -489,6 +492,19 @@ $config = [
         'production' => filter_var($_ENV['ASAAS_PRODUCTION'] ?? getenv('ASAAS_PRODUCTION') ?: 'false', FILTER_VALIDATE_BOOLEAN),
     ]
 ];
+
+// Set error reporting based on environment
+if ($config['app_env'] === 'production') {
+    // Production: Disable error display, log errors only
+    ini_set('display_errors', '0');
+    ini_set('display_startup_errors', '0');
+    error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
+} else {
+    // Development: Enable error display for debugging
+    ini_set('display_errors', '1');
+    ini_set('display_startup_errors', '1');
+    error_reporting(E_ALL);
+}
 
 // Load configuration security classes
 require_once __DIR__ . '/includes/ConfigValidator.php';
