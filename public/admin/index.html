@@ -14,63 +14,111 @@
                 <h1>GPT Admin</h1>
             </div>
             <nav class="sidebar-nav">
-                <a href="#agents" class="nav-link active" data-page="agents">
-                    <span class="nav-icon">🤖</span>
-                    Agents
+                <!-- Dashboard - Top level link (currently shows agents as overview) -->
+                <a href="#agents" class="nav-link active" data-page="agents" data-is-dashboard="true">
+                    <span class="nav-icon">🏠</span>
+                    Dashboard
                 </a>
-                <a href="#prompts" class="nav-link" data-page="prompts">
-                    <span class="nav-icon">📝</span>
-                    Prompts
-                </a>
-                <a href="#vector-stores" class="nav-link" data-page="vector-stores">
-                    <span class="nav-icon">📚</span>
-                    Vector Stores
-                </a>
-                <a href="leadsense-crm.html" class="nav-link">
-                    <span class="nav-icon">📊</span>
-                    LeadSense CRM
-                </a>
-                <a href="#whatsapp-templates" class="nav-link" data-page="whatsapp-templates">
-                    <span class="nav-icon">📱</span>
-                    WhatsApp Templates
-                </a>
-                <a href="#consent-management" class="nav-link" data-page="consent-management">
-                    <span class="nav-icon">✅</span>
-                    Consent Management
-                </a>
-              
-                <a href="#tenants" class="nav-link" data-page="tenants" data-super-admin-only="true">
-                    <span class="nav-icon">🏢</span>
-                    Tenants
-                </a>
-                <a href="#users" class="nav-link" data-page="users" data-super-admin-only="true">
-                    <span class="nav-icon">🧑‍🤝‍🧑</span>
-                    Users
-                </a>
-                <a href="#billing" class="nav-link" data-page="billing">
-                    <span class="nav-icon">💳</span>
-                    Billing
-                </a>
-                <a href="#audit" class="nav-link" data-page="audit">
-                    <span class="nav-icon">📋</span>
-                    Audit Log
-                </a>
-                <a href="#audit-conversations" class="nav-link" data-page="audit-conversations">
-                    <span class="nav-icon">💬</span>
-                    Audit Trails
-                </a>
-                <a href="#settings" class="nav-link" data-page="settings">
-                    <span class="nav-icon">⚙️</span>
-                    Settings
-                </a>
-                  <a href="#jobs" class="nav-link" data-page="jobs">
-                    <span class="nav-icon">⏱️</span>
-                    Jobs
-                </a>
-                <a href="#webhook-testing" class="nav-link" data-page="webhook-testing">
-                    <span class="nav-icon">🔧</span>
-                    Webhook Testing
-                </a>
+
+                <!-- Chatbot Configuration Group -->
+                <div class="nav-group">
+                    <button class="nav-group-toggle" data-group="chatbot-config">
+                        <span class="nav-icon">🧠</span>
+                        <span class="nav-group-title">Chatbot Configuration</span>
+                        <span class="nav-group-arrow">›</span>
+                    </button>
+                    <div class="nav-group-content" data-group-content="chatbot-config">
+                        <a href="#agents" class="nav-link nav-link-sub" data-page="agents" data-group-item="chatbot-config">
+                            <span class="nav-icon">🤖</span>
+                            Agents
+                        </a>
+                        <a href="#prompts" class="nav-link nav-link-sub" data-page="prompts" data-group-item="chatbot-config">
+                            <span class="nav-icon">📝</span>
+                            Prompts
+                        </a>
+                        <a href="#vector-stores" class="nav-link nav-link-sub" data-page="vector-stores" data-group-item="chatbot-config">
+                            <span class="nav-icon">📚</span>
+                            Knowledge Bases
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Operations & Monitoring Group -->
+                <div class="nav-group">
+                    <button class="nav-group-toggle" data-group="operations">
+                        <span class="nav-icon">📊</span>
+                        <span class="nav-group-title">Operations & Monitoring</span>
+                        <span class="nav-group-arrow">›</span>
+                    </button>
+                    <div class="nav-group-content" data-group-content="operations">
+                        <a href="#audit-conversations" class="nav-link nav-link-sub" data-page="audit-conversations" data-group-item="operations">
+                            <span class="nav-icon">💬</span>
+                            Chat History
+                        </a>
+                        <a href="#billing" class="nav-link nav-link-sub" data-page="billing" data-group-item="operations">
+                            <span class="nav-icon">💳</span>
+                            Metrics
+                        </a>
+                        <a href="#jobs" class="nav-link nav-link-sub" data-page="jobs" data-group-item="operations">
+                            <span class="nav-icon">⏱️</span>
+                            Jobs
+                        </a>
+                        <a href="#audit" class="nav-link nav-link-sub" data-page="audit" data-group-item="operations">
+                            <span class="nav-icon">📋</span>
+                            Audit Log
+                        </a>
+                    </div>
+                </div>
+
+                <!-- System Administration Group -->
+                <div class="nav-group">
+                    <button class="nav-group-toggle" data-group="system-admin">
+                        <span class="nav-icon">⚙️</span>
+                        <span class="nav-group-title">System Administration</span>
+                        <span class="nav-group-arrow">›</span>
+                    </button>
+                    <div class="nav-group-content" data-group-content="system-admin">
+                        <a href="#users" class="nav-link nav-link-sub" data-page="users" data-super-admin-only="true" data-group-item="system-admin">
+                            <span class="nav-icon">🧑‍🤝‍🧑</span>
+                            Users & Permissions
+                        </a>
+                        <a href="#tenants" class="nav-link nav-link-sub" data-page="tenants" data-super-admin-only="true" data-group-item="system-admin">
+                            <span class="nav-icon">🏢</span>
+                            Tenants
+                        </a>
+                        <a href="#settings" class="nav-link nav-link-sub" data-page="settings" data-group-item="system-admin">
+                            <span class="nav-icon">⚙️</span>
+                            General Settings
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Other/Legacy Items (kept at bottom for backwards compatibility) -->
+                <div class="nav-group">
+                    <button class="nav-group-toggle" data-group="other">
+                        <span class="nav-icon">🔧</span>
+                        <span class="nav-group-title">Other Tools</span>
+                        <span class="nav-group-arrow">›</span>
+                    </button>
+                    <div class="nav-group-content" data-group-content="other">
+                        <a href="leadsense-crm.html" class="nav-link nav-link-sub">
+                            <span class="nav-icon">📊</span>
+                            LeadSense CRM
+                        </a>
+                        <a href="#whatsapp-templates" class="nav-link nav-link-sub" data-page="whatsapp-templates" data-group-item="other">
+                            <span class="nav-icon">📱</span>
+                            WhatsApp Templates
+                        </a>
+                        <a href="#consent-management" class="nav-link nav-link-sub" data-page="consent-management" data-group-item="other">
+                            <span class="nav-icon">✅</span>
+                            Consent Management
+                        </a>
+                        <a href="#webhook-testing" class="nav-link nav-link-sub" data-page="webhook-testing" data-group-item="other">
+                            <span class="nav-icon">🔧</span>
+                            Webhook Testing
+                        </a>
+                    </div>
+                </div>
             </nav>
             <div class="sidebar-footer">
                 <a href="#logout" class="nav-link nav-link-logout" id="logout-link" role="button">
