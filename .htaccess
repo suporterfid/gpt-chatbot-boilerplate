@@ -9,6 +9,9 @@ CGIPassAuth On
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # Route /a/{slug} URLs to the agent chat page
+    RewriteRule ^a/([a-z0-9-]+)/?$ agent-chat.php?slug=$1 [L,QSA]
+
     # Route chat/@{slug} URLs to the whitelabel entrypoint before other rewrites
     RewriteRule ^chat/@([A-Za-z0-9_-]+)/?$ public/whitelabel.php?path=$1 [L,QSA]
 
