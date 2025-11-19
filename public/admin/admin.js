@@ -1717,6 +1717,7 @@ function renderAgentsList() {
                         ${summaryHtml}
                         <div class="agent-card-actions">
                             <button class="btn btn-small btn-secondary" onclick="editAgent('${agent.id}')">Edit</button>
+                            ${agent.slug ? `<button class="btn btn-small btn-teal" onclick="openAgentChat('${escapeHtml(agent.slug)}')" title="Open public chat page">💬 Open Chat</button>` : `<button class="btn btn-small btn-muted" disabled title="Define a slug in the edit screen to enable public access">💬 Open Chat</button>`}
                             <button class="btn btn-small btn-purple" onclick="showPromptBuilderModal('${agent.id}', '${agent.name}')">✨ Prompt Builder</button>
                             <button class="btn btn-small btn-info" onclick="manageChannels('${agent.id}', '${agent.name}')">Channels</button>
                             <button class="btn btn-small btn-primary" onclick="testAgent('${agent.id}')">Test</button>
@@ -2048,6 +2049,15 @@ function testAgent(id) {
     } else {
         showToast('Painel de teste indisponível no momento.', 'error');
     }
+}
+
+function openAgentChat(slug) {
+    if (!slug) {
+        showToast('This agent does not have a public URL configured.', 'warning');
+        return;
+    }
+    const url = `${window.location.origin}/a/${slug}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 // ==================== Prompts Page ====================

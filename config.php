@@ -363,6 +363,11 @@ $config = [
         ],
     ],
     
+    // Agent Public Access Configuration
+    'agent_public_access' => [
+        'slug_base_path' => $_ENV['AGENT_SLUG_BASE_PATH'] ?? getenv('AGENT_SLUG_BASE_PATH') ?: '/a',
+    ],
+    
     // Channels Configuration (WhatsApp, Telegram, etc.)
     'channels' => [
         'whatsapp' => [

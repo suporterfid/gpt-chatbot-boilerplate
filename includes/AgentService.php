@@ -234,6 +234,32 @@ class AgentService {
     }
     
     /**
+     * Get a single agent by slug
+     */
+    public function getAgentBySlug($slug) {
+        if (empty($slug)) {
+            return null;
+        }
+        
+        $sql = "SELECT * FROM agents WHERE slug = ?";
+        $params = [$slug];
+        
+        // Add tenant filter if tenant context is set
+        if ($this->tenantId !== null) {
+            $sql .= " AND tenant_id = ?";
+            $params[] = $this->tenantId;
+        }
+        
+        $agent = $this->db->getOne($sql, $params);
+        
+        if ($agent) {
+            return $this->normalizeAgent($agent);
+        }
+        
+        return null;
+    }
+    
+    /**
      * List all agents
      */
     public function listAgents($filters = []) {

@@ -1031,8 +1031,20 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="wizard-slug">Slug (unique identifier)</label>
-                        <input id="wizard-slug" data-field="slug" type="text" class="form-input" placeholder="e.g., premium-support" value="${escapeHtml(data.slug)}" pattern="[a-z0-9-]{1,64}" />
+                        <input id="wizard-slug" data-field="slug" type="text" class="form-input" placeholder="e.g., premium-support" value="${escapeHtml(data.slug)}" pattern="[a-z0-9-]{1,64}" oninput="updateSlugPreview(this.value)" />
                         <small class="form-help">Friendly URL to access this agent. Use only lowercase letters, numbers and hyphens (optional).</small>
+                        ${data.slug ? `
+                            <div id="slug-preview" style="margin-top: 8px; padding: 8px; background: #f0f9ff; border: 1px solid #bfdbfe; border-radius: 4px; font-size: 13px;">
+                                <strong>Public URL:</strong> 
+                                <a href="${window.location.origin}/a/${escapeHtml(data.slug)}" target="_blank" rel="noopener" style="color: #2563eb; text-decoration: none;">
+                                    ${window.location.origin}/a/${escapeHtml(data.slug)}
+                                </a>
+                            </div>
+                        ` : `
+                            <div id="slug-preview" style="margin-top: 8px; padding: 8px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 13px; color: #6b7280;">
+                                No public URL defined for this agent.
+                            </div>
+                        `}
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="wizard-description">Description</label>
@@ -1602,6 +1614,30 @@
         wizardState.promptBuilder.hooksRegistered = true;
     }
 
+    function updateSlugPreview(slug) {
+        const previewEl = document.getElementById('slug-preview');
+        if (!previewEl) return;
+        
+        if (slug && slug.trim()) {
+            const cleanSlug = slug.trim();
+            previewEl.innerHTML = `
+                <strong>Public URL:</strong> 
+                <a href="${window.location.origin}/a/${escapeHtml(cleanSlug)}" target="_blank" rel="noopener" style="color: #2563eb; text-decoration: none;">
+                    ${window.location.origin}/a/${escapeHtml(cleanSlug)}
+                </a>
+            `;
+            previewEl.style.background = '#f0f9ff';
+            previewEl.style.borderColor = '#bfdbfe';
+            previewEl.style.color = '';
+        } else {
+            previewEl.innerHTML = 'No public URL defined for this agent.';
+            previewEl.style.background = '#f9fafb';
+            previewEl.style.borderColor = '#e5e7eb';
+            previewEl.style.color = '#6b7280';
+        }
+    }
+
+    window.updateSlugPreview = updateSlugPreview;
     window.openAgentWorkspace = openAgentWorkspace;
 
     window.agentTester = window.agentTester || {};
