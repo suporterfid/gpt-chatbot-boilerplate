@@ -23,7 +23,17 @@ try {
     $adminAuth = new AdminAuth($db, $config);
     
     echo "✓ Database and migrations initialized\n\n";
-    
+
+    // Create tenant for multi-tenancy support
+    echo "--- Setup: Create Test Tenant ---\n";
+    $tenantId = 'tenant_' . bin2hex(random_bytes(8));
+    $now = date('Y-m-d H:i:s');
+    $db->insert(
+        "INSERT INTO tenants (id, name, slug, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)",
+        [$tenantId, 'Test Tenant', 'test-tenant-rbac', $now, $now]
+    );
+    echo "✓ Test tenant created\n\n";
+
     // Test 1: Legacy token authentication
     echo "--- Test 1: Legacy Token Authentication ---\n";
     $legacyUser = $adminAuth->authenticate('test_legacy_token');
@@ -33,17 +43,17 @@ try {
         echo "✗ Legacy token authentication failed\n";
         exit(1);
     }
-    
-    // Test 2: Create viewer user
+
+    // Test 2: Create viewer user (with tenant)
     echo "\n--- Test 2: Create Viewer User ---\n";
-    $viewer = $adminAuth->createUser('viewer@test.com', 'password123', AdminAuth::ROLE_VIEWER);
+    $viewer = $adminAuth->createUser('viewer@test.com', 'password123', AdminAuth::ROLE_VIEWER, $tenantId);
     $viewerKey = $adminAuth->generateApiKey($viewer['id'], 'Viewer Key');
     echo "✓ Viewer user created\n";
     echo "  API Key: {$viewerKey['key_prefix']}\n";
-    
-    // Test 3: Create admin user
+
+    // Test 3: Create admin user (with tenant)
     echo "\n--- Test 3: Create Admin User ---\n";
-    $admin = $adminAuth->createUser('admin@test.com', 'password123', AdminAuth::ROLE_ADMIN);
+    $admin = $adminAuth->createUser('admin@test.com', 'password123', AdminAuth::ROLE_ADMIN, $tenantId);
     $adminKey = $adminAuth->generateApiKey($admin['id'], 'Admin Key');
     echo "✓ Admin user created\n";
     echo "  API Key: {$adminKey['key_prefix']}\n";

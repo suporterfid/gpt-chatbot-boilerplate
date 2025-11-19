@@ -155,16 +155,27 @@ try {
     assert_true(false, "JobQueue stats failed: " . $e->getMessage());
 }
 
-// Test 7: AdminAuth - Create User
-echo "\n--- Test 7: AdminAuth - Create User ---\n";
+// Test 7: AdminAuth - Create Tenant and User
+echo "\n--- Test 7: AdminAuth - Create Tenant and User ---\n";
 try {
     $config = [];
     $adminAuth = new AdminAuth($db, $config);
-    
-    $user = $adminAuth->createUser('test@example.com', 'password123', AdminAuth::ROLE_ADMIN);
+
+    // First create a tenant for multi-tenancy support
+    $tenantId = 'tenant_' . bin2hex(random_bytes(8));
+    $now = date('Y-m-d H:i:s');
+    $db->insert(
+        "INSERT INTO tenants (id, name, slug, status, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, ?)",
+        [$tenantId, 'Test Tenant', 'test-tenant', $now, $now]
+    );
+    assert_true(true, "Test tenant created");
+
+    // Now create user with tenant_id
+    $user = $adminAuth->createUser('test@example.com', 'password123', AdminAuth::ROLE_ADMIN, $tenantId);
     assert_not_null($user, "User created");
     assert_equals('test@example.com', $user['email'], "User email is correct");
     assert_equals(AdminAuth::ROLE_ADMIN, $user['role'], "User role is correct");
+    assert_equals($tenantId, $user['tenant_id'], "User tenant_id is correct");
 } catch (Exception $e) {
     assert_true(false, "AdminAuth createUser failed: " . $e->getMessage());
 }
@@ -209,17 +220,41 @@ try {
 // Test 11: AdminAuth - Viewer Role
 echo "\n--- Test 11: AdminAuth - Viewer Role ---\n";
 try {
-    $viewer = $adminAuth->createUser('viewer@example.com', 'password123', AdminAuth::ROLE_VIEWER);
+    // Create viewer with same tenant
+    $viewer = $adminAuth->createUser('viewer@example.com', 'password123', AdminAuth::ROLE_VIEWER, $tenantId);
+    assert_not_null($viewer, "Viewer user created");
+
     $viewerKey = $adminAuth->generateApiKey($viewer['id'], 'Viewer Key');
     $viewerAuth = $adminAuth->authenticate($viewerKey['key']);
-    
+
     $hasRead = $adminAuth->hasPermission($viewerAuth, 'read');
     assert_true($hasRead, "Viewer has read permission");
-    
+
     $hasCreate = $adminAuth->hasPermission($viewerAuth, 'create');
     assert_true(!$hasCreate, "Viewer does not have create permission");
 } catch (Exception $e) {
     assert_true(false, "AdminAuth viewer role test failed: " . $e->getMessage());
+}
+
+// Test 11b: AdminAuth - Super-Admin Role (No Tenant Required)
+echo "\n--- Test 11b: AdminAuth - Super-Admin Role ---\n";
+try {
+    // Create super-admin without tenant (should succeed)
+    $superAdmin = $adminAuth->createUser('superadmin@example.com', 'password123', AdminAuth::ROLE_SUPER_ADMIN, null);
+    assert_not_null($superAdmin, "Super-admin user created");
+    assert_true($superAdmin['tenant_id'] === null, "Super-admin has no tenant_id");
+    assert_equals(AdminAuth::ROLE_SUPER_ADMIN, $superAdmin['role'], "Super-admin role is correct");
+
+    $superAdminKey = $adminAuth->generateApiKey($superAdmin['id'], 'Super Admin Key');
+    $superAdminAuth = $adminAuth->authenticate($superAdminKey['key']);
+
+    $hasManageUsers = $adminAuth->hasPermission($superAdminAuth, 'manage_users');
+    assert_true($hasManageUsers, "Super-admin has manage_users permission");
+
+    $hasRotateTokens = $adminAuth->hasPermission($superAdminAuth, 'rotate_tokens');
+    assert_true($hasRotateTokens, "Super-admin has rotate_tokens permission");
+} catch (Exception $e) {
+    assert_true(false, "AdminAuth super-admin role test failed: " . $e->getMessage());
 }
 
 // Test 12: WebhookHandler - Store Event
