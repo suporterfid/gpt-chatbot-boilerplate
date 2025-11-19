@@ -1,0 +1,274 @@
+name: Build Deployment Package
+
+on:
+  # Manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+        default: 'production'
+      include_vendor:
+        description: 'Include vendor/ directory (skip composer install)'
+        required: false
+        type: boolean
+        default: false
+
+  # Optionally trigger on release tags
+  release:
+    types: [published]
+
+env:
+  OUTPUT_FILENAME: chatbot-deploy-${{ github.sha }}.zip
+
+jobs:
+  build-package:
+    name: Build Deployment ZIP
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for accurate git info
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: curl, mbstring, json, pdo, pdo_mysql
+          coverage: none
+          tools: composer
+
+      - name: Display build information
+        run: |
+          echo "🏗️  Building deployment package"
+          echo "Environment: ${{ inputs.environment || 'release' }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Include vendor: ${{ inputs.include_vendor }}"
+
+      - name: Make build script executable
+        run: chmod +x scripts/build-deployment.sh
+
+      - name: Run deployment build script
+        run: |
+          ./scripts/build-deployment.sh "${{ env.OUTPUT_FILENAME }}"
+
+      - name: Verify package contents
+        run: |
+          echo "📦 Package contents:"
+          unzip -l "${{ env.OUTPUT_FILENAME }}" | head -n 50
+          echo ""
+          echo "📊 Package size:"
+          ls -lh "${{ env.OUTPUT_FILENAME }}"
+
+      - name: Upload deployment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package-${{ github.sha }}
+          path: |
+            ${{ env.OUTPUT_FILENAME }}
+            ${{ env.OUTPUT_FILENAME }}.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Create release notes
+        run: |
+          cat > release-notes.md << 'EOF'
+          # Deployment Package Ready
+
+          ## 📦 Build Information
+          - **Environment**: ${{ inputs.environment || 'release' }}
+          - **Branch**: `${{ github.ref_name }}`
+          - **Commit**: `${{ github.sha }}`
+          - **Built**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          - **Package**: `${{ env.OUTPUT_FILENAME }}`
+
+          ## 🚀 Deployment Instructions
+
+          ### 1. Download the Package
+          Download the ZIP file from the artifacts section above.
+
+          ### 2. Upload to Hosting Service
+
+          **For Hostinger:**
+          ```bash
+          # Via File Manager:
+          # 1. Log in to Hostinger control panel
+          # 2. Navigate to File Manager
+          # 3. Go to public_html (or your domain directory)
+          # 4. Upload the ZIP file
+          # 5. Extract using the Extract option
+
+          # Via SFTP:
+          sftp username@your-server.com
+          cd public_html
+          put ${{ env.OUTPUT_FILENAME }}
+          ```
+
+          ### 3. Extract on Server
+          ```bash
+          unzip ${{ env.OUTPUT_FILENAME }}
+          rm ${{ env.OUTPUT_FILENAME }}  # Clean up
+          ```
+
+          ### 4. Configure Environment
+          ```bash
+          # Copy and edit .env file
+          cp .env.example .env
+          nano .env
+
+          # Set required variables:
+          # - DB_HOST, DB_NAME, DB_USER, DB_PASSWORD
+          # - OPENAI_API_KEY
+          # - ADMIN_TOKEN (generate strong random token)
+          # - BASE_URL
+          ```
+
+          ### 5. Set Permissions
+          ```bash
+          # Set proper permissions
+          find . -type d -exec chmod 755 {} \;
+          find . -type f -exec chmod 644 {} \;
+
+          # Create writable directories
+          mkdir -p logs data
+          chmod 777 logs data
+          ```
+
+          ### 6. Install Dependencies (if vendor/ not included)
+          ```bash
+          composer install --no-dev --optimize-autoloader
+          ```
+
+          ### 7. Run Migrations
+          ```bash
+          php scripts/run_migrations.php
+          ```
+
+          ### 8. Verify Deployment
+          - Access your domain: `https://your-domain.com`
+          - Test admin panel: `https://your-domain.com/public/admin/`
+          - Test chat functionality
+          - Check error logs: `tail -f logs/error.log`
+
+          ## 🔒 Security Checklist
+          - [ ] `.env` file is configured and not web-accessible
+          - [ ] Admin token is strong and unique
+          - [ ] HTTPS is enabled
+          - [ ] Database credentials are secure
+          - [ ] `display_errors` is Off in PHP
+          - [ ] File permissions are correct (755/644)
+          - [ ] `logs/` directory is protected
+
+          ## 📝 Package Contents
+          See `DEPLOYMENT_INFO.txt` inside the ZIP for detailed information.
+
+          ## ⚠️ Important Notes
+          - This package does NOT include `.env` with credentials
+          - Database must be created before deployment
+          - Requires PHP 8.0+ with required extensions
+          - Ensure proper file permissions after extraction
+
+          ---
+
+          For issues, refer to the [README](https://github.com/${{ github.repository }}/blob/main/README.md)
+          EOF
+
+          cat release-notes.md
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-${{ github.sha }}
+          path: release-notes.md
+          retention-days: 30
+
+      - name: Add job summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## ✅ Deployment Package Built Successfully
+
+          ### 📦 Artifact Information
+          - **Package Name**: `${{ env.OUTPUT_FILENAME }}`
+          - **Environment**: ${{ inputs.environment || 'release' }}
+          - **Size**: $(ls -lh "${{ env.OUTPUT_FILENAME }}" | awk '{print $5}')
+          - **SHA256**: $(cat "${{ env.OUTPUT_FILENAME }}.sha256" | cut -d' ' -f1)
+
+          ### 📥 Next Steps
+          1. Download the artifact from the workflow run
+          2. Follow the deployment instructions in the release notes
+          3. Configure `.env` on your server
+          4. Run database migrations
+          5. Test the deployment
+
+          ### 🔗 Quick Links
+          - [Download Artifact](#artifacts)
+          - [View Release Notes](release-notes.md)
+          - [Deployment Guide](https://github.com/${{ github.repository }}/blob/main/README.md)
+          EOF
+
+  # Optional: Auto-deploy to staging/production if configured
+  deploy:
+    name: Deploy to Server
+    needs: build-package
+    runs-on: ubuntu-latest
+    if: inputs.environment != '' && github.ref == 'refs/heads/main'
+    environment:
+      name: ${{ inputs.environment }}
+
+    steps:
+      - name: Download deployment package
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-package-${{ github.sha }}
+          path: deploy
+
+      - name: Extract package
+        run: |
+          cd deploy
+          unzip -q "${{ env.OUTPUT_FILENAME }}"
+          rm "${{ env.OUTPUT_FILENAME }}"
+
+      - name: Deploy via SFTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+          protocol: sftp
+          port: ${{ secrets.DEPLOY_PORT || '22' }}
+          local-dir: deploy/
+          server-dir: ${{ secrets.DEPLOY_PATH }}
+          dangerous-clean-slate: false  # Don't delete existing files
+
+      - name: Deployment summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🚀 Deployment Complete
+
+          ### 📡 Deployment Details
+          - **Environment**: ${{ inputs.environment }}
+          - **Server**: ${{ secrets.DEPLOY_HOST }}
+          - **Path**: ${{ secrets.DEPLOY_PATH }}
+          - **Deployed At**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          ### ⚠️ Post-Deployment Tasks
+          - [ ] Verify `.env` configuration
+          - [ ] Run database migrations if needed
+          - [ ] Clear application cache
+          - [ ] Test critical functionality
+          - [ ] Monitor error logs
+
+          ### 🔍 Verification
+          Access your application and verify:
+          - Home page loads correctly
+          - Admin panel is accessible
+          - Chat functionality works
+          - No errors in logs
+          EOF

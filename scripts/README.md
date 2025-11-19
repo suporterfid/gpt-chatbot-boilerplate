@@ -1,10 +1,14 @@
 # Scripts Directory
 
-This directory contains operational scripts for the GPT Chatbot Boilerplate application, including comprehensive backup, restore, monitoring, and disaster recovery tools.
+This directory contains operational scripts for the GPT Chatbot Boilerplate application, including comprehensive backup, restore, monitoring, disaster recovery tools, and **deployment package builders**.
 
 ## Quick Reference
 
 ```bash
+# Deployment Package Creation ⭐ NEW
+./scripts/build-deployment.sh             # Build deployment ZIP (Linux/macOS)
+scripts\build-deployment.bat              # Build deployment ZIP (Windows)
+
 # Backup Operations
 ./scripts/backup_all.sh              # Full system backup
 ./scripts/db_backup.sh               # Database-only backup
@@ -21,9 +25,50 @@ This directory contains operational scripts for the GPT Chatbot Boilerplate appl
 
 ## Available Scripts
 
+### Deployment & Release Management
+
+#### `build-deployment.sh` / `build-deployment.bat` ⭐ NEW
+**Purpose**: Creates production-ready deployment packages for cloud hosting
+
+**Usage**:
+```bash
+# Linux/macOS
+./scripts/build-deployment.sh [output-filename]
+./scripts/build-deployment.sh chatbot-deploy.zip
+
+# Windows
+scripts\build-deployment.bat [output-filename]
+scripts\build-deployment.bat chatbot-deploy.zip
+```
+
+**Features**:
+- Creates optimized ZIP packages for cloud hosting (Hostinger, cPanel, etc.)
+- Includes only production files (excludes dev files, tests, docs)
+- Automatically runs `composer install --no-dev --optimize-autoloader`
+- Generates deployment metadata and checksums (SHA256)
+- Works identically locally and in CI/CD (GitHub Actions)
+- Cross-platform (Windows batch + Unix bash scripts)
+
+**Package Contents**:
+- Application PHP files and frontend assets
+- Production dependencies (`vendor/`)
+- Database migrations
+- `.env.example` template
+- Configuration files (`.htaccess`, `composer.json`)
+- `DEPLOYMENT_INFO.txt` with deployment instructions
+
+**Output**:
+- `chatbot-deploy.zip` - Deployment package
+- `chatbot-deploy.zip.sha256` - Checksum file
+- `build/deployment/` - Staging directory (auto-cleaned)
+
+**See Also**: [DEPLOYMENT_PACKAGE_GUIDE.md](../docs/DEPLOYMENT_PACKAGE_GUIDE.md)
+
+---
+
 ### Backup & Disaster Recovery
 
-#### `backup_all.sh` ⭐ NEW
+#### `backup_all.sh` ⭐
 **Purpose**: Comprehensive backup of all persistent data
 
 **Usage**:

@@ -27,6 +27,10 @@ package-lock.json
 # Build artifacts
 dist/
 build/
+*-deploy.zip
+*-deploy.zip.sha256
+chatbot-*.zip
+chatbot-*.zip.sha256
 
 # IDE and editor files
 .vscode/
