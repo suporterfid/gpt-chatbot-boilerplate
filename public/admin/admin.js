@@ -1434,19 +1434,25 @@ function navigateTo(page) {
         link.classList.toggle('active', link.dataset.page === page);
     });
 
+    // Expand the group containing the active page
+    if (typeof window.expandGroupForActivePage === 'function') {
+        window.expandGroupForActivePage(page);
+    }
+
     const titles = {
-        'agents': 'Agents',
+        'agents': 'Dashboard',
         'prompts': 'Prompts',
-        'vector-stores': 'Vector Stores',
+        'vector-stores': 'Knowledge Bases',
         'whatsapp-templates': 'WhatsApp Templates',
         'consent-management': 'Consent Management',
         'jobs': 'Background Jobs',
         'tenants': 'Tenants',
-        'users': 'Users',
-        'billing': 'Billing & Usage',
+        'users': 'Users & Permissions',
+        'billing': 'Metrics',
         'audit': 'Audit Log',
-        'audit-conversations': 'Audit Trails',
-        'settings': 'Settings'
+        'audit-conversations': 'Chat History',
+        'settings': 'General Settings',
+        'webhook-testing': 'Webhook Testing'
     };
 
     const pageTitle = document.getElementById('page-title');
@@ -4418,7 +4424,74 @@ document.addEventListener('DOMContentLoaded', function() {
 
     updateRoleVisibility(authState.user?.role || null);
     initializeAuthentication();
+    initializeSidebarAccordion();
 });
+
+// ========== Sidebar Accordion ==========
+
+function initializeSidebarAccordion() {
+    // Initialize accordion state
+    const accordionState = {
+        'chatbot-config': false,
+        'operations': false,
+        'system-admin': false,
+        'other': false
+    };
+
+    // Get all group toggles
+    const groupToggles = document.querySelectorAll('.nav-group-toggle');
+    
+    groupToggles.forEach(toggle => {
+        toggle.addEventListener('click', function(e) {
+            e.preventDefault();
+            const groupName = this.dataset.group;
+            const content = document.querySelector(`[data-group-content="${groupName}"]`);
+            
+            if (content) {
+                const isExpanded = content.classList.contains('expanded');
+                
+                // Toggle the clicked group
+                if (isExpanded) {
+                    content.classList.remove('expanded');
+                    this.classList.remove('expanded');
+                    accordionState[groupName] = false;
+                } else {
+                    content.classList.add('expanded');
+                    this.classList.add('expanded');
+                    accordionState[groupName] = true;
+                }
+            }
+        });
+    });
+
+    // Function to expand group containing active page
+    function expandGroupForActivePage(page) {
+        // Find the active link
+        const activeLink = document.querySelector(`.nav-link[data-page="${page}"]`);
+        if (activeLink) {
+            // Check if it's in a group
+            const groupItem = activeLink.dataset.groupItem;
+            if (groupItem) {
+                // Expand the group
+                const content = document.querySelector(`[data-group-content="${groupItem}"]`);
+                const toggle = document.querySelector(`[data-group="${groupItem}"]`);
+                
+                if (content && toggle) {
+                    content.classList.add('expanded');
+                    toggle.classList.add('expanded');
+                    accordionState[groupItem] = true;
+                }
+            }
+        }
+    }
+
+    // Initial expansion based on current page
+    const initialPage = window.location.hash.substring(1) || 'agents';
+    expandGroupForActivePage(initialPage);
+
+    // Store the expand function for use in navigation
+    window.expandGroupForActivePage = expandGroupForActivePage;
+}
 
 // ========== Audit Conversations Page ==========
 

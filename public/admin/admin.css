@@ -189,6 +189,68 @@ textarea {
     font-size: 1.2rem;
 }
 
+/* Navigation Groups (Accordion) */
+.nav-group {
+    margin: 0.25rem 0;
+}
+
+.nav-group-toggle {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.7);
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.nav-group-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.nav-group-toggle.active {
+    color: white;
+}
+
+.nav-group-title {
+    flex: 1;
+}
+
+.nav-group-arrow {
+    font-size: 1.2rem;
+    transition: transform 0.2s;
+    margin-left: auto;
+}
+
+.nav-group-toggle.expanded .nav-group-arrow {
+    transform: rotate(90deg);
+}
+
+.nav-group-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out;
+}
+
+.nav-group-content.expanded {
+    max-height: 500px;
+}
+
+.nav-link-sub {
+    padding-left: 2.5rem;
+    font-size: 0.9rem;
+}
+
+.nav-link-sub .nav-icon {
+    font-size: 1rem;
+}
+
 .sidebar-footer {
     margin-top: auto;
     padding: 1rem 0.75rem;
