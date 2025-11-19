@@ -222,9 +222,8 @@ $apiType = htmlspecialchars($agent['api_type'] ?? 'responses', ENT_QUOTES, 'UTF-
     <script>
         // Initialize chatbot widget with agent configuration
         document.addEventListener('DOMContentLoaded', function() {
-            ChatBot.init({
+            ChatBot.init('#chat-main', {
                 mode: 'inline',
-                container: 'chat-main',
                 apiType: '<?php echo $apiType; ?>',
                 apiEndpoint: '/chat-unified.php',
                 agent: {
