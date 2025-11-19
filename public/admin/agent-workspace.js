@@ -25,26 +25,26 @@
     const wizardSteps = [
         {
             id: 'identity',
-            title: 'Identidade do agente',
-            description: 'Nome, descrição e visibilidade.',
+            title: 'Agent Identity',
+            description: 'Name, description and visibility.',
             render: renderIdentityStep
         },
         {
             id: 'runtime',
-            title: 'Configuração técnica',
-            description: 'API, modelo e parâmetros de execução.',
+            title: 'Technical Configuration',
+            description: 'API, model and execution parameters.',
             render: renderRuntimeStep
         },
         {
             id: 'knowledge',
-            title: 'Conhecimento & Ferramentas',
-            description: 'Fontes de dados e ferramentas disponíveis.',
+            title: 'Knowledge & Tools',
+            description: 'Data sources and available tools.',
             render: renderKnowledgeStep
         },
         {
             id: 'behavior',
-            title: 'Comportamento & Prompt',
-            description: 'Mensagens do sistema, prompt e resumo final.',
+            title: 'Behavior & Prompt',
+            description: 'System messages, prompt and final summary.',
             render: renderBehaviorStep
         }
     ];
@@ -253,8 +253,8 @@
         }).join('');
 
         const tabs = [
-            { id: 'configure', label: 'Configurar' },
-            { id: 'test', label: 'Testar &amp; Publicar' }
+            { id: 'configure', label: 'Configure' },
+            { id: 'test', label: 'Test &amp; Publish' }
         ];
 
         const tabsHtml = tabs.map(tab => {
@@ -274,12 +274,12 @@
         content.innerHTML = `
             <div class="agent-workspace">
                 <aside class="wizard-sidebar">
-                    <h2 class="wizard-title">${wizardState.mode === 'create' ? 'Novo agente' : 'Editar agente'}</h2>
+                    <h2 class="wizard-title">${wizardState.mode === 'create' ? 'New Agent' : 'Edit Agent'}</h2>
                     <ol class="wizard-progress">${progressHtml}</ol>
                     <div class="wizard-help">
-                        <h3>Como funciona?</h3>
-                        <p>Avance pelas etapas para configurar identidade, parâmetros técnicos, fontes de conhecimento e comportamento do agente.</p>
-                        <p>Você pode salvar um rascunho a qualquer momento para continuar depois.</p>
+                        <h3>How it works?</h3>
+                        <p>Progress through the steps to configure identity, technical parameters, knowledge sources and agent behavior.</p>
+                        <p>You can save a draft at any time to continue later.</p>
                     </div>
                 </aside>
                 <section class="wizard-content">
@@ -310,7 +310,7 @@
             <div class="wizard-panel">
                 <header class="wizard-step-header">
                     <div>
-                        <div class="wizard-step-subtitle">Etapa ${wizardState.stepIndex + 1} de ${wizardSteps.length}</div>
+                        <div class="wizard-step-subtitle">Step ${wizardState.stepIndex + 1} of ${wizardSteps.length}</div>
                         <h3 class="wizard-step-title">${currentStep.title}</h3>
                         <p class="wizard-step-description">${currentStep.description}</p>
                     </div>
@@ -319,13 +319,13 @@
                     ${currentStep.render()}
                 </div>
                 <footer class="wizard-footer">
-                    <button class="btn btn-secondary" data-action="previous" ${wizardState.stepIndex === 0 ? 'disabled' : ''}>Anterior</button>
+                    <button class="btn btn-secondary" data-action="previous" ${wizardState.stepIndex === 0 ? 'disabled' : ''}>Previous</button>
                     <div class="wizard-footer-actions">
-                        <button class="btn btn-outline" data-action="save-draft">Salvar rascunho</button>
+                        <button class="btn btn-outline" data-action="save-draft">Save draft</button>
                         ${wizardState.stepIndex < wizardSteps.length - 1 ? `
-                            <button class="btn btn-primary" data-action="next">Próximo</button>
+                            <button class="btn btn-primary" data-action="next">Next</button>
                         ` : `
-                            <button class="btn btn-primary" data-action="publish">Publicar</button>
+                            <button class="btn btn-primary" data-action="publish">Publish</button>
                         `}
                     </div>
                 </footer>
@@ -338,8 +338,8 @@
             return `
                 <div class="tester-panel">
                     <div class="tester-empty-state">
-                        <h3>Teste indisponível</h3>
-                        <p class="text-muted">Publique o agente ou abra um existente para habilitar o painel de testes.</p>
+                        <h3>Test Unavailable</h3>
+                        <p class="text-muted">Publish the agent or open an existing one to enable the test panel.</p>
                     </div>
                 </div>
             `;
@@ -367,12 +367,12 @@
             <div class="tester-panel">
                 <div class="tester-header">
                     <div>
-                        <h3>Teste rápido</h3>
-                        <p class="text-muted">Envie mensagens para validar o comportamento do agente antes de marcar como pronto.</p>
+                        <h3>Quick Test</h3>
+                        <p class="text-muted">Send messages to validate agent behavior before marking as ready.</p>
                     </div>
                     <div class="tester-agent-status">
                         ${agentStatus ? `<span class="badge tester-badge-status">${agentStatus}</span>` : ''}
-                        ${isDefault ? '<span class="badge badge-success">Padrão</span>' : ''}
+                        ${isDefault ? '<span class="badge badge-success">Default</span>' : ''}
                     </div>
                 </div>
 
@@ -380,10 +380,10 @@
 
                 <div class="tester-card">
                     <div class="tester-card-header">
-                        <h4>Prompt ativo</h4>
+                        <h4>Active Prompt</h4>
                         <div class="tester-meta-actions">
                             <button class="btn btn-small btn-outline" data-action="refresh-prompt-meta" ${session.promptMeta.loading ? 'disabled' : ''}>
-                                ${session.promptMeta.loading ? '<span class="spinner spinner-inline"></span>' : 'Atualizar metadados'}
+                                ${session.promptMeta.loading ? '<span class="spinner spinner-inline"></span>' : 'Refresh Metadata'}
                             </button>
                         </div>
                     </div>
@@ -394,7 +394,7 @@
 
                 <div class="tester-card tester-chat-card">
                     <div class="tester-card-header">
-                        <h4>Histórico de teste</h4>
+                        <h4>Test History</h4>
                     </div>
                     <div id="tester-chat-history" class="tester-chat-history">
                         ${buildTestMessagesHtml()}
@@ -402,14 +402,14 @@
                 </div>
 
                 <div class="tester-card tester-input-card">
-                    <label class="form-label" for="tester-input">Mensagem de teste</label>
-                    <textarea id="tester-input" class="form-textarea tester-input" rows="3" placeholder="Faça uma pergunta ou descreva um cenário">${escapeHtml(session.input)}</textarea>
+                    <label class="form-label" for="tester-input">Test Message</label>
+                    <textarea id="tester-input" class="form-textarea tester-input" rows="3" placeholder="Ask a question or describe a scenario">${escapeHtml(session.input)}</textarea>
                     <div class="tester-input-actions">
-                        <button class="btn btn-secondary" data-action="reset-conversation" ${session.isStreaming || session.messages.length === 0 ? 'disabled' : ''}>Limpar conversa</button>
+                        <button class="btn btn-secondary" data-action="reset-conversation" ${session.isStreaming || session.messages.length === 0 ? 'disabled' : ''}>Clear Conversation</button>
                         <div class="tester-send-group">
                             <div id="tester-status-message" class="tester-status-message">${buildStatusMessageHtml()}</div>
                             <button class="btn btn-primary" data-action="send-test-message" ${session.isStreaming || !trimmedInput ? 'disabled' : ''}>
-                                ${session.isStreaming ? '<span class="spinner spinner-inline"></span> Enviando' : 'Enviar mensagem'}
+                                ${session.isStreaming ? '<span class="spinner spinner-inline"></span> Sending' : 'Send Message'}
                             </button>
                         </div>
                     </div>
@@ -417,15 +417,15 @@
 
                 <div class="tester-card tester-publish-card">
                     <div class="tester-card-header">
-                        <h4>Publicação</h4>
+                        <h4>Publishing</h4>
                     </div>
-                    <p class="text-muted">Finalize a configuração marcando o agente como pronto ou definindo-o como padrão.</p>
+                    <p class="text-muted">Finalize the configuration by marking the agent as ready or setting it as default.</p>
                     <div class="tester-publish-actions">
                         <button class="btn btn-success" data-action="mark-ready" ${session.isUpdatingStatus || isReady ? 'disabled' : ''}>
-                            ${session.isUpdatingStatus ? '<span class="spinner spinner-inline"></span>' : ''} Marcar como pronto
+                            ${session.isUpdatingStatus ? '<span class="spinner spinner-inline"></span>' : ''} Mark as Ready
                         </button>
                         <button class="btn btn-outline" data-action="make-default" ${isDefault || session.isMakingDefault ? 'disabled' : ''}>
-                            ${session.isMakingDefault ? '<span class="spinner spinner-inline"></span>' : ''} Definir como padrão
+                            ${session.isMakingDefault ? '<span class="spinner spinner-inline"></span>' : ''} Set as Default
                         </button>
                     </div>
                     <div id="tester-feedback" class="tester-feedback">${buildFeedbackHtml()}</div>
@@ -768,7 +768,7 @@
     function buildTestMessagesHtml() {
         const messages = wizardState.testSession.messages || [];
         if (messages.length === 0) {
-            return '<div class="tester-empty-hint"><p class="text-muted">Nenhuma mensagem enviada ainda.</p></div>';
+            return '<div class="tester-empty-hint"><p class="text-muted">No messages sent yet.</p></div>';
         }
 
         return messages.map(message => {
@@ -794,12 +794,12 @@
 
     function buildPromptMetadataHtml() {
         if (!wizardState.agentId) {
-            return '<p class="text-muted">Disponível após publicar o agente.</p>';
+            return '<p class="text-muted">Available after publishing the agent.</p>';
         }
 
         const meta = wizardState.testSession.promptMeta;
         if (meta.loading) {
-            return '<div class="tester-meta-loading"><span class="spinner spinner-inline"></span> Carregando metadados...</div>';
+            return '<div class="tester-meta-loading"><span class="spinner spinner-inline"></span> Loading metadata...</div>';
         }
 
         if (meta.error) {
@@ -808,12 +808,12 @@
 
         const payload = meta.data?.data || meta.data;
         if (!payload) {
-            return '<p class="text-muted">Nenhum dado disponível.</p>';
+            return '<p class="text-muted">No data available.</p>';
         }
 
         const versions = Array.isArray(payload.versions) ? payload.versions : [];
         if (versions.length === 0) {
-            return '<p class="text-muted">Nenhum prompt gerado pelo Prompt Builder ainda.</p>';
+            return '<p class="text-muted">No prompts generated by Prompt Builder yet.</p>';
         }
 
         const activeVersionNumber = payload.active_version;
@@ -831,20 +831,20 @@
         return `
             <dl class="tester-prompt-list">
                 <div>
-                    <dt>Versão ativa</dt>
+                    <dt>Active Version</dt>
                     <dd>${activeVersionNumber ? `v${escapeHtml(String(activeVersionNumber))}` : '—'}</dd>
                 </div>
                 <div>
-                    <dt>Total de versões</dt>
+                    <dt>Total Versions</dt>
                     <dd>${versions.length}</dd>
                 </div>
                 <div>
-                    <dt>Atualizado em</dt>
+                    <dt>Updated At</dt>
                     <dd>${escapeHtml(formattedDate)}</dd>
                 </div>
                 <div>
                     <dt>Guardrails</dt>
-                    <dd>${guardrails.length ? escapeHtml(guardrails.join(', ')) : 'Sem guardrails registrados'}</dd>
+                    <dd>${guardrails.length ? escapeHtml(guardrails.join(', ')) : 'No guardrails registered'}</dd>
                 </div>
             </dl>
         `;
@@ -853,13 +853,13 @@
     function buildStatusMessageHtml() {
         const session = wizardState.testSession;
         if (session.isStreaming) {
-            return '<span class="tester-status tester-status-streaming"><span class="spinner spinner-inline"></span> Gerando resposta...</span>';
+            return '<span class="tester-status tester-status-streaming"><span class="spinner spinner-inline"></span> Generating response...</span>';
         }
         if (session.statusNotice && session.statusNotice.message) {
             const typeClass = session.statusNotice.type ? `tester-status-${session.statusNotice.type}` : '';
             return `<span class="tester-status ${typeClass}">${escapeHtml(session.statusNotice.message)}</span>`;
         }
-        return '<span class="tester-status text-muted">Envie uma mensagem para iniciar o teste.</span>';
+        return '<span class="tester-status text-muted">Send a message to start testing.</span>';
     }
 
     function buildFeedbackHtml() {
@@ -960,15 +960,15 @@
 
         try {
             const result = await api.updateAgent(wizardState.agentId, { status: 'ready' });
-            wizardState.testSession.feedback = { type: 'success', message: 'Agente marcado como pronto.' };
+            wizardState.testSession.feedback = { type: 'success', message: 'Agent marked as ready.' };
             if (result && typeof result === 'object' && result.status) {
                 wizardState.data.status = result.status;
             } else {
                 wizardState.data.status = 'ready';
             }
         } catch (error) {
-            console.error('Falha ao marcar agente como pronto', error);
-            wizardState.testSession.feedback = { type: 'error', message: error.message || 'Não foi possível atualizar o status.' };
+            console.error('Failed to mark agent as ready', error);
+            wizardState.testSession.feedback = { type: 'error', message: error.message || 'Could not update status.' };
         } finally {
             wizardState.testSession.isUpdatingStatus = false;
             renderWorkspace();
@@ -986,11 +986,11 @@
 
         try {
             await api.makeDefaultAgent(wizardState.agentId);
-            wizardState.testSession.feedback = { type: 'success', message: 'Agente definido como padrão.' };
+            wizardState.testSession.feedback = { type: 'success', message: 'Agent set as default.' };
             wizardState.data.is_default = true;
         } catch (error) {
-            console.error('Falha ao definir agente como padrão', error);
-            wizardState.testSession.feedback = { type: 'error', message: error.message || 'Não foi possível definir como padrão.' };
+            console.error('Failed to set agent as default', error);
+            wizardState.testSession.feedback = { type: 'error', message: error.message || 'Could not set as default.' };
         } finally {
             wizardState.testSession.isMakingDefault = false;
             renderWorkspace();
@@ -1023,29 +1023,29 @@
         return `
             <div class="wizard-step-grid">
                 <div class="wizard-card">
-                    <h4>Informações básicas</h4>
+                    <h4>Basic Information</h4>
                     <div class="form-group">
-                        <label class="form-label" for="wizard-name">Nome *</label>
-                        <input id="wizard-name" data-field="name" type="text" class="form-input" placeholder="Ex.: Atendimento Premium" value="${escapeHtml(data.name)}" required />
-                        <small class="form-help">Este nome será exibido nas listagens e integrações.</small>
+                        <label class="form-label" for="wizard-name">Name *</label>
+                        <input id="wizard-name" data-field="name" type="text" class="form-input" placeholder="e.g., Premium Support" value="${escapeHtml(data.name)}" required />
+                        <small class="form-help">This name will be displayed in listings and integrations.</small>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="wizard-slug">Slug (identificador único)</label>
-                        <input id="wizard-slug" data-field="slug" type="text" class="form-input" placeholder="Ex.: atendimento-premium" value="${escapeHtml(data.slug)}" pattern="[a-z0-9-]{1,64}" />
-                        <small class="form-help">URL amigável para acessar este agente. Use apenas letras minúsculas, números e hífens (opcional).</small>
+                        <label class="form-label" for="wizard-slug">Slug (unique identifier)</label>
+                        <input id="wizard-slug" data-field="slug" type="text" class="form-input" placeholder="e.g., premium-support" value="${escapeHtml(data.slug)}" pattern="[a-z0-9-]{1,64}" />
+                        <small class="form-help">Friendly URL to access this agent. Use only lowercase letters, numbers and hyphens (optional).</small>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="wizard-description">Descrição</label>
-                        <textarea id="wizard-description" data-field="description" class="form-textarea" rows="4" placeholder="Resumo da missão do agente">${escapeHtml(data.description)}</textarea>
+                        <label class="form-label" for="wizard-description">Description</label>
+                        <textarea id="wizard-description" data-field="description" class="form-textarea" rows="4" placeholder="Summary of the agent's mission">${escapeHtml(data.description)}</textarea>
                     </div>
                 </div>
                 <div class="wizard-card">
-                    <h4>Visibilidade</h4>
+                    <h4>Visibility</h4>
                     <label class="form-checkbox">
                         <input type="checkbox" data-field="is_default" data-field-type="boolean" ${data.is_default ? 'checked' : ''} />
-                        Definir como agente padrão
+                        Set as default agent
                     </label>
-                    <p class="text-muted">O agente padrão será utilizado como fallback em canais que não especificarem uma configuração própria.</p>
+                    <p class="text-muted">The default agent will be used as a fallback in channels that do not specify their own configuration.</p>
                 </div>
             </div>
         `;
@@ -1056,34 +1056,34 @@
         return `
             <div class="wizard-step-grid">
                 <div class="wizard-card">
-                    <h4>API &amp; Modelo</h4>
+                    <h4>API &amp; Model</h4>
                     <div class="form-group">
-                        <label class="form-label" for="wizard-api-type">Tipo de API *</label>
+                        <label class="form-label" for="wizard-api-type">API Type *</label>
                         <select id="wizard-api-type" class="form-select" data-field="api_type">
                             <option value="responses" ${data.api_type === 'responses' ? 'selected' : ''}>Responses API</option>
                             <option value="chat" ${data.api_type === 'chat' ? 'selected' : ''}>Chat Completions API</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="wizard-model">Modelo</label>
+                        <label class="form-label" for="wizard-model">Model</label>
                         ${renderModelSelect('wizard-model', data.model)}
-                        <small class="form-help">Selecione um modelo específico ou deixe em branco para usar o padrão.</small>
+                        <small class="form-help">Select a specific model or leave blank to use the default.</small>
                     </div>
                 </div>
                 <div class="wizard-card">
-                    <h4>Parâmetros de geração</h4>
+                    <h4>Generation Parameters</h4>
                     <div class="form-group">
                         <label class="form-label" for="wizard-temperature">Temperature</label>
                         <input id="wizard-temperature" type="number" step="0.1" min="0" max="2" class="form-input" data-field="temperature" data-field-type="number" value="${escapeHtml(data.temperature)}" placeholder="0.7" />
-                        <small class="form-help">Controle a criatividade das respostas. Valores altos geram resultados mais variados.</small>
+                        <small class="form-help">Control the creativity of responses. Higher values generate more varied results.</small>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="wizard-top-p">Top P</label>
                         <input id="wizard-top-p" type="number" step="0.05" min="0" max="1" class="form-input" data-field="top_p" data-field-type="number" value="${escapeHtml(data.top_p)}" placeholder="1" />
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="wizard-max-output">Máx. tokens de saída</label>
-                        <input id="wizard-max-output" type="number" min="0" class="form-input" data-field="max_output_tokens" data-field-type="number" value="${escapeHtml(data.max_output_tokens)}" placeholder="ex.: 1024" />
+                        <label class="form-label" for="wizard-max-output">Max Output Tokens</label>
+                        <input id="wizard-max-output" type="number" min="0" class="form-input" data-field="max_output_tokens" data-field-type="number" value="${escapeHtml(data.max_output_tokens)}" placeholder="e.g., 1024" />
                     </div>
                 </div>
             </div>
@@ -1096,7 +1096,7 @@
         return `
             <div class="wizard-step-grid">
                 <div class="wizard-card">
-                    <h4>Fontes de conhecimento</h4>
+                    <h4>Knowledge Sources</h4>
                     <div class="form-group">
                         <label class="form-label" for="wizard-vector-stores">Vector Stores</label>
                         ${hasVectorStores ? `
@@ -1107,18 +1107,18 @@
                             </select>
                         ` : `
                             <input id="wizard-vector-stores" type="text" class="form-input" placeholder="vs_abc,vs_def" data-field="vector_store_ids" />
-                            <small class="form-help">Informe IDs separados por vírgula.</small>
+                            <small class="form-help">Enter IDs separated by commas.</small>
                         `}
-                        <small class="form-help">Selecione os repositórios que o agente poderá consultar durante o atendimento.</small>
+                        <small class="form-help">Select the repositories that the agent can query during service.</small>
                     </div>
                 </div>
                 <div class="wizard-card">
-                    <h4>Ferramentas</h4>
+                    <h4>Tools</h4>
                     <label class="form-checkbox">
                         <input type="checkbox" data-field="enable_file_search" data-field-type="boolean" ${data.enable_file_search ? 'checked' : ''} />
-                        Habilitar File Search
+                        Enable File Search
                     </label>
-                    <p class="text-muted">Permite que o agente consulte os documentos disponíveis nos vector stores selecionados.</p>
+                    <p class="text-muted">Allows the agent to query documents available in the selected vector stores.</p>
                 </div>
             </div>
         `;
@@ -1129,29 +1129,29 @@
         return `
             <div class="wizard-step-grid">
                 <div class="wizard-card">
-                    <h4>Prompt &amp; mensagens</h4>
+                    <h4>Prompt &amp; Messages</h4>
                     <div class="form-group">
                         <label class="form-label" for="wizard-prompt-id">Prompt ID</label>
                         ${renderPromptSelect('wizard-prompt-id', data.prompt_id)}
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="wizard-prompt-version">Versão do Prompt</label>
-                        <input id="wizard-prompt-version" type="text" class="form-input" data-field="prompt_version" value="${escapeHtml(data.prompt_version)}" placeholder="Última versão" />
+                        <label class="form-label" for="wizard-prompt-version">Prompt Version</label>
+                        <input id="wizard-prompt-version" type="text" class="form-input" data-field="prompt_version" value="${escapeHtml(data.prompt_version)}" placeholder="Latest version" />
                     </div>
                     <div class="form-group">
-                        <label class="form-label" for="wizard-system-message">Comportamento do agente</label>
+                        <label class="form-label" for="wizard-system-message">Agent Behavior</label>
                         <textarea id="wizard-system-message" class="form-textarea" rows="10" data-field="system_message">${escapeHtml(data.system_message)}</textarea>
-                        <small class="form-help">Defina instruções claras sobre voz, limites e objetivos do agente.</small>
+                        <small class="form-help">Define clear instructions about voice, boundaries and agent objectives.</small>
                     </div>
                 </div>
                 <div class="wizard-card">
                     <h4>Prompt Builder</h4>
-                    <p>Use o Prompt Builder para gerar instruções estruturadas e aplicá-las automaticamente.</p>
-                    <button class="btn btn-purple" data-action="open-prompt-builder">✨ Abrir Prompt Builder</button>
+                    <p>Use Prompt Builder to generate structured instructions and apply them automatically.</p>
+                    <button class="btn btn-purple" data-action="open-prompt-builder">✨ Open Prompt Builder</button>
                     <div id="wizard-prompt-builder-status" class="wizard-prompt-builder-status"></div>
                 </div>
                 <div class="wizard-card">
-                    <h4>Resumo</h4>
+                    <h4>Summary</h4>
                     <div id="wizard-review-summary" class="wizard-review-summary"></div>
                 </div>
             </div>
@@ -1169,7 +1169,7 @@
 
         return `
             <select id="${id}" class="form-select" data-field="model">
-                <option value="">Usar padrão</option>
+                <option value="">Use default</option>
                 ${options}
             </select>
         `;
@@ -1186,7 +1186,7 @@
 
         return `
             <select id="${id}" class="form-select" data-field="prompt_id">
-                <option value="">Selecionar prompt</option>
+                <option value="">Select prompt</option>
                 ${options}
             </select>
         `;
@@ -1300,16 +1300,16 @@
 
     function handleOpenPromptBuilder() {
         if (!wizardState.agentId) {
-            showToast('O Prompt Builder precisa de um agente existente. Publique o agente ou abra um existente para continuar.', 'info');
+            showToast('Prompt Builder needs an existing agent. Publish the agent or open an existing one to continue.', 'info');
             return;
         }
 
         if (typeof showPromptBuilderModal !== 'function') {
-            showToast('Prompt Builder indisponível no momento.', 'error');
+            showToast('Prompt Builder unavailable at the moment.', 'error');
             return;
         }
 
-        const agentName = wizardState.data.name || 'Agente';
+        const agentName = wizardState.data.name || 'Agent';
         showPromptBuilderModal(wizardState.agentId, agentName);
     }
 
@@ -1320,10 +1320,10 @@
                 timestamp: Date.now()
             };
             localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
-            showToast('Rascunho salvo com sucesso', 'success');
+            showToast('Draft saved successfully', 'success');
         } catch (error) {
             console.error('Failed to save draft', error);
-            showToast('Não foi possível salvar o rascunho', 'error');
+            showToast('Could not save draft', 'error');
         }
     }
 
@@ -1392,7 +1392,7 @@
 
     async function publishAgent() {
         if (!wizardState.data.name || !wizardState.data.name.trim()) {
-            showToast('Informe um nome para o agente antes de publicar.', 'error');
+            showToast('Enter a name for the agent before publishing.', 'error');
             wizardState.stepIndex = 0;
             renderWorkspace();
             return;
@@ -1402,26 +1402,26 @@
         const publishButton = document.querySelector('[data-action="publish"]');
         if (publishButton) {
             publishButton.disabled = true;
-            publishButton.textContent = 'Publicando...';
+            publishButton.textContent = 'Publishing...';
         }
 
         try {
             if (wizardState.mode === 'create') {
                 await api.createAgent(payload);
                 clearDraftFromStorage();
-                showToast('Agente criado com sucesso', 'success');
+                showToast('Agent created successfully', 'success');
             } else if (wizardState.agentId) {
                 await api.updateAgent(wizardState.agentId, payload);
-                showToast('Agente atualizado com sucesso', 'success');
+                showToast('Agent updated successfully', 'success');
             }
             loadAgentsPage();
         } catch (error) {
             console.error('Failed to publish agent', error);
-            showToast('Não foi possível publicar o agente: ' + (error.message || error), 'error');
+            showToast('Could not publish agent: ' + (error.message || error), 'error');
         } finally {
             if (publishButton) {
                 publishButton.disabled = false;
-                publishButton.textContent = 'Publicar';
+                publishButton.textContent = 'Publish';
             }
         }
     }
@@ -1487,19 +1487,19 @@
             : 'Nenhum canal configurado';
 
         const rows = [
-            { label: 'Nome', value: data.name || '—' },
-            { label: 'Descrição', value: data.description || '—' },
+            { label: 'Name', value: data.name || '—' },
+            { label: 'Description', value: data.description || '—' },
             { label: 'API', value: data.api_type || '—' },
-            { label: 'Modelo', value: data.model || 'Padrão' },
-            { label: 'Temperatura', value: data.temperature || '—' },
+            { label: 'Model', value: data.model || 'Default' },
+            { label: 'Temperature', value: data.temperature || '—' },
             { label: 'Top P', value: data.top_p || '—' },
             { label: 'Max Tokens', value: data.max_output_tokens || '—' },
-            { label: 'Canais', value: channelSummary },
+            { label: 'Channels', value: channelSummary },
             { label: 'Vector stores', value: resolvedStores.length ? resolvedStores.join(', ') : '—' },
-            { label: 'File Search', value: data.enable_file_search ? 'Ativado' : 'Desativado' }
+            { label: 'File Search', value: data.enable_file_search ? 'Enabled' : 'Disabled' }
         ];
 
-        const title = options.showTitle === false ? '' : `<div class="agent-summary-title">${escapeHtml(options.title || 'Resumo do agente')}</div>`;
+        const title = options.showTitle === false ? '' : `<div class="agent-summary-title">${escapeHtml(options.title || 'Agent Summary')}</div>`;
         const list = rows.map(row => `
                 <div>
                     <dt>${escapeHtml(row.label)}</dt>
@@ -1540,23 +1540,23 @@
         }
 
         if (wizardState.promptBuilder.isGenerating) {
-            container.innerHTML = '<p class="text-muted">Gerando instruções com o Prompt Builder...</p>';
+            container.innerHTML = '<p class="text-muted">Generating instructions with Prompt Builder...</p>';
             return;
         }
 
         const result = wizardState.promptBuilder.lastGenerated;
         if (!result) {
-            container.innerHTML = '<p class="text-muted">Nenhum prompt gerado ainda.</p>';
+            container.innerHTML = '<p class="text-muted">No prompt generated yet.</p>';
             return;
         }
 
         container.innerHTML = `
             <div class="wizard-prompt-preview">
                 <div class="wizard-prompt-meta">
-                    <span class="badge">Versão ${escapeHtml(result.version || '?')}</span>
+                    <span class="badge">Version ${escapeHtml(result.version || '?')}</span>
                     ${result.latency_ms ? `<span class="badge badge-muted">${escapeHtml(result.latency_ms)} ms</span>` : ''}
                 </div>
-                <p class="text-muted">Última geração aplicada automaticamente ao campo de comportamento.</p>
+                <p class="text-muted">Last generation automatically applied to behavior field.</p>
                 <pre>${escapeHtml(result.prompt_md || '')}</pre>
             </div>
         `;
@@ -1595,7 +1595,7 @@
                 }
                 updatePromptBuilderPreview();
                 updateReviewSummary();
-                showToast('Prompt gerado aplicado ao agente.', 'success');
+                showToast('Generated prompt applied to agent.', 'success');
             }
         });
 
@@ -1607,7 +1607,7 @@
     window.agentTester = window.agentTester || {};
     window.agentTester.start = async function startAgentTester(agentId) {
         if (!agentId) {
-            showToast('Selecione um agente válido para testar.', 'error');
+            showToast('Select a valid agent to test.', 'error');
             return;
         }
 
@@ -1620,7 +1620,7 @@
         }
 
         if (typeof api?.getAgent !== 'function') {
-            showToast('API de agentes indisponível.', 'error');
+            showToast('Agent API unavailable.', 'error');
             return;
         }
 
@@ -1634,8 +1634,8 @@
             });
             wizardState.testSession.shouldFocusInput = true;
         } catch (error) {
-            console.error('Falha ao carregar agente para teste', error);
-            showToast('Não foi possível carregar o agente para teste: ' + (error.message || error), 'error');
+            console.error('Failed to load agent for test', error);
+            showToast('Could not load agent for test: ' + (error.message || error), 'error');
         }
     };
 })();
