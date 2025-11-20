@@ -31,6 +31,23 @@ class WordPressAgent extends AbstractSpecializedAgent
     private $wpClient;
 
     /**
+     * Lazy-loaded dependencies for Pro workflow
+     * @var object|null
+     */
+    private $configurationService;
+    private $queueService;
+    private $generatorService;
+    private $publisherService;
+    private $executionLogger;
+    private $credentialManager;
+
+    /**
+     * Cache decrypted secrets per request lifecycle
+     * @var array<string, mixed>
+     */
+    private $credentialCache = [];
+
+    /**
      * Supported actions
      */
     private const ACTION_CREATE_POST = 'create_post';
@@ -130,6 +147,230 @@ class WordPressAgent extends AbstractSpecializedAgent
                     'default' => 10,
                     'minimum' => 1,
                     'maximum' => 100
+                ],
+                'configuration_id' => [
+                    'type' => 'string',
+                    'description' => 'Identifier referencing a stored WordPress Blog Automation configuration record',
+                    'minLength' => 1
+                ],
+                'article_queue_id' => [
+                    'type' => 'string',
+                    'description' => 'Queue ID used by the automation orchestrator for this agent',
+                    'minLength' => 1
+                ],
+                'workflow_phases' => [
+                    'type' => 'object',
+                    'description' => 'Toggle the automation phases that this agent should run',
+                    'properties' => [
+                        'generate_structure' => [
+                            'type' => 'boolean',
+                            'default' => true,
+                            'description' => 'Toggle chapter outline and metadata generation'
+                        ],
+                        'write_chapters' => [
+                            'type' => 'boolean',
+                            'default' => true,
+                            'description' => 'Toggle chapter content drafting'
+                        ],
+                        'generate_assets' => [
+                            'type' => 'boolean',
+                            'default' => true,
+                            'description' => 'Toggle featured/chapter image generation'
+                        ],
+                        'assemble_article' => [
+                            'type' => 'boolean',
+                            'default' => true,
+                            'description' => 'Toggle content assembly & markdown to HTML conversion'
+                        ],
+                        'publish_article' => [
+                            'type' => 'boolean',
+                            'default' => false,
+                            'description' => 'Automatically publish to WordPress after assembly'
+                        ]
+                    ],
+                    'default' => []
+                ],
+                'content_parameters' => [
+                    'type' => 'object',
+                    'description' => 'Constraints for generated long-form content',
+                    'properties' => [
+                        'number_of_chapters' => [
+                            'type' => 'integer',
+                            'default' => 6,
+                            'minimum' => 1,
+                            'maximum' => 20,
+                            'description' => 'Desired number of body chapters'
+                        ],
+                        'max_word_count' => [
+                            'type' => 'integer',
+                            'default' => 1800,
+                            'minimum' => 500,
+                            'maximum' => 6000,
+                            'description' => 'Upper bound for article word count'
+                        ],
+                        'introduction_length' => [
+                            'type' => 'integer',
+                            'default' => 180,
+                            'minimum' => 50,
+                            'maximum' => 600,
+                            'description' => 'Introduction target length (words)'
+                        ],
+                        'conclusion_length' => [
+                            'type' => 'integer',
+                            'default' => 180,
+                            'minimum' => 50,
+                            'maximum' => 600,
+                            'description' => 'Conclusion target length (words)'
+                        ],
+                        'tone' => [
+                            'type' => 'string',
+                            'description' => 'Writing tone guidance (e.g., authoritative, friendly)'
+                        ],
+                        'target_audience' => [
+                            'type' => 'string',
+                            'description' => 'Audience persona/role description used in prompts'
+                        ]
+                    ],
+                    'default' => []
+                ],
+                'cta' => [
+                    'type' => 'object',
+                    'description' => 'Call-to-action copy injected into articles',
+                    'properties' => [
+                        'message' => [
+                            'type' => 'string',
+                            'description' => 'CTA copy appended to conclusion'
+                        ],
+                        'url' => [
+                            'type' => 'string',
+                            'format' => 'uri',
+                            'description' => 'Destination URL for CTA'
+                        ],
+                        'company_offering' => [
+                            'type' => 'string',
+                            'description' => 'Short description of the offer or product'
+                        ]
+                    ],
+                    'default' => []
+                ],
+                'seo_preferences' => [
+                    'type' => 'object',
+                    'description' => 'SEO metadata and snippet guidelines',
+                    'properties' => [
+                        'primary_keywords' => [
+                            'type' => 'array',
+                            'items' => ['type' => 'string'],
+                            'description' => 'Primary keywords that must be included in copy'
+                        ],
+                        'secondary_keywords' => [
+                            'type' => 'array',
+                            'items' => ['type' => 'string'],
+                            'description' => 'Secondary keywords for variety'
+                        ],
+                        'meta_description_length' => [
+                            'type' => 'integer',
+                            'default' => 155,
+                            'minimum' => 90,
+                            'maximum' => 200,
+                            'description' => 'Target character length for meta description'
+                        ],
+                        'slug_strategy' => [
+                            'type' => 'string',
+                            'enum' => ['keyword', 'sentence', 'custom'],
+                            'default' => 'keyword',
+                            'description' => 'How slugs should be constructed'
+                        ]
+                    ],
+                    'default' => []
+                ],
+                'image_preferences' => [
+                    'type' => 'object',
+                    'description' => 'Image generation parameters',
+                    'properties' => [
+                        'enabled' => [
+                            'type' => 'boolean',
+                            'default' => true,
+                            'description' => 'Whether to request DALL·E assets'
+                        ],
+                        'featured_image_style' => [
+                            'type' => 'string',
+                            'description' => 'Style hint for featured images (e.g., “cinematic photo”)'
+                        ],
+                        'chapter_image_style' => [
+                            'type' => 'string',
+                            'description' => 'Style hint for per-chapter images'
+                        ],
+                        'image_count_limit' => [
+                            'type' => 'integer',
+                            'default' => 6,
+                            'minimum' => 0,
+                            'maximum' => 20,
+                            'description' => 'Hard limit of generated images per article'
+                        ]
+                    ],
+                    'default' => []
+                ],
+                'storage_preferences' => [
+                    'type' => 'object',
+                    'description' => 'Asset storage rules for generated artifacts',
+                    'properties' => [
+                        'provider' => [
+                            'type' => 'string',
+                            'enum' => ['google_drive', 's3', 'local', 'none'],
+                            'default' => 'google_drive',
+                            'description' => 'Where generated files should be persisted'
+                        ],
+                        'google_drive_folder_id' => [
+                            'type' => 'string',
+                            'description' => 'Destination folder ID when using Google Drive'
+                        ],
+                        'asset_manifest_url' => [
+                            'type' => 'string',
+                            'format' => 'uri',
+                            'description' => 'Pre-existing manifest file to append to'
+                        ]
+                    ],
+                    'default' => []
+                ],
+                'credential_aliases' => [
+                    'type' => 'object',
+                    'description' => 'Alias references for retrieving/encrypting credentials',
+                    'properties' => [
+                        'wordpress' => [
+                            'type' => 'string',
+                            'description' => 'Alias/key for WordPress credentials in the credential vault'
+                        ],
+                        'openai' => [
+                            'type' => 'string',
+                            'description' => 'Alias/key for OpenAI credentials'
+                        ],
+                        'google_drive' => [
+                            'type' => 'string',
+                            'description' => 'Alias/key for Google Drive service account'
+                        ]
+                    ],
+                    'default' => []
+                ],
+                'enable_execution_logging' => [
+                    'type' => 'boolean',
+                    'description' => 'Toggle execution log storage for every phase',
+                    'default' => true
+                ],
+                'enable_queue_polling' => [
+                    'type' => 'boolean',
+                    'description' => 'Allow orchestrator to poll this configuration for queued work',
+                    'default' => true
+                ],
+                'monitoring_channel' => [
+                    'type' => 'string',
+                    'description' => 'Optional Slack/email channel identifier for workflow alerts'
+                ],
+                'execution_log_retention_days' => [
+                    'type' => 'integer',
+                    'description' => 'Retention window for execution logs',
+                    'default' => 30,
+                    'minimum' => 1,
+                    'maximum' => 365
                 ]
             ]
         ];
@@ -141,7 +382,22 @@ class WordPressAgent extends AbstractSpecializedAgent
     {
         parent::initialize($dependencies);
 
-        $this->logInfo('WordPress agent initialized');
+        $this->configurationService = $dependencies['wordpress_blog_configuration_service'] ?? null;
+        $this->queueService = $dependencies['wordpress_blog_queue_service'] ?? null;
+        $this->generatorService = $dependencies['wordpress_blog_generator_service'] ?? null;
+        $this->publisherService = $dependencies['wordpress_blog_publisher'] ?? null;
+        $this->executionLogger = $dependencies['wordpress_blog_execution_logger'] ?? null;
+        $this->credentialManager = $dependencies['credential_manager'] ?? null;
+        $this->credentialCache = [];
+
+        $this->logInfo('WordPress agent initialized', [
+            'configuration_service' => (bool) $this->configurationService,
+            'queue_service' => (bool) $this->queueService,
+            'generator_service' => (bool) $this->generatorService,
+            'publisher_service' => (bool) $this->publisherService,
+            'execution_logger' => (bool) $this->executionLogger,
+            'credential_manager' => (bool) $this->credentialManager
+        ]);
     }
 
     // ==================== CONTEXT BUILDING ====================
@@ -173,8 +429,12 @@ class WordPressAgent extends AbstractSpecializedAgent
             throw new AgentValidationException('WordPress site URL is required');
         }
 
-        if (empty($config['wp_username']) || empty($config['wp_app_password'])) {
-            throw new AgentValidationException('WordPress credentials are required');
+        $credentialAliases = $config['credential_aliases'] ?? [];
+        $hasDirectCredentials = !empty($config['wp_username']) && !empty($config['wp_app_password']);
+        $hasAliasConfigured = !empty($credentialAliases['wordpress']);
+
+        if (!$hasDirectCredentials && !$hasAliasConfigured) {
+            throw new AgentValidationException('WordPress credentials are required (provide username/password or credential alias)');
         }
 
         return $validatedMessages;
@@ -188,10 +448,11 @@ class WordPressAgent extends AbstractSpecializedAgent
 
         // Initialize WordPress API client
         $config = $context['specialized_config'];
+        $wordpressCredentials = $this->getWordPressCredentials($config);
         $this->wpClient = new WordPressApiClient(
             $config['wp_site_url'],
-            $config['wp_username'],
-            $config['wp_app_password'],
+            $wordpressCredentials['username'],
+            $wordpressCredentials['password'],
             $config['api_timeout_ms'] ?? 30000
         );
 
@@ -742,6 +1003,80 @@ class WordPressAgent extends AbstractSpecializedAgent
         // For simplicity, return tag names directly
         // WordPress API will create tags if they don't exist
         return $tagNames;
+    }
+
+    /**
+     * Resolve WordPress credentials once per lifecycle
+     */
+    private function getWordPressCredentials(array $config): array
+    {
+        if (isset($this->credentialCache['wordpress'])) {
+            return $this->credentialCache['wordpress'];
+        }
+
+        $username = $config['wp_username'] ?? null;
+        $password = $config['wp_app_password'] ?? null;
+
+        $credentialAliases = $config['credential_aliases'] ?? [];
+        $alias = $credentialAliases['wordpress'] ?? null;
+        if ($alias) {
+            $resolved = $this->resolveCredentialAlias($alias);
+            if (is_array($resolved)) {
+                $username = $resolved['username'] ?? $username;
+                $password = $resolved['password'] ?? ($resolved['secret'] ?? $password);
+            } elseif (is_string($resolved)) {
+                $password = $resolved;
+            }
+        }
+
+        if (!$username || !$password) {
+            throw new AgentValidationException('WordPress credentials are required', [
+                'field' => 'credential_aliases.wordpress',
+                'error' => 'missing_credentials'
+            ]);
+        }
+
+        $this->credentialCache['wordpress'] = [
+            'username' => $username,
+            'password' => $password
+        ];
+
+        return $this->credentialCache['wordpress'];
+    }
+
+    /**
+     * Resolve a credential alias via injected credential manager
+     */
+    private function resolveCredentialAlias(string $alias)
+    {
+        if (!$this->credentialManager || !$alias) {
+            return null;
+        }
+
+        $attemptOrder = ['resolve', 'get', 'fetch', 'retrieve', 'load'];
+
+        foreach ($attemptOrder as $method) {
+            if (!method_exists($this->credentialManager, $method)) {
+                continue;
+            }
+
+            try {
+                $result = $this->credentialManager->{$method}($alias);
+            } catch (\Throwable $exception) {
+                $this->logError('Credential manager error', [
+                    'alias' => $alias,
+                    'method' => $method,
+                    'error' => $exception->getMessage()
+                ]);
+                continue;
+            }
+
+            if ($result !== null) {
+                return $result;
+            }
+        }
+
+        return null;
     }
 
     /**
