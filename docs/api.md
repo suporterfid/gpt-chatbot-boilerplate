@@ -1,1116 +1,726 @@
 # API Documentation - GPT Chatbot Boilerplate
 
-This document provides comprehensive API documentation for the GPT Chatbot Boilerplate, covering both client-side JavaScript API and server-side HTTP endpoints.
-
-## Table of Contents
+**Version:** 1.0.0
+**Last Updated:** January 2025
 
-- [JavaScript Client API](#javascript-client-api)
-- [HTTP API Endpoints](#http-api-endpoints)
-- [WebSocket API](#websocket-api)
-- [Configuration API](#configuration-api)
-- [Error Handling](#error-handling)
-- [Rate Limiting](#rate-limiting)
-- [Examples](#examples)
-
-## JavaScript Client API
-
-### ChatBot Class
-
-The main `ChatBot` class provides the interface for initializing and controlling the chatbot widget.
-
-#### Static Methods
-
-##### `ChatBot.init(container, options)`
-
-Initializes a new chatbot instance.
-
-**Parameters:**
-- `container` (string|Element|null): CSS selector, DOM element, or null for floating mode
-- `options` (object): Configuration options
+Welcome to the comprehensive API documentation for the GPT Chatbot Boilerplate platform - a production-ready, enterprise-grade chatbot solution with multi-tenancy, whitelabel publishing, and advanced AI capabilities.
 
-**Returns:** ChatBot instance
-
-**Example:**
-```javascript
-// Floating mode
-const chatbot = ChatBot.init({
-    mode: 'floating',
-    apiEndpoint: '/chat-unified.php'
-});
+## Documentation Overview
 
-// Inline mode
-const chatbot = ChatBot.init('#chat-container', {
-    mode: 'inline',
-    height: '500px'
-});
-```
+This platform provides three main APIs for different audiences:
 
-##### `ChatBot.destroyAll()`
+### 🔧 [Admin API Documentation](admin-api.md)
 
-Destroys all active chatbot instances.
+Complete backend administration API for managing the platform.
 
-**Example:**
-```javascript
-ChatBot.destroyAll();
-```
+**Audience:** System administrators, backend developers, DevOps engineers
 
-### Configuration Options
+**Key Features:**
+- 90+ administrative endpoints
+- User and authentication management
+- Agent configuration and management
+- Whitelabel publishing and branding
+- Channel integrations (WhatsApp, etc.)
+- Multi-tenancy management
+- Usage tracking and billing
+- Prompt and vector store management
+- LeadSense CRM integration
+- AI-powered prompt builder
+- Audit logging and compliance (GDPR/CCPA)
+- Job queue and webhook management
 
-#### Basic Settings
+**[View Complete Admin API Documentation →](admin-api.md)**
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `mode` | string | `'inline'` | Widget mode: `'inline'` or `'floating'` |
-| `position` | string | `'bottom-right'` | Floating position: `'bottom-right'` or `'bottom-left'` |
-| `title` | string | `'Chat Assistant'` | Widget title |
-| `height` | string | `'400px'` | Widget height |
-| `width` | string | `'350px'` | Widget width |
-| `show` | boolean | `false` | Auto-show floating widget |
+---
 
-#### API Settings
+### 🌐 [Public API Documentation](public-api.md)
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `apiEndpoint` | string | `'/chat-unified.php'` | SSE/AJAX endpoint URL |
-| `websocketEndpoint` | string | `'ws://localhost:8080'` | WebSocket server URL |
-| `streamingMode` | string | `'auto'` | Connection mode: `'auto'`, `'sse'`, `'websocket'`, `'ajax'` |
-| `maxMessages` | number | `50` | Maximum messages in memory |
-| `enableMarkdown` | boolean | `true` | Enable markdown formatting |
+Public-facing APIs for chat interactions and agent discovery.
 
-#### Theme Customization
+**Audience:** Frontend developers, client application developers, integration partners
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `theme.primaryColor` | string | `'#1FB8CD'` | Primary brand color |
-| `theme.backgroundColor` | string | `'#F5F5F5'` | Background color |
-| `theme.surfaceColor` | string | `'#FFFFFF'` | Surface/card color |
-| `theme.textColor` | string | `'#333333'` | Text color |
-| `theme.mutedColor` | string | `'#666666'` | Muted text color |
-| `theme.fontFamily` | string | `'inherit'` | Font family |
-| `theme.fontSize` | string | `'14px'` | Base font size |
-| `theme.borderRadius` | string | `'8px'` | Border radius |
-| `theme.shadow` | string | `'0 4px 6px -1px rgba(0, 0, 0, 0.1)'` | Box shadow |
+**Key Features:**
+- Chat API with streaming support (SSE/WebSocket)
+- Public agent discovery and listing
+- Whitelabel agent access with HMAC authentication
+- File upload and attachment support
+- Real-time WebSocket communication
+- Multi-turn conversation management
+- Structured output and tool calling
+- Rate limiting and error handling
 
-#### Assistant Settings
+**[View Complete Public API Documentation →](public-api.md)**
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `assistant.name` | string | `'Assistant'` | Assistant display name |
-| `assistant.avatar` | string | `null` | Avatar image URL |
-| `assistant.welcomeMessage` | string | `'Hello! How can I help you today?'` | Welcome message |
-| `assistant.placeholder` | string | `'Type your message...'` | Input placeholder |
-| `assistant.thinking` | string | `'Assistant is thinking...'` | Typing indicator text |
+---
 
-#### UI Settings
+### 📱 [JavaScript Client API Documentation](client-api.md)
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `animations` | boolean | `true` | Enable animations |
-| `sound` | boolean | `false` | Enable sound effects |
-| `timestamps` | boolean | `false` | Show message timestamps |
-| `autoScroll` | boolean | `true` | Auto-scroll to new messages |
+JavaScript widget library for embedding chatbots in websites.
 
-#### Callback Functions
+**Audience:** Frontend developers, web designers, website owners
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `onMessage` | function | `null` | Called when message is added |
-| `onError` | function | `null` | Called when error occurs |
-| `onConnect` | function | `null` | Called when connected |
-| `onDisconnect` | function | `null` | Called when disconnected |
-| `onTyping` | function | `null` | Called when typing status changes |
+**Key Features:**
+- Easy drop-in widget (inline or floating)
+- Rich customization and theming
+- File upload support
+- Markdown rendering
+- Accessibility features (WCAG 2.1 AA)
+- Responsive mobile-friendly design
+- Connection resilience and auto-reconnection
+- Proactive messaging
+- TypeScript support
+- Event callbacks and hooks
 
-### Instance Methods
+**[View Complete JavaScript Client API Documentation →](client-api.md)**
 
-#### `show()`
+---
 
-Shows the chatbot widget (floating mode only).
+## Quick Start Guide
 
-**Example:**
-```javascript
-chatbot.show();
-```
+### For End Users (Website Integration)
 
-#### `hide()`
-
-Hides the chatbot widget (floating mode only).
-
-**Example:**
-```javascript
-chatbot.hide();
-```
-
-#### `toggle()`
-
-Toggles chatbot visibility (floating mode only).
-
-**Example:**
-```javascript
-chatbot.toggle();
-```
-
-#### `sendMessageProgrammatically(message)`
-
-Sends a message programmatically.
-
-**Parameters:**
-- `message` (string): Message to send
-
-**Example:**
-```javascript
-chatbot.sendMessageProgrammatically('Hello, how are you?');
-```
-
-#### `clearHistory()`
-
-Clears the conversation history.
-
-**Example:**
-```javascript
-chatbot.clearHistory();
-```
-
-#### `destroy()`
-
-Destroys the chatbot instance and removes it from DOM.
-
-**Example:**
-```javascript
-chatbot.destroy();
-```
-
-### Events and Callbacks
-
-#### onMessage
-
-Called when a new message is added to the conversation.
-
-```javascript
-ChatBot.init({
-    onMessage: function(message) {
-        console.log('New message:', message);
-        // message object contains: role, content, timestamp
-    }
-});
-```
-
-#### onError
-
-Called when an error occurs.
-
-```javascript
-ChatBot.init({
-    onError: function(error) {
-        console.error('Chat error:', error);
-        // Handle error (show notification, log, etc.)
-    }
-});
-```
-
-#### onConnect
-
-Called when connection is established.
-
-```javascript
-ChatBot.init({
-    onConnect: function() {
-        console.log('Connected to chat server');
-    }
-});
-```
-
-#### onDisconnect
-
-Called when connection is lost.
-
-```javascript
-ChatBot.init({
-    onDisconnect: function() {
-        console.log('Disconnected from chat server');
-    }
-});
-```
-
-#### onTyping
-
-Called when typing status changes.
-
-```javascript
-ChatBot.init({
-    onTyping: function(isTyping) {
-        console.log('Assistant typing:', isTyping);
-    }
-});
-```
-
-### Auto-initialization
-
-The widget can be auto-initialized using data attributes:
+Add the chatbot widget to your website in 3 simple steps:
 
 ```html
-<div id="chatbot" data-chatbot='{"mode": "inline", "height": "600px"}'></div>
+<!-- 1. Include CSS -->
+<link rel="stylesheet" href="https://your-domain.com/chatbot.css">
+
+<!-- 2. Include JavaScript -->
+<script src="https://your-domain.com/chatbot-enhanced.js"></script>
+
+<!-- 3. Initialize -->
+<script>
+  ChatBot.init({
+    mode: 'floating',
+    apiEndpoint: '/chat-unified.php',
+    ui: {
+      title: 'Chat Assistant',
+      theme: {
+        primaryColor: '#007bff'
+      }
+    }
+  });
+</script>
 ```
 
-## HTTP API Endpoints
+**[Learn more in the JavaScript Client API docs →](client-api.md#quick-start)**
 
-### POST /chat-unified.php
+---
 
-Main chat endpoint that handles both SSE streaming and regular AJAX requests.
+### For Developers (API Integration)
 
-#### Request
-
-**Headers:**
-```
-Content-Type: application/json
-Accept: text/event-stream (for SSE) or application/json (for AJAX)
-```
-
-**Body:**
-```json
-{
-    "message": "Hello, how are you?",
-    "conversation_id": "conv_abc123",
-    "agent_id": "agent-uuid-here",
-    "stream": true
-}
-```
-
-**Parameters:**
-- `message` (string, required): User's message
-- `conversation_id` (string, optional): Unique conversation identifier
-- `agent_id` (string, optional): UUID of the agent to use for this request. If not provided, the default agent (if set) will be used, otherwise falls back to config.php settings
-- `stream` (boolean, optional): Enable streaming response (default: true for SSE, false for AJAX)
-
-#### Response (SSE)
-
-Server-Sent Events stream with the following event types:
-
-**Start Event:**
-```
-event: start
-data: {"conversation_id": "conv_abc123", "agent_id": "agent-uuid-here", "api_type": "responses"}
-```
-
-**Message Events:**
-```
-event: message
-data: {"type": "start"}
-
-event: message
-data: {"type": "chunk", "content": "Hello"}
-
-event: message
-data: {"type": "chunk", "content": "! How"}
-
-event: message
-data: {"type": "done"}
-```
-
-**Error Event:**
-```
-event: error
-data: {"message": "An error occurred"}
-```
-
-**Close Event:**
-```
-event: close
-data: null
-```
-
-#### Response (AJAX)
-
-**Success (200):**
-```json
-{
-    "response": "Hello! I'm doing well, thank you for asking. How can I help you today?",
-    "conversation_id": "conv_abc123",
-    "tokens_used": 25,
-    "model": "gpt-3.5-turbo"
-}
-```
-
-**Error (400/500):**
-```json
-{
-    "error": "Message is required",
-    "code": "MISSING_MESSAGE",
-    "details": {}
-}
-```
-
-### GET /chat-unified.php
-
-Alternative GET endpoint for SSE streaming (useful for EventSource API).
-
-#### Request
-
-**Query Parameters:**
-- `message` (string, required): User's message (URL encoded)
-- `conversation_id` (string, optional): Conversation identifier
-- `agent_id` (string, optional): UUID of the agent to use
-
-**Example:**
-```
-GET /chat-unified.php?message=Hello&conversation_id=conv_abc123&agent_id=agent-uuid-here
-```
-
-#### Response
-
-Same SSE format as POST endpoint.
-
-### Agent Selection Behavior
-
-The chat endpoint supports dynamic agent selection via the `agent_id` parameter. This allows you to override the default chat behavior with agent-specific configurations.
-
-#### Agent Selection Priority
-
-The system follows this priority order when determining which configuration to use:
-
-1. **Explicit agent_id**: If provided in the request, the agent configuration is loaded
-2. **Default agent**: If no agent_id is provided, the system uses the agent marked as default
-3. **Config fallback**: If no default agent exists, falls back to config.php settings
-
-#### Configuration Merging
-
-When an agent is selected, its configuration overrides config.php defaults. The merging precedence is:
-
-**Request parameters > Agent configuration > config.php defaults**
-
-For example:
-- If request includes `prompt_id`, it overrides agent's prompt_id
-- If agent specifies `model: "gpt-4"`, it overrides config.php model
-- If neither request nor agent specify a value, config.php default is used
-
-#### Agent Configuration Fields
-
-An agent can override the following configuration fields:
-
-- `name`: Unique agent name (required)
-- `slug`: URL-friendly identifier (optional, lowercase letters, numbers, and hyphens, 1-64 characters)
-- `description`: Human-readable description of the agent's purpose
-- `api_type`: 'chat' or 'responses'
-- `prompt_id`: OpenAI prompt identifier
-- `prompt_version`: Specific prompt version
-- `model`: OpenAI model (e.g., 'gpt-4', 'gpt-3.5-turbo')
-- `temperature`: Randomness (0.0 - 2.0)
-- `top_p`: Nucleus sampling parameter
-- `max_output_tokens`: Maximum response length
-- `system_message`: System prompt (for chat API)
-- `tools`: Array of tool definitions
-- `vector_store_ids`: Array of vector store IDs for file_search
-- `max_num_results`: Maximum file search results
-
-#### Example: Using an Agent
+Send a chat message via the REST API:
 
 ```bash
-# Create an agent via Admin API
-curl -X POST "http://localhost/admin-api.php?action=create_agent" \
-  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+curl -X POST "https://your-domain.com/chat-unified.php" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Hello, how can you help me?",
+    "conversation_id": "conv_abc123",
+    "agent_id": "agent_xyz789"
+  }'
+```
+
+**[Learn more in the Public API docs →](public-api.md#chat-api)**
+
+---
+
+### For Administrators (Platform Management)
+
+Create a new agent via the Admin API:
+
+```bash
+curl -X POST "https://your-domain.com/admin-api.php?action=create_agent" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Customer Support Bot",
     "slug": "customer-support",
     "api_type": "responses",
-    "prompt_id": "prompt_abc123",
     "model": "gpt-4",
-    "temperature": 0.7,
-    "tools": [{"type": "file_search"}],
-    "vector_store_ids": ["vs_xyz789"]
-  }'
-
-# Response includes agent UUID
-# {"data": {"id": "agent_uuid_here", ...}}
-
-# Use the agent in chat
-curl -X POST "http://localhost/chat-unified.php" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "What is your return policy?",
-    "agent_id": "agent_uuid_here",
-    "conversation_id": "conv_123"
+    "temperature": 0.7
   }'
 ```
 
-### Admin Authentication Flow
-
-Admins can establish a secure session using email/password credentials. Sessions are persisted in the `admin_sessions` table and expire automatically (default TTL: 24 hours, configurable via `ADMIN_SESSION_TTL`). Every request should include either the session cookie or an API key in the `Authorization` header.
-
-```bash
-# Login and capture session cookie
-curl -i -c cookies.txt -X POST "http://localhost/admin-api.php?action=login" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@example.com",
-    "password": "super-secure-password"
-  }'
-
-# Use the session cookie for subsequent requests
-curl -b cookies.txt "http://localhost/admin-api.php?action=current_user"
-
-# Logout and revoke the session
-curl -b cookies.txt -X POST "http://localhost/admin-api.php?action=logout"
-```
-
-> **Note:** API keys supplied via `Authorization: Bearer <API_KEY>` remain supported for headless integrations. Legacy single `ADMIN_TOKEN` headers still work but are deprecated and slated for removal in a future release.
-
-#### Error Handling
-
-- **Invalid agent_id**: Logs warning and falls back to default agent
-- **Agent not found**: Falls back to default agent or config.php
-- **No AgentService**: Falls back to config.php (backwards compatible)
-
-### GET /health
-
-Health check endpoint for monitoring.
-
-#### Response
-
-**Success (200):**
-```json
-{
-    "status": "ok",
-    "timestamp": "2024-01-15T10:30:00Z",
-    "version": "1.0.0",
-    "services": {
-        "openai": "connected",
-        "database": "connected"
-    }
-}
-```
-
-**Error (503):**
-```json
-{
-    "status": "error",
-    "timestamp": "2024-01-15T10:30:00Z",
-    "errors": [
-        "OpenAI API key not configured"
-    ]
-}
-```
-
-## WebSocket API
-
-### Connection
-
-Connect to the WebSocket server:
-
-```javascript
-const ws = new WebSocket('ws://localhost:8080');
-```
-
-### Events
-
-#### Connection Events
-
-**Connected:**
-```json
-{
-    "type": "connected",
-    "message": "Connected to ChatBot WebSocket server"
-}
-```
-
-#### Message Events
-
-**Send Message:**
-```json
-{
-    "message": "Hello, how are you?",
-    "conversation_id": "conv_abc123"
-}
-```
-
-**Receive Response:**
-```json
-{
-    "type": "start",
-    "conversation_id": "conv_abc123"
-}
-```
-
-```json
-{
-    "type": "chunk",
-    "content": "Hello! I'm doing well."
-}
-```
-
-```json
-{
-    "type": "done"
-}
-```
-
-**Error:**
-```json
-{
-    "type": "error",
-    "message": "Message too long"
-}
-```
-
-### Example WebSocket Client
-
-```javascript
-const ws = new WebSocket('ws://localhost:8080');
-
-ws.onopen = function() {
-    console.log('Connected to WebSocket');
-    
-    // Send message
-    ws.send(JSON.stringify({
-        message: 'Hello!',
-        conversation_id: 'conv_123'
-    }));
-};
-
-ws.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    
-    switch(data.type) {
-        case 'connected':
-            console.log('WebSocket connected');
-            break;
-        case 'start':
-            console.log('Response starting');
-            break;
-        case 'chunk':
-            console.log('Received chunk:', data.content);
-            break;
-        case 'done':
-            console.log('Response complete');
-            break;
-        case 'error':
-            console.error('Error:', data.message);
-            break;
-    }
-};
-
-ws.onerror = function(error) {
-    console.error('WebSocket error:', error);
-};
-
-ws.onclose = function() {
-    console.log('WebSocket disconnected');
-};
-```
-
-## Configuration API
-
-### Environment Variables
-
-The application can be configured using environment variables:
-
-#### OpenAI Configuration
-
-- `OPENAI_API_KEY`: OpenAI API key (required)
-- `OPENAI_MODEL`: Model to use (default: gpt-3.5-turbo)
-- `OPENAI_TEMPERATURE`: Temperature setting (default: 0.7)
-- `OPENAI_MAX_TOKENS`: Maximum tokens per response (default: 1000)
-
-#### Responses Configuration
-
-- `RESPONSES_MODEL`: Responses API model (default: gpt-4.1-mini)
-- `RESPONSES_PROMPT_ID`: Saved prompt identifier (optional)
-- `RESPONSES_PROMPT_VERSION`: Prompt version (optional, defaults to latest)
-- `RESPONSES_MAX_OUTPUT_TOKENS`: Maximum output tokens (default: 1024)
-- `RESPONSES_TEMPERATURE`: Temperature setting (default: 0.7)
-- `RESPONSES_TOOLS`: Tools definition (JSON array or comma-separated list, e.g. `[{"type":"file_search"}]` or `file_search`)
-- `RESPONSES_VECTOR_STORE_IDS`: Default vector store IDs (JSON array or comma-separated list)
-- `RESPONSES_MAX_NUM_RESULTS`: Default `file_search.max_num_results` (1–200)
-
-#### Chat Configuration
-
-- `CHAT_MAX_MESSAGES`: Maximum messages to keep in session (default: 50)
-- `CHAT_SESSION_TIMEOUT`: Session timeout in seconds (default: 3600)
-- `CHAT_RATE_LIMIT`: Requests per minute limit (default: 60)
-
-#### Security Configuration
-
-- `CORS_ORIGINS`: Allowed CORS origins (default: *)
-- `VALIDATE_REFERER`: Enable referer validation (default: false)
-- `MAX_MESSAGE_LENGTH`: Maximum message length (default: 4000)
-
-#### WebSocket Configuration
-
-- `WEBSOCKET_ENABLED`: Enable WebSocket server (default: false)
-- `WEBSOCKET_HOST`: WebSocket host (default: 0.0.0.0)
-- `WEBSOCKET_PORT`: WebSocket port (default: 8080)
-
-### Runtime Configuration
-
-Configuration can be modified at runtime using the config.php file:
-
-```php
-$config = [
-    'openai' => [
-        'api_key' => 'your_key_here',
-        'model' => 'gpt-4',
-        'temperature' => 0.8,
-    ],
-    'chat' => [
-        'max_messages' => 100,
-        'rate_limit_requests' => 30,
-    ],
-    'security' => [
-        'allowed_origins' => ['https://yourdomain.com'],
-        'sanitize_input' => true,
-    ]
-];
-```
-
-## Error Handling
-
-### Error Codes
-
-The API uses standard HTTP status codes and custom error codes:
-
-#### HTTP Status Codes
-
-- `200`: Success
-- `400`: Bad Request (invalid parameters)
-- `401`: Unauthorized (invalid API key)
-- `429`: Too Many Requests (rate limited)
-- `500`: Internal Server Error
-- `503`: Service Unavailable
-
-#### Custom Error Codes
-
-| Code | Description |
-|------|-------------|
-| `MISSING_MESSAGE` | Message parameter is required |
-| `MESSAGE_TOO_LONG` | Message exceeds maximum length |
-| `INVALID_CONVERSATION_ID` | Invalid conversation ID format |
-| `RATE_LIMIT_EXCEEDED` | Rate limit exceeded |
-| `API_KEY_MISSING` | OpenAI API key not configured |
-| `API_KEY_INVALID` | OpenAI API key is invalid |
-| `MODEL_NOT_AVAILABLE` | Requested model is not available |
-| `QUOTA_EXCEEDED` | OpenAI API quota exceeded |
-| `SERVICE_UNAVAILABLE` | OpenAI API service unavailable |
-
-### Error Response Format
-
-```json
-{
-    "error": "Human readable error message",
-    "code": "ERROR_CODE",
-    "details": {
-        "field": "Additional error details"
-    },
-    "timestamp": "2024-01-15T10:30:00Z",
-    "request_id": "req_abc123"
-}
-```
-
-### Client-side Error Handling
-
-```javascript
-ChatBot.init({
-    onError: function(error) {
-        switch(error.code) {
-            case 'RATE_LIMIT_EXCEEDED':
-                showNotification('Please wait a moment before sending another message');
-                break;
-            case 'MESSAGE_TOO_LONG':
-                showNotification('Your message is too long. Please shorten it.');
-                break;
-            case 'SERVICE_UNAVAILABLE':
-                showNotification('Service is temporarily unavailable. Please try again later.');
-                break;
-            default:
-                showNotification('An error occurred. Please try again.');
-        }
-    }
-});
-```
-
-## Rate Limiting
-
-### Default Limits
-
-- **Requests per minute**: 60
-- **Requests per hour**: 1000
-- **Concurrent connections**: 10 per IP
-- **Message length**: 4000 characters
-
-### Rate Limit Headers
-
-The API includes rate limit information in response headers:
-
-```
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 45
-X-RateLimit-Reset: 1642248600
-X-RateLimit-Retry-After: 60
-```
-
-### Rate Limit Response
-
-When rate limited, the API returns:
-
-**Status:** 429 Too Many Requests
-
-```json
-{
-    "error": "Rate limit exceeded",
-    "code": "RATE_LIMIT_EXCEEDED",
-    "details": {
-        "limit": 60,
-        "window": 60,
-        "retry_after": 30
-    }
-}
-```
-
-### Handling Rate Limits
-
-```javascript
-fetch('/chat-unified.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: 'Hello' })
-})
-.then(response => {
-    if (response.status === 429) {
-        const retryAfter = response.headers.get('X-RateLimit-Retry-After');
-        setTimeout(() => {
-            // Retry the request
-        }, retryAfter * 1000);
-    }
-    return response.json();
-})
-.then(data => {
-    // Handle response
-})
-.catch(error => {
-    console.error('Error:', error);
-});
-```
-
-## Examples
-
-### Basic Implementation
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-    <link rel="stylesheet" href="chatbot.css">
-</head>
-<body>
-    <div id="chat-container"></div>
-    
-    <script src="chatbot-enhanced.js"></script>
-    <script>
-        ChatBot.init('#chat-container', {
-            mode: 'inline',
-            height: '500px',
-            apiEndpoint: '/chat-unified.php',
-            assistant: {
-                name: 'Assistant',
-                welcomeMessage: 'Hello! How can I help you today?'
-            }
-        });
-    </script>
-</body>
-</html>
-```
-
-### Advanced Configuration
-
-```javascript
-const chatbot = ChatBot.init({
-    mode: 'floating',
-    position: 'bottom-left',
-    streamingMode: 'auto',
-    
-    theme: {
-        primaryColor: '#007bff',
-        backgroundColor: '#f8f9fa',
-        fontFamily: 'Inter, sans-serif',
-        borderRadius: '12px'
-    },
-    
-    assistant: {
-        name: 'Sarah',
-        avatar: '/assets/sarah-avatar.png',
-        welcomeMessage: 'Hi! I'm Sarah, your AI assistant. How can I help?',
-        placeholder: 'Ask me anything...',
-        thinking: 'Sarah is thinking...'
-    },
-    
-    // Callbacks
-    onMessage: function(message) {
-        // Track message for analytics
-        analytics.track('chat_message', {
-            role: message.role,
-            length: message.content.length
-        });
-    },
-    
-    onError: function(error) {
-        // Log error to monitoring service
-        errorTracker.captureException(error);
-        
-        // Show user-friendly message
-        if (error.code === 'RATE_LIMIT_EXCEEDED') {
-            showToast('Please wait a moment before sending another message');
-        }
-    },
-    
-    onConnect: function() {
-        console.log('Chat connected');
-        updateConnectionStatus('connected');
-    },
-    
-    onDisconnect: function() {
-        console.log('Chat disconnected');
-        updateConnectionStatus('disconnected');
-    }
-});
-
-// Programmatic control
-document.getElementById('clear-chat').addEventListener('click', () => {
-    chatbot.clearHistory();
-});
-
-document.getElementById('send-predefined').addEventListener('click', () => {
-    chatbot.sendMessageProgrammatically('Tell me about your features');
-});
-```
-
-### Custom Integration
-
-```javascript
-// Custom chatbot with specific business logic
-class CustomChatBot extends ChatBot {
-    constructor(container, options) {
-        super(container, options);
-        this.setupCustomHandlers();
-    }
-    
-    setupCustomHandlers() {
-        // Override message handling
-        this.options.onMessage = (message) => {
-            if (message.role === 'user') {
-                this.trackUserIntent(message.content);
-            }
-            
-            if (message.role === 'assistant') {
-                this.extractActionables(message.content);
-            }
-        };
-    }
-    
-    trackUserIntent(message) {
-        // Custom analytics or intent detection
-        fetch('/api/track-intent', {
-            method: 'POST',
-            body: JSON.stringify({ message }),
-            headers: { 'Content-Type': 'application/json' }
-        });
-    }
-    
-    extractActionables(response) {
-        // Extract actionable items from assistant response
-        const actionables = this.parseActionables(response);
-        if (actionables.length > 0) {
-            this.showActionableButtons(actionables);
-        }
-    }
-    
-    showActionableButtons(actionables) {
-        // Add custom UI for actionable items
-        const buttonContainer = document.createElement('div');
-        buttonContainer.className = 'chatbot-actionables';
-        
-        actionables.forEach(action => {
-            const button = document.createElement('button');
-            button.textContent = action.label;
-            button.onclick = () => this.executeAction(action);
-            buttonContainer.appendChild(button);
-        });
-        
-        this.messageContainer.appendChild(buttonContainer);
-    }
-}
-
-// Use custom implementation
-const customChatbot = new CustomChatBot('#chat-container', {
-    mode: 'inline',
-    // ... other options
-});
-```
-
-### Server-side PHP Integration
-
-```php
-<?php
-// Custom endpoint extending the base functionality
-require_once 'chat-unified.php';
-
-class CustomChatHandler extends ChatHandler {
-    public function preprocessMessage($message, $context) {
-        // Custom preprocessing
-        $message = $this->sanitizeMessage($message);
-        $message = $this->addContextualInfo($message, $context);
-        
-        return parent::preprocessMessage($message, $context);
-    }
-    
-    public function postprocessResponse($response, $context) {
-        // Custom postprocessing
-        $response = $this->addCustomFormatting($response);
-        $response = $this->injectBusinessLogic($response, $context);
-        
-        return parent::postprocessResponse($response, $context);
-    }
-    
-    private function addContextualInfo($message, $context) {
-        // Add user context, preferences, history, etc.
-        if (isset($context['user_id'])) {
-            $userProfile = $this->getUserProfile($context['user_id']);
-            $message = "User context: {$userProfile['name']}, {$userProfile['role']}. Message: {$message}";
-        }
-        
-        return $message;
-    }
-}
-
-// Use custom handler
-$handler = new CustomChatHandler();
-$handler->handleRequest();
-?>
-```
-
-### WebSocket Server Customization
-
-```php
-<?php
-// Custom WebSocket server with additional features
-use Ratchet\MessageComponentInterface;
-use Ratchet\ConnectionInterface;
-
-class CustomChatBotWebSocket extends ChatBotWebSocket {
-    protected $rooms = [];
-    protected $userConnections = [];
-    
-    public function onMessage(ConnectionInterface $from, $msg) {
-        $data = json_decode($msg, true);
-        
-        // Handle different message types
-        switch ($data['type'] ?? 'message') {
-            case 'join_room':
-                $this->handleJoinRoom($from, $data);
-                break;
-            case 'leave_room':
-                $this->handleLeaveRoom($from, $data);
-                break;
-            case 'broadcast':
-                $this->handleBroadcast($from, $data);
-                break;
-            default:
-                parent::onMessage($from, $msg);
-        }
-    }
-    
-    private function handleJoinRoom($connection, $data) {
-        $roomId = $data['room_id'];
-        $this->rooms[$roomId][] = $connection;
-        
-        $connection->send(json_encode([
-            'type' => 'room_joined',
-            'room_id' => $roomId
-        ]));
-    }
-    
-    private function handleBroadcast($from, $data) {
-        $roomId = $data['room_id'];
-        if (isset($this->rooms[$roomId])) {
-            foreach ($this->rooms[$roomId] as $connection) {
-                if ($connection !== $from) {
-                    $connection->send(json_encode([
-                        'type' => 'broadcast',
-                        'message' => $data['message'],
-                        'from' => $data['user_id'] ?? 'anonymous'
-                    ]));
-                }
-            }
-        }
-    }
-}
-?>
-```
-
-## Testing
-
-### Unit Testing
-
-```javascript
-// Test chatbot initialization
-describe('ChatBot', () => {
-    test('should initialize with default config', () => {
-        const chatbot = ChatBot.init('#test-container');
-        expect(chatbot).toBeDefined();
-        expect(chatbot.options.mode).toBe('inline');
-    });
-    
-    test('should handle custom configuration', () => {
-        const chatbot = ChatBot.init('#test-container', {
-            mode: 'floating',
-            theme: { primaryColor: '#ff0000' }
-        });
-        
-        expect(chatbot.options.mode).toBe('floating');
-        expect(chatbot.options.theme.primaryColor).toBe('#ff0000');
-    });
-});
-```
-
-### Integration Testing
-
-```bash
-# Test SSE endpoint
-curl -N -H "Accept: text/event-stream" \
-  -X POST -H "Content-Type: application/json" \
-  -d '{"message": "Hello", "conversation_id": "test"}' \
-  http://localhost:8080/chat-unified.php
-
-# Test health endpoint
-curl http://localhost:8080/health
-
-# Test with rate limiting
-for i in {1..70}; do
-  curl -X POST -H "Content-Type: application/json" \
-    -d '{"message": "test"}' \
-    http://localhost:8080/chat-unified.php
-done
-```
-
-### Load Testing
-
-```bash
-# Using Apache Bench
-ab -n 1000 -c 10 -p post_data.json -T application/json \
-  http://localhost:8080/chat-unified.php
-
-# Using wrk
-wrk -t12 -c400 -d30s --script=post.lua \
-  http://localhost:8080/chat-unified.php
-```
+**[Learn more in the Admin API docs →](admin-api.md#agent-management)**
 
 ---
 
-## Additional Resources
+## Architecture Overview
 
-For more comprehensive documentation:
+### System Components
 
-- **[Implementation Report](IMPLEMENTATION_REPORT.md)** - Complete implementation details and architecture
-- **[Customization Guide](customization-guide.md)** - Extensive customization options
-- **[Deployment Guide](deployment.md)** - Deployment and operations
-- **[Phase Documentation](IMPLEMENTATION_PLAN.md)** - Detailed phase-by-phase implementation
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Client Applications                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Web Widget │  │ Mobile Apps  │  │  Custom Apps │      │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
+└─────────┼──────────────────┼──────────────────┼─────────────┘
+          │                  │                  │
+          └──────────────────┼──────────────────┘
+                             │
+          ┌──────────────────▼──────────────────┐
+          │         Public API Layer            │
+          │  ┌────────────┐  ┌────────────┐    │
+          │  │  Chat API  │  │ Agent API  │    │
+          │  └─────┬──────┘  └─────┬──────┘    │
+          └────────┼────────────────┼───────────┘
+                   │                │
+          ┌────────▼────────────────▼───────────┐
+          │      Application Core               │
+          │  ┌───────────────────────────┐      │
+          │  │   Agent Service           │      │
+          │  │   Connection Manager      │      │
+          │  │   Session Manager         │      │
+          │  │   File Upload Handler     │      │
+          │  └───────────┬───────────────┘      │
+          └──────────────┼──────────────────────┘
+                         │
+          ┌──────────────▼──────────────────────┐
+          │       Backend Services              │
+          │  ┌──────────┐  ┌──────────┐        │
+          │  │ OpenAI   │  │ Database │        │
+          │  │ API      │  │ (SQLite) │        │
+          │  └──────────┘  └──────────┘        │
+          └─────────────────────────────────────┘
+                         │
+          ┌──────────────▼──────────────────────┐
+          │         Admin API Layer             │
+          │  ┌────────────────────────────┐     │
+          │  │  Management & Analytics    │     │
+          │  │  User & Agent CRUD         │     │
+          │  │  Billing & Usage Tracking  │     │
+          │  │  Audit & Compliance        │     │
+          │  └────────────────────────────┘     │
+          └─────────────────────────────────────┘
+```
 
-This API documentation covers all the main interfaces and usage patterns for the GPT Chatbot Boilerplate. For additional examples and use cases, see the [main README](../README.md) or check the demo implementation in `default.php`.
+### API Types
 
+The platform supports two OpenAI API types:
+
+1. **Chat Completions API** (`api_type: 'chat'`)
+   - Traditional chat-based interactions
+   - Message history management
+   - System prompts
+   - Function/tool calling
+
+2. **Responses API** (`api_type: 'responses'`)
+   - Saved prompts with versioning
+   - Built-in vector store integration
+   - File search capabilities
+   - Structured outputs
+   - Enhanced tool support
+
+**Default:** Responses API (recommended for most use cases)
+
+---
+
+## Key Features
+
+### 🤖 Agent Management
+
+Create and manage multiple AI agents with different configurations:
+
+- **Custom Models:** GPT-4, GPT-4 Turbo, GPT-3.5 Turbo
+- **Personality & Behavior:** Temperature, top_p, system messages
+- **Knowledge Base:** Vector stores for document search
+- **Tool Integration:** File search, custom functions
+- **Versioning:** Prompt versions and rollback
+- **Slugs:** URL-friendly agent identifiers
+
+**[Learn more →](admin-api.md#agent-management)**
+
+---
+
+### 🎨 Whitelabel Publishing
+
+Deploy branded chat interfaces on custom domains:
+
+- **Custom Domains:** host agents on your own domain
+- **Vanity Paths:** SEO-friendly URLs (`/a/support`)
+- **Full Branding:** Logo, colors, welcome messages
+- **HMAC Authentication:** Secure token-based access
+- **CORS Configuration:** Whitelist specific origins
+- **Embed Options:** Iframe or direct integration
+
+**[Learn more →](admin-api.md#whitelabel-publishing)**
+
+---
+
+### 💬 Channel Integrations
+
+Extend your chatbot to external messaging platforms:
+
+- **WhatsApp:** Via Z-API integration
+- **Business Phone Numbers:** Official WhatsApp Business API
+- **Message Chunking:** Automatic long message splitting
+- **Media Support:** Images, documents, audio
+- **Session Management:** Track active conversations
+- **Webhook Events:** Real-time message notifications
+
+**[Learn more →](admin-api.md#channel-management)**
+
+---
+
+### 🏢 Multi-Tenancy
+
+Host multiple organizations on a single platform:
+
+- **Complete Isolation:** Data segregation at database level
+- **Tenant Management:** CRUD operations, suspension, activation
+- **Quotas & Limits:** Per-tenant resource controls
+- **Usage Tracking:** Message, token, and cost monitoring
+- **Billing Integration:** Subscriptions, invoices, payment methods
+- **Custom Settings:** Per-tenant feature flags
+
+**[Learn more →](admin-api.md#multi-tenancy)**
+
+---
+
+### 📊 LeadSense CRM
+
+AI-powered lead detection and qualification:
+
+- **Intent Detection:** Identify purchase intent from conversations
+- **Lead Scoring:** 0-100 score based on multiple factors
+- **Contact Extraction:** Email, phone, company information
+- **Interest Tracking:** Detected products and features
+- **Pipeline Management:** Sales stages and automation
+- **Notes & History:** Full conversation context
+- **Webhook Notifications:** Real-time lead alerts
+
+**[Learn more →](admin-api.md#leadsense-crm)**
+
+---
+
+### 🔒 Compliance & Security
+
+Enterprise-grade security and compliance features:
+
+- **GDPR/CCPA Compliant:** Consent management and data deletion
+- **Audit Logging:** Full conversation and event tracking
+- **PII Redaction:** Automatic sensitive data masking
+- **Data Encryption:** At-rest encryption for audit logs
+- **Retention Policies:** Configurable data lifecycle
+- **Access Control:** Role-based permissions (RBAC)
+- **Rate Limiting:** Multi-level request throttling
+
+**[Learn more →](admin-api.md#consent-management)**
+
+---
+
+### 📝 Prompt Builder
+
+AI-assisted prompt creation with safety guardrails:
+
+- **AI Generation:** Describe intent, get optimized prompt
+- **Guardrails:** Prevent hallucinations, scope restrictions
+- **Safety Controls:** No medical/legal/financial advice
+- **Template Library:** Pre-built industry prompts
+- **Version Control:** Save and activate prompt versions
+- **Testing:** Test prompts before deployment
+
+**[Learn more →](admin-api.md#prompt-builder)**
+
+---
+
+### 📈 Usage Tracking & Analytics
+
+Comprehensive monitoring and analytics:
+
+- **Real-time Metrics:** Messages, tokens, costs
+- **Time-series Data:** Usage trends and forecasting
+- **Per-tenant Stats:** Isolated usage tracking
+- **Per-agent Analytics:** Performance by agent
+- **Quota Enforcement:** Automatic limit enforcement
+- **Export Options:** JSON, CSV, JSONL formats
+- **Prometheus Metrics:** Integration with monitoring tools
+
+**[Learn more →](admin-api.md#usage-tracking--quotas)**
+
+---
+
+### 🔄 Background Jobs & Webhooks
+
+Asynchronous processing and event-driven integrations:
+
+- **Job Queue:** Reliable background task processing
+- **Dead Letter Queue:** Failed job management
+- **Retry Logic:** Exponential backoff
+- **Webhook Delivery:** Event notifications to external systems
+- **Delivery Logs:** Track webhook success/failure
+- **Signature Verification:** HMAC-signed payloads
+
+**[Learn more →](admin-api.md#job-queue-management)**
+
+---
+
+## API Comparison
+
+| Feature | Public API | Admin API | JavaScript Client |
+|---------|-----------|-----------|-------------------|
+| **Chat Messaging** | ✅ | ❌ | ✅ |
+| **Agent Discovery** | ✅ | ✅ | ✅ |
+| **Agent Management** | ❌ | ✅ | ❌ |
+| **User Management** | ❌ | ✅ | ❌ |
+| **File Upload** | ✅ | ✅ | ✅ |
+| **Streaming (SSE)** | ✅ | ❌ | ✅ |
+| **WebSocket** | ✅ | ❌ | ✅ |
+| **Authentication** | Optional | Required | Optional |
+| **Rate Limiting** | 60/min | 300/min | 60/min |
+| **CORS** | Enabled | Restricted | N/A |
+
+---
+
+## Authentication
+
+### Public API
+
+- **Default:** No authentication required
+- **Whitelabel:** HMAC token for signed requests
+- **Tenant:** Optional tenant_id header
+
+### Admin API
+
+Three authentication methods:
+
+1. **Session Cookies** (Recommended)
+   - Email/password login
+   - 24-hour session TTL
+   - Secure cookies (HttpOnly, SameSite)
+
+2. **API Keys**
+   - Generated per user
+   - Bearer token authentication
+   - Configurable expiration
+
+3. **Legacy Token** (Deprecated)
+   - Single ADMIN_TOKEN
+   - Being phased out
+
+### JavaScript Client
+
+- **Inherits:** Uses Public API authentication
+- **Configuration:** Pass credentials via options
+
+**[Learn more about authentication →](admin-api.md#authentication)**
+
+---
+
+## Rate Limits
+
+### Public API
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| Chat API | 60 requests | per minute |
+| Agent API | 100 requests | per minute |
+| File Upload | 5 uploads | per minute |
+
+### Admin API
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| Login | 5 attempts | per 5 minutes |
+| General | 300 requests | per minute |
+| Export | 10 requests | per hour |
+
+### Per-Tenant Limits
+
+Configurable per tenant:
+- Message quotas (monthly)
+- Token quotas (monthly)
+- Concurrent connections
+- Storage limits
+
+**[Learn more about rate limiting →](public-api.md#rate-limiting)**
+
+---
+
+## Error Handling
+
+All APIs use consistent error responses:
+
+```json
+{
+  "error": "Human-readable error message",
+  "code": "ERROR_CODE",
+  "details": {},
+  "timestamp": "2025-01-20T10:30:00Z",
+  "request_id": "req_abc123"
+}
+```
+
+### Common Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `MISSING_MESSAGE` | 400 | Message parameter required |
+| `MESSAGE_TOO_LONG` | 400 | Message exceeds max length |
+| `RATE_LIMIT_EXCEEDED` | 429 | Too many requests |
+| `QUOTA_EXCEEDED` | 429 | Usage quota exceeded |
+| `UNAUTHORIZED` | 401 | Invalid/missing credentials |
+| `FORBIDDEN` | 403 | Insufficient permissions |
+| `NOT_FOUND` | 404 | Resource not found |
+| `TENANT_SUSPENDED` | 403 | Tenant account suspended |
+| `SERVICE_UNAVAILABLE` | 503 | OpenAI API unavailable |
+
+**[View complete error codes →](public-api.md#error-handling)**
+
+---
+
+## Migration from v0.x
+
+If you're upgrading from a previous version, please note these breaking changes:
+
+### API Changes
+
+1. **Unified Endpoint:** `/chat.php` renamed to `/chat-unified.php`
+2. **Agent System:** New agent-based configuration (replaces global config)
+3. **API Types:** Explicit `api_type` parameter (default: "responses")
+4. **Whitelabel:** New HMAC authentication for published agents
+
+### Configuration Changes
+
+1. **Environment Variables:** Many new variables for features
+2. **Database Schema:** 46 migrations (run `php migrate.php`)
+3. **File Structure:** New service classes and utilities
+
+### Migration Guide
+
+```bash
+# 1. Backup your database
+cp data/chatbot.db data/chatbot.db.backup
+
+# 2. Pull latest code
+git pull origin main
+
+# 3. Run migrations
+php migrate.php
+
+# 4. Update environment variables
+# Review .env.example for new variables
+
+# 5. Test agents
+# Use Admin API to verify agent configurations
+
+# 6. Update client code
+# Replace old endpoint with /chat-unified.php
+```
+
+**Need help?** Contact support@your-domain.com
+
+---
+
+## SDKs & Libraries
+
+### Official SDKs
+
+- **JavaScript/TypeScript:** [@your-company/chatbot-widget](https://www.npmjs.com/package/@your-company/chatbot-widget)
+- **PHP:** [composer require your-company/chatbot-sdk](https://packagist.org/packages/your-company/chatbot-sdk)
+- **Python:** Coming soon
+- **Ruby:** Coming soon
+
+### Community Libraries
+
+Check our [GitHub repository](https://github.com/your-company/chatbot-boilerplate) for community-contributed libraries.
+
+---
+
+## Examples & Tutorials
+
+### Basic Examples
+
+- [Simple Chat Widget](client-api.md#quick-start)
+- [Streaming Messages](public-api.md#streaming-chat-sse)
+- [File Upload](public-api.md#file-upload)
+- [Whitelabel Integration](public-api.md#whitelabel-agent-access)
+
+### Advanced Examples
+
+- [Multi-Agent Switching](client-api.md#multi-agent-switching)
+- [Custom Message Rendering](client-api.md#custom-message-rendering)
+- [Analytics Integration](client-api.md#analytics-integration)
+- [WebSocket Chat](public-api.md#websocket-chat)
+
+### Integration Guides
+
+- WordPress Plugin (coming soon)
+- Shopify App (coming soon)
+- React Component Library (coming soon)
+- Vue.js Plugin (coming soon)
+
+---
+
+## Performance & Scalability
+
+### Benchmarks
+
+- **Response Time:** < 1.5s average (with GPT-4)
+- **Throughput:** 1000+ requests/minute per instance
+- **Concurrent Users:** 500+ simultaneous connections
+- **Memory Usage:** ~100 MB per 1000 active conversations
+
+### Optimization Tips
+
+1. **Use Streaming:** Improve perceived latency
+2. **Enable Caching:** Redis for session management
+3. **CDN Integration:** Static assets via CDN
+4. **Database Indexing:** Ensure proper indexes
+5. **Connection Pooling:** Reuse database connections
+
+### Scaling Strategies
+
+- **Horizontal Scaling:** Multiple PHP-FPM instances
+- **Load Balancing:** Nginx/HAProxy for distribution
+- **Database Replication:** Read replicas for queries
+- **Queue Workers:** Separate job processing servers
+
+**[View deployment guide →](deployment.md)**
+
+---
+
+## Security Best Practices
+
+### API Security
+
+1. ✅ **Use HTTPS** for all API requests
+2. ✅ **Validate Input** on both client and server
+3. ✅ **Rate Limiting** to prevent abuse
+4. ✅ **CORS Configuration** to restrict origins
+5. ✅ **API Key Rotation** every 90 days
+6. ✅ **Monitor Audit Logs** for suspicious activity
+
+### Client Security
+
+1. ✅ **CSP Headers** to prevent XSS
+2. ✅ **DOMPurify** for HTML sanitization
+3. ✅ **No Inline Scripts** in production
+4. ✅ **SRI Hashes** for CDN resources
+5. ✅ **Secure Cookies** (HttpOnly, Secure, SameSite)
+
+### Data Security
+
+1. ✅ **Encryption at Rest** for audit logs
+2. ✅ **PII Redaction** in logs and exports
+3. ✅ **Data Retention** policies
+4. ✅ **GDPR Compliance** tools
+5. ✅ **Regular Backups** with encryption
+
+**[View security checklist →](../SECURITY.md)**
+
+---
+
+## Monitoring & Observability
+
+### Available Metrics
+
+- **Request Metrics:** Count, latency, error rate
+- **Token Metrics:** Input/output tokens, costs
+- **Connection Metrics:** Active connections, reconnections
+- **Queue Metrics:** Job backlog, processing time
+- **Error Metrics:** Error rates by type
+
+### Prometheus Integration
+
+```yaml
+# Sample Prometheus config
+scrape_configs:
+  - job_name: 'chatbot'
+    static_configs:
+      - targets: ['your-domain.com:80']
+    metrics_path: '/admin-api.php?action=metrics'
+```
+
+### Logging
+
+- **Structured Logs:** JSON format for parsing
+- **Log Levels:** DEBUG, INFO, WARNING, ERROR, CRITICAL
+- **Correlation IDs:** Track requests across services
+- **Log Aggregation:** Compatible with ELK, Splunk, etc.
+
+**[View metrics endpoint →](admin-api.md#get-metrics)**
+
+---
+
+## Support & Resources
+
+### Documentation
+
+- **[Admin API](admin-api.md)** - Backend management
+- **[Public API](public-api.md)** - Client integrations
+- **[JavaScript Client](client-api.md)** - Widget embedding
+- **[Deployment Guide](deployment.md)** - Production setup
+- **[Security Guide](../SECURITY.md)** - Security best practices
+
+### Community
+
+- **GitHub:** [your-company/chatbot-boilerplate](https://github.com/your-company/chatbot-boilerplate)
+- **Discord:** [Join our community](https://discord.gg/your-invite)
+- **Stack Overflow:** Tag `chatbot-boilerplate`
+
+### Commercial Support
+
+- **Email:** support@your-domain.com
+- **Priority Support:** Available for enterprise customers
+- **Custom Development:** Contact sales@your-domain.com
+
+---
+
+## Changelog
+
+### v1.0.0 (January 2025)
+
+**Major Features:**
+- ✨ Multi-tenancy with complete isolation
+- ✨ Whitelabel publishing with HMAC auth
+- ✨ LeadSense CRM integration
+- ✨ AI-powered prompt builder
+- ✨ Channel integrations (WhatsApp)
+- ✨ GDPR/CCPA compliance tools
+- ✨ Advanced audit logging
+- ✨ Job queue and webhooks
+
+**API Changes:**
+- 🔧 New unified chat endpoint
+- 🔧 Agent-based configuration
+- 🔧 90+ admin endpoints
+- 🔧 Structured output support
+
+**Improvements:**
+- 🚀 Performance optimizations
+- 🚀 Connection resilience
+- 🚀 Enhanced error handling
+- 🚀 TypeScript definitions
+
+**Bug Fixes:**
+- 🐛 Fixed SSE reconnection issues
+- 🐛 Fixed file upload race conditions
+- 🐛 Fixed memory leaks in long sessions
+
+**[View full changelog →](../CHANGELOG.md)**
+
+---
+
+## License
+
+MIT License - See [LICENSE](../LICENSE) for details.
+
+---
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](../CONTRIBUTING.md) for details.
+
+---
+
+**Version:** 1.0.0
+**Last Updated:** January 2025
+**API Stability:** Stable (no breaking changes in v1.x)
+
+**Ready to get started?** Choose your documentation:
+- 🔧 [Admin API →](admin-api.md)
+- 🌐 [Public API →](public-api.md)
+- 📱 [JavaScript Client →](client-api.md)
