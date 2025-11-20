@@ -5,7 +5,7 @@
 | Issue | Status | Created | Completed | Notes |
 | --- | --- | --- | --- | --- |
 | [01-config-and-dependencies](01-config-and-dependencies.md) | Completed | 2025-11-20 | 2025-11-20 | Expand config schema and dependency wiring |
-| [02-context-and-validation](02-context-and-validation.md) | Pending | 2025-11-20 | - | Context enrichment + validation |
+| [02-context-and-validation](02-context-and-validation.md) | Completed | 2025-11-20 | 2025-11-20 | Context enrichment + validation |
 | [03-actions-and-intents](03-actions-and-intents.md) | Pending | 2025-11-20 | - | Intent detection and actions |
 | [04-process-handlers](04-process-handlers.md) | Pending | 2025-11-20 | - | Workflow handlers |
 | [05-llm-and-prompts](05-llm-and-prompts.md) | Pending | 2025-11-20 | - | LLM usage and prompts |
@@ -16,15 +16,16 @@
 
 ## Progress Overview
 - Total issues: 9
-- Completed: 1
-- Pending: 8
+- Completed: 2
+- Pending: 7
 - In Progress: 0
 
 ## Pending Next
-1. 02-context-and-validation
-2. 03-actions-and-intents
-3. 04-process-handlers
+1. 03-actions-and-intents
+2. 04-process-handlers
+3. 05-llm-and-prompts
 
 ## Changelog
+- 2025-11-20: Completed 02-context-and-validation; updated progress metrics and pending queue.
 - 2025-11-20: Completed 01-config-and-dependencies; summary updated.
 - 2025-11-20: Initialized issue summary and logged all tasks as Pending.

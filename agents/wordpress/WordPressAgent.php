@@ -413,6 +413,37 @@ class WordPressAgent extends AbstractSpecializedAgent
         $context['user_intent'] = $intent;
         $context['user_message'] = $userMessage;
 
+        $specializedConfig = $context['specialized_config'] ?? [];
+        $configurationId = $specializedConfig['configuration_id'] ?? null;
+        $queueId = $specializedConfig['article_queue_id'] ?? null;
+
+        $configuration = $this->loadBlogConfiguration($configurationId);
+        $queueEntry = $this->loadQueueEntry($queueId);
+        $internalLinks = $this->loadInternalLinks($configurationId);
+
+        $context['blog_workflow'] = [
+            'configuration_id' => $configurationId,
+            'queue_id' => $queueId,
+            'configuration' => $configuration,
+            'queue_entry' => $queueEntry,
+            'internal_links' => $internalLinks,
+            'execution_log' => $queueEntry['execution_log_url'] ?? $queueEntry['execution_log_path'] ?? null,
+            'metadata' => [
+                'article_id' => $queueEntry['article_id'] ?? $queueEntry['id'] ?? null,
+                'configuration_id' => $configurationId,
+                'last_status' => $queueEntry['status'] ?? null,
+                'retry_count' => $queueEntry['retry_count'] ?? 0
+            ]
+        ];
+
+        $this->logInfo('WordPress blog context enriched', [
+            'has_configuration' => (bool) $configuration,
+            'has_queue_entry' => (bool) $queueEntry,
+            'internal_link_count' => is_array($internalLinks) ? count($internalLinks) : 0,
+            'configuration_id' => $configurationId,
+            'queue_id' => $queueId
+        ]);
+
         return $context;
     }
 
@@ -435,6 +466,50 @@ class WordPressAgent extends AbstractSpecializedAgent
 
         if (!$hasDirectCredentials && !$hasAliasConfigured) {
             throw new AgentValidationException('WordPress credentials are required (provide username/password or credential alias)');
+        }
+
+        $configurationId = $config['configuration_id'] ?? ($context['blog_workflow']['configuration_id'] ?? null);
+        if (empty($configurationId)) {
+            throw new AgentValidationException('Blog automation requires configuration_id to load runtime settings');
+        }
+
+        $queueId = $config['article_queue_id'] ?? ($context['blog_workflow']['queue_id'] ?? null);
+        if (empty($queueId)) {
+            throw new AgentValidationException('Article queue ID is required to locate the queued blog payload');
+        }
+
+        if (empty($context['blog_workflow']['configuration'])) {
+            throw new AgentValidationException("Blog configuration could not be resolved for configuration_id {$configurationId}");
+        }
+
+        if (empty($context['blog_workflow']['queue_entry'])) {
+            throw new AgentValidationException("No queued article payload found for article_queue_id {$queueId}");
+        }
+
+        $workflowPhases = $config['workflow_phases'] ?? [];
+        $imagePreferences = $config['image_preferences'] ?? [];
+        $assetsEnabled = ($workflowPhases['generate_assets'] ?? true) && ($imagePreferences['enabled'] ?? true);
+        $hasOpenAiCredentials = !empty($credentialAliases['openai']) || !empty($config['openai_api_key'] ?? null);
+
+        if ($assetsEnabled && !$hasOpenAiCredentials) {
+            throw new AgentValidationException('Asset generation is enabled but no OpenAI credential alias or API key was provided');
+        }
+
+        $storagePreferences = $config['storage_preferences'] ?? [];
+        $usingGoogleDrive = ($storagePreferences['provider'] ?? 'google_drive') === 'google_drive';
+
+        if ($assetsEnabled && $usingGoogleDrive) {
+            if (empty($storagePreferences['google_drive_folder_id'])) {
+                throw new AgentValidationException('Google Drive storage requires google_drive_folder_id');
+            }
+
+            if (empty($credentialAliases['google_drive'])) {
+                throw new AgentValidationException('Google Drive storage requires google_drive credential alias');
+            }
+        }
+
+        if (($config['enable_execution_logging'] ?? true) && !$this->executionLogger && empty($context['blog_workflow']['execution_log'])) {
+            throw new AgentValidationException('Execution logging is enabled but no logger dependency or existing log pointer was provided');
         }
 
         return $validatedMessages;
@@ -945,6 +1020,112 @@ class WordPressAgent extends AbstractSpecializedAgent
     }
 
     // ==================== HELPER METHODS ====================
+
+    private function callServiceMethod($service, array $methods, array $arguments = [])
+    {
+        if (!is_object($service)) {
+            return null;
+        }
+
+        foreach ($methods as $method) {
+            if (method_exists($service, $method)) {
+                return call_user_func_array([$service, $method], $arguments);
+            }
+        }
+
+        return null;
+    }
+
+    private function loadBlogConfiguration(?string $configurationId): ?array
+    {
+        if (!$configurationId) {
+            return null;
+        }
+
+        try {
+            $configuration = $this->callServiceMethod($this->configurationService, [
+                'getConfigurationById',
+                'findConfigurationById',
+                'getById'
+            ], [$configurationId]);
+
+            if ($configuration) {
+                return $configuration;
+            }
+
+            $this->logWarning('No WordPress blog configuration found', [
+                'configuration_id' => $configurationId
+            ]);
+        } catch (\Exception $e) {
+            $this->logWarning('Failed to load WordPress blog configuration', [
+                'configuration_id' => $configurationId,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return null;
+    }
+
+    private function loadQueueEntry(?string $queueId): ?array
+    {
+        if (!$queueId) {
+            return null;
+        }
+
+        try {
+            $queueEntry = $this->callServiceMethod($this->queueService, [
+                'getQueueEntryById',
+                'getArticleById',
+                'findQueueEntry',
+                'findById'
+            ], [$queueId]);
+
+            if ($queueEntry) {
+                return $queueEntry;
+            }
+
+            $this->logWarning('No queued article found for automation', [
+                'queue_id' => $queueId
+            ]);
+        } catch (\Exception $e) {
+            $this->logWarning('Failed to load queued article payload', [
+                'queue_id' => $queueId,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return null;
+    }
+
+    private function loadInternalLinks(?string $configurationId): array
+    {
+        if (!$configurationId) {
+            return [];
+        }
+
+        try {
+            $links = $this->callServiceMethod($this->configurationService, [
+                'getInternalLinks',
+                'listInternalLinks',
+                'getInternalLinksByConfigurationId'
+            ], [$configurationId]);
+
+            if (is_array($links)) {
+                return $links;
+            }
+
+            $this->logWarning('Internal link repository missing or empty', [
+                'configuration_id' => $configurationId
+            ]);
+        } catch (\Exception $e) {
+            $this->logWarning('Failed to load internal links', [
+                'configuration_id' => $configurationId,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return [];
+    }
 
     /**
      * Detect user intent from message
