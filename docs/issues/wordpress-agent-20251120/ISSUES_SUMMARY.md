@@ -11,20 +11,20 @@
 | [05-llm-and-prompts](05-llm-and-prompts.md) | Completed | 2025-11-20 | 2025-11-20 | LLM usage and prompts |
 | [06-tools-and-tool-calls](06-tools-and-tool-calls.md) | Completed | 2025-11-20 | 2025-11-20 | Custom tools |
 | [07-output-and-logging](07-output-and-logging.md) | Completed | 2025-11-20 | 2025-11-20 | Output formatting/logging |
-| [08-error-handling-and-status](08-error-handling-and-status.md) | Pending | 2025-11-20 | - | Error handling/status transitions |
+| [08-error-handling-and-status](08-error-handling-and-status.md) | Completed | 2025-11-20 | 2025-11-20 | Error handling/status transitions |
 | [09-testing-and-validation](09-testing-and-validation.md) | Pending | 2025-11-20 | - | Testing tasks |
 
 ## Progress Overview
 - Total issues: 9
-- Completed: 7
-- Pending: 2
+- Completed: 8
+- Pending: 1
 - In Progress: 0
 
 ## Pending Next
-1. 08-error-handling-and-status
-2. 09-testing-and-validation
+1. 09-testing-and-validation
 
 ## Changelog
+- 2025-11-20: Completed 08-error-handling-and-status; updated progress metrics and pending queue.
 - 2025-11-20: Completed 07-output-and-logging; updated progress metrics and pending queue.
 - 2025-11-20: Completed 06-tools-and-tool-calls; updated progress metrics and pending queue.
 - 2025-11-20: Completed 05-llm-and-prompts; updated progress metrics and pending queue.

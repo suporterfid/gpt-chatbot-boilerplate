@@ -832,6 +832,14 @@ class WordPressAgent extends AbstractSpecializedAgent
             $metadata['asset_manifest'] = $result['assets'];
         }
 
+        if (isset($result['operator_message'])) {
+            $metadata['operator_message'] = $result['operator_message'];
+        }
+
+        if (isset($result['retry_after_seconds'])) {
+            $metadata['retry_after_seconds'] = $result['retry_after_seconds'];
+        }
+
         return $metadata;
     }
 
@@ -873,6 +881,10 @@ class WordPressAgent extends AbstractSpecializedAgent
 
         if (!empty($metadata['execution_log_url'])) {
             $lines[] = sprintf('Execution log: %s.', $metadata['execution_log_url']);
+        }
+
+        if (!empty($metadata['operator_message'])) {
+            $lines[] = $metadata['operator_message'];
         }
 
         if (!empty($result['next_action'])) {
@@ -1773,14 +1785,129 @@ class WordPressAgent extends AbstractSpecializedAgent
         return null;
     }
 
+    private function normalizeQueueStatus(string $status, ?string $phase = null): array
+    {
+        $map = [
+            'queueing' => 'processing',
+            'processing_outline' => 'processing',
+            'writing' => 'processing',
+            'generating_assets' => 'processing',
+            'assembling' => 'processing',
+            'publishing' => 'processing',
+            'structure_ready' => 'completed',
+            'chapters_ready' => 'completed',
+            'assets_ready' => 'completed',
+            'assembly_ready' => 'completed',
+            'retrying' => 'retry_scheduled',
+            'retry_pending' => 'retry_scheduled',
+            'retry_scheduled' => 'retry_scheduled',
+        ];
+
+        $canonical = $map[$status] ?? $status;
+        $resolvedPhase = $phase ?? $this->inferPhaseFromStatus($status);
+
+        return [
+            'canonical' => $canonical,
+            'phase' => $resolvedPhase,
+            'raw' => $status
+        ];
+    }
+
+    private function inferPhaseFromStatus(string $status): ?string
+    {
+        $phaseMap = [
+            'queue' => 'queue',
+            'structure' => 'structure',
+            'writing' => 'writing',
+            'assets' => 'assets',
+            'assembly' => 'assembly',
+            'publish' => 'publish'
+        ];
+
+        foreach ($phaseMap as $needle => $phase) {
+            if (strpos($status, $needle) === 0) {
+                return $phase;
+            }
+        }
+
+        return null;
+    }
+
+    private function buildOperatorMessage(string $status, ?string $phase, array $details = []): ?string
+    {
+        $phaseLabel = $phase ? sprintf('%s phase', $phase) : 'workflow';
+
+        if ($status === 'retry_scheduled') {
+            $retryAfter = $details['retry_after_seconds'] ?? 300;
+            return sprintf(
+                'Transient issue detected during %s. A retry is scheduled in %s seconds; review the execution log if the retry fails.',
+                $phaseLabel,
+                $retryAfter
+            );
+        }
+
+        if ($status === 'failed') {
+            return sprintf(
+                'The %s encountered a hard failure. Review the execution log and configuration before retrying.',
+                $phaseLabel
+            );
+        }
+
+        if ($status === 'completed' && $phase) {
+            return sprintf('Completed the %s. You can trigger the next phase or publish.', $phaseLabel);
+        }
+
+        if ($status === 'published') {
+            return 'Article published to WordPress. Verify the post and archive the run.';
+        }
+
+        if ($status === 'processing') {
+            return sprintf('Processing %s. Monitor the execution log for progress.', $phaseLabel);
+        }
+
+        return null;
+    }
+
+    private function classifyFailure(\Throwable $exception): array
+    {
+        $code = (int) $exception->getCode();
+        $message = strtolower($exception->getMessage());
+
+        $retryableCodes = [408, 425, 429, 502, 503, 504];
+        $retryable = in_array($code, $retryableCodes, true)
+            || str_contains($message, 'timeout')
+            || str_contains($message, 'rate limit')
+            || str_contains($message, 'tempor');
+
+        if (str_contains($message, 'invalid') || str_contains($message, 'missing') || str_contains($message, 'denied')) {
+            $retryable = false;
+        }
+
+        return [
+            'status' => $retryable ? 'retry_scheduled' : 'failed',
+            'retry_after_seconds' => $retryable ? 300 : null,
+            'retryable' => $retryable,
+        ];
+    }
+
     private function updateQueueStatus(?string $queueId, ?string $articleId, string $status, array $details = []): array
     {
+        $normalized = $this->normalizeQueueStatus($status, $details['phase'] ?? null);
+        $sanitizedDetails = $this->sanitizeForLog($details);
+
         $statusData = [
             'queue_id' => $queueId,
             'article_id' => $articleId,
-            'status' => $status,
-            'details' => $details
+            'status' => $normalized['canonical'],
+            'raw_status' => $normalized['raw'],
+            'phase' => $normalized['phase'],
+            'details' => $sanitizedDetails + [
+                'updated_at' => date('c'),
+            ],
         ];
+
+        $statusData['details']['operator_message'] = $statusData['details']['operator_message']
+            ?? $this->buildOperatorMessage($statusData['status'], $statusData['phase'], $statusData['details']);
 
         if (!$this->queueService) {
             return $statusData;
@@ -1791,9 +1918,9 @@ class WordPressAgent extends AbstractSpecializedAgent
                 $this->queueService,
                 ['updateStatus', 'updateQueueStatus', 'markStatus', 'markArticleStatus', 'setStatus', 'updateArticleStatus'],
                 [
-                    [$queueId, $status, $details],
-                    [$articleId, $status],
-                    [$status, $details]
+                    [$queueId, $statusData['status'], $statusData['details']],
+                    [$articleId, $statusData['status']],
+                    [$statusData['status'], $statusData['details']]
                 ]
             );
 
@@ -1804,7 +1931,7 @@ class WordPressAgent extends AbstractSpecializedAgent
             $this->logWarning('Queue status update failed', [
                 'queue_id' => $queueId,
                 'article_id' => $articleId,
-                'status' => $status,
+                'status' => $statusData['status'],
                 'error' => $exception->getMessage()
             ]);
         }
@@ -1882,15 +2009,21 @@ class WordPressAgent extends AbstractSpecializedAgent
         $queueId = $workflow['queue_id'] ?? null;
         $articleId = $workflow['metadata']['article_id'] ?? null;
 
-        $this->updateQueueStatus($queueId, $articleId, 'failed', [
-            'phase' => $phase,
-            'error' => $exception->getMessage(),
-            'action' => $action
-        ]);
-
-        $this->logExecutionStep($queueId, $articleId, $phase, 'failed', [
+        $classification = $this->classifyFailure($exception);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, $phase, $classification['status'], [
             'action' => $action,
-            'exception' => $exception->getMessage()
+            'exception' => $this->sanitizeForLog($exception->getMessage()),
+            'retry_after_seconds' => $classification['retry_after_seconds'] ?? null,
+            'retryable' => $classification['retryable'] ?? false,
+        ]) ?? ($workflow['execution_log'] ?? null);
+
+        $statusData = $this->updateQueueStatus($queueId, $articleId, $classification['status'], [
+            'phase' => $phase,
+            'error' => $this->sanitizeForLog($exception->getMessage()),
+            'action' => $action,
+            'execution_log' => $logPointer,
+            'retry_after_seconds' => $classification['retry_after_seconds'] ?? null,
+            'retryable' => $classification['retryable'] ?? false,
         ]);
 
         $domainError = [
@@ -1903,12 +2036,20 @@ class WordPressAgent extends AbstractSpecializedAgent
             self::ACTION_MANAGE_INTERNAL_LINKS => 'ConfigurationException'
         ][$action] ?? 'WorkflowException';
 
+        $operatorMessage = $statusData['details']['operator_message']
+            ?? $this->buildOperatorMessage($statusData['status'] ?? $classification['status'], $phase, $statusData['details'] ?? []);
+
         $message = sprintf(
-            '[%s] %s phase failed: %s',
+            '[%s] %s phase %s. %s',
             $domainError,
             $phase,
-            $exception->getMessage()
+            $classification['status'] === 'retry_scheduled' ? 'encountered a transient issue' : 'failed',
+            $operatorMessage ?? 'Review the execution log for details.'
         );
+
+        if ($logPointer) {
+            $message .= sprintf(' Log: %s.', $logPointer);
+        }
 
         return new AgentProcessingException($message, 'wordpress', 500, $exception);
     }
