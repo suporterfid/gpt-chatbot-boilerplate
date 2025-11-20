@@ -14,12 +14,16 @@ class ChatHandler {
     private $quotaService;
     private $rateLimitService;
     private $tenantUsageService;
-    
+
     // Refactored components (Issue #001)
     private $requestValidator;
     private $agentConfigResolver;
     private $conversationRepository;
     private $chatRateLimiter;
+
+    // Specialized agent system
+    private $agentRegistry;
+    private $specializedAgentService;
 
     public function __construct($config, $agentService = null, $auditService = null, $observability = null, $usageTrackingService = null, $quotaService = null, $rateLimitService = null, $tenantUsageService = null) {
         $this->config = $config;
@@ -2116,7 +2120,7 @@ class ChatHandler {
     /**
      * Get tenant ID from conversation or request context
      * Override this method or inject tenant_id via request
-     * 
+     *
      * @param string $conversationId Conversation ID
      * @return string|null Tenant ID
      */
@@ -2127,6 +2131,208 @@ class ChatHandler {
         // 3. Look up from API key
         // For now, return null (multi-tenant support must be configured per deployment)
         return null;
+    }
+
+    // ============================================================
+    // Specialized Agent System Integration
+    // ============================================================
+
+    /**
+     * Set agent registry for specialized agent support
+     *
+     * @param AgentRegistry $registry Agent registry instance
+     * @return void
+     */
+    public function setAgentRegistry($registry) {
+        $this->agentRegistry = $registry;
+    }
+
+    /**
+     * Set specialized agent service
+     *
+     * @param SpecializedAgentService $service Specialized agent service instance
+     * @return void
+     */
+    public function setSpecializedAgentService($service) {
+        $this->specializedAgentService = $service;
+    }
+
+    /**
+     * Process message with specialized agent
+     *
+     * This method integrates specialized agents into the chat processing pipeline.
+     * If agent_type is 'generic' or no specialized agent is available, falls back
+     * to standard processing.
+     *
+     * @param array $messages Conversation messages
+     * @param array $agentConfig Agent configuration
+     * @param string $conversationId Conversation ID
+     * @param string|null $tenantId Tenant ID
+     * @return array Response data
+     */
+    protected function processWithSpecializedAgent($messages, $agentConfig, $conversationId, $tenantId = null) {
+        $agentType = $agentConfig['agent_type'] ?? 'generic';
+
+        // Skip specialized processing if generic or registry not available
+        if ($agentType === 'generic' || !$this->agentRegistry) {
+            return null; // Signal to use standard processing
+        }
+
+        try {
+            // Get specialized agent instance
+            $specializedAgent = $this->agentRegistry->getAgent($agentType);
+
+            if (!$specializedAgent) {
+                error_log("Specialized agent '{$agentType}' not found, falling back to generic processing");
+                return null;
+            }
+
+            // Get specialized configuration
+            $specializedConfig = [];
+            if ($this->specializedAgentService) {
+                $configData = $this->specializedAgentService->getAgentConfigWithSpecialization($agentConfig['id']);
+                $specializedConfig = $configData['specialized_config'] ?? [];
+            }
+
+            // Enhance agent config with specialized settings
+            $agentConfig['specialized_config'] = $specializedConfig;
+            $agentConfig['conversation_id'] = $conversationId;
+            $agentConfig['tenant_id'] = $tenantId;
+
+            // Execute specialized agent pipeline
+            $result = $this->executeSpecializedPipeline(
+                $specializedAgent,
+                $messages,
+                $agentConfig
+            );
+
+            return $result;
+
+        } catch (Exception $e) {
+            error_log("Specialized agent error for type '{$agentType}': " . $e->getMessage());
+
+            // Check if error should be fatal or allow fallback
+            $allowFallback = $this->config['specialized_agents']['fallback_to_generic'] ?? true;
+
+            if ($allowFallback) {
+                error_log("Falling back to generic processing due to error");
+                return null;
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Execute specialized agent processing pipeline
+     *
+     * @param SpecializedAgentInterface $agent Specialized agent instance
+     * @param array $messages Conversation messages
+     * @param array $agentConfig Agent configuration
+     * @return array Processed response
+     */
+    protected function executeSpecializedPipeline($agent, $messages, $agentConfig) {
+        try {
+            // Phase 1: Build context
+            $context = $agent->buildContext($messages, $agentConfig);
+
+            // Phase 2: Validate input
+            $validatedInput = $agent->validateInput($messages, $context);
+
+            // Phase 3: Process (agent-specific logic)
+            $processedData = $agent->process($validatedInput, $context);
+
+            // Phase 4: LLM interaction (if needed)
+            if ($agent->requiresLLM($processedData, $context)) {
+                $llmMessages = $agent->prepareLLMMessages($processedData, $context);
+
+                // Merge custom tools with agent's configured tools
+                $tools = $agentConfig['tools'] ?? [];
+                $customTools = $agent->getCustomTools();
+
+                if (!empty($customTools)) {
+                    $tools = array_merge($tools, $customTools);
+                }
+
+                // Build LLM request payload
+                $payload = [
+                    'model' => $agentConfig['model'] ?? $this->config['chat']['model'],
+                    'messages' => $llmMessages,
+                    'temperature' => $agentConfig['temperature'] ?? $this->config['chat']['temperature'],
+                    'max_tokens' => $agentConfig['max_output_tokens'] ?? $this->config['chat']['max_tokens'],
+                    'top_p' => $agentConfig['top_p'] ?? $this->config['chat']['top_p'],
+                    'stream' => false
+                ];
+
+                if (!empty($tools)) {
+                    $payload['tools'] = $tools;
+                }
+
+                // Call LLM
+                $llmResponse = $this->openAIClient->createChatCompletion($payload);
+
+                // Add LLM response to processed data
+                $processedData['llm_response'] = $llmResponse;
+
+                // Handle tool calls if present
+                if (isset($llmResponse['choices'][0]['message']['tool_calls'])) {
+                    $processedData = $this->handleSpecializedToolCalls(
+                        $agent,
+                        $llmResponse['choices'][0]['message']['tool_calls'],
+                        $context,
+                        $processedData
+                    );
+                }
+            }
+
+            // Phase 5: Format output
+            $output = $agent->formatOutput($processedData, $context);
+
+            // Phase 6: Validate output
+            $validatedOutput = $agent->validateOutput($output, $context);
+
+            return $validatedOutput;
+
+        } catch (Exception $e) {
+            // Let agent handle the error
+            return $agent->handleError($e, $context);
+        }
+    }
+
+    /**
+     * Handle tool calls for specialized agents
+     *
+     * @param SpecializedAgentInterface $agent Specialized agent instance
+     * @param array $toolCalls Tool calls from LLM
+     * @param array $context Processing context
+     * @param array $processedData Current processed data
+     * @return array Updated processed data
+     */
+    protected function handleSpecializedToolCalls($agent, $toolCalls, $context, $processedData) {
+        $toolResults = [];
+
+        foreach ($toolCalls as $toolCall) {
+            $toolName = $toolCall['function']['name'];
+            $arguments = json_decode($toolCall['function']['arguments'], true) ?? [];
+
+            try {
+                // Execute tool via agent
+                $result = $agent->executeCustomTool($toolName, $arguments, $context);
+                $toolResults[] = [
+                    'tool_call_id' => $toolCall['id'],
+                    'output' => json_encode($result)
+                ];
+            } catch (Exception $e) {
+                error_log("Tool execution error for '{$toolName}': " . $e->getMessage());
+                $toolResults[] = [
+                    'tool_call_id' => $toolCall['id'],
+                    'output' => json_encode(['error' => $e->getMessage()])
+                ];
+            }
+        }
+
+        $processedData['tool_results'] = $toolResults;
+        return $processedData;
     }
 }
 ?>

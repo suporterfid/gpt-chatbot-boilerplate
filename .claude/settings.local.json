@@ -6,7 +6,8 @@
       "Bash(wsl --version:*)",
       "Bash(wsl:*)",
       "Bash(docker cp:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(php:*)"
     ],
     "deny": [],
     "ask": []

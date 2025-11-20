@@ -5078,7 +5078,252 @@ try {
                 sendError($e->getMessage(), 500);
             }
             break;
-        
+
+        // ============================================================
+        // Specialized Agent System Endpoints
+        // ============================================================
+
+        case 'list_agent_types':
+            // List all available agent types
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
+            require_once __DIR__ . '/includes/AgentRegistry.php';
+
+            try {
+                $agentsPath = __DIR__ . '/agents';
+                $registry = new AgentRegistry($db, $agentsPath, null, $config);
+                $registry->discoverAgents();
+
+                $types = $registry->listAvailableTypes();
+
+                sendResponse([
+                    'agent_types' => $types,
+                    'count' => count($types)
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error listing agent types: ' . $e->getMessage(), 'error');
+                sendError('Failed to list agent types: ' . $e->getMessage(), 500);
+            }
+            break;
+
+        case 'get_agent_type':
+            // Get metadata for a specific agent type
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
+            $agentType = $_GET['agent_type'] ?? null;
+
+            if (!$agentType) {
+                sendError('agent_type parameter is required', 400);
+            }
+
+            require_once __DIR__ . '/includes/AgentRegistry.php';
+
+            try {
+                $agentsPath = __DIR__ . '/agents';
+                $registry = new AgentRegistry($db, $agentsPath, null, $config);
+                $registry->discoverAgents();
+
+                $metadata = $registry->getAgentMetadata($agentType);
+
+                if (!$metadata) {
+                    sendError("Agent type '{$agentType}' not found", 404);
+                }
+
+                sendResponse($metadata);
+            } catch (Exception $e) {
+                log_admin('Error getting agent type: ' . $e->getMessage(), 'error');
+                sendError('Failed to get agent type: ' . $e->getMessage(), 500);
+            }
+            break;
+
+        case 'validate_agent_config':
+            // Validate specialized agent configuration against schema
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
+            $body = getRequestBody();
+            $agentType = $body['agent_type'] ?? null;
+            $configData = $body['config'] ?? null;
+
+            if (!$agentType || !$configData) {
+                sendError('agent_type and config are required', 400);
+            }
+
+            require_once __DIR__ . '/includes/AgentRegistry.php';
+
+            try {
+                $agentsPath = __DIR__ . '/agents';
+                $registry = new AgentRegistry($db, $agentsPath, null, $config);
+                $registry->discoverAgents();
+
+                $errors = $registry->validateConfig($agentType, $configData);
+
+                if (empty($errors)) {
+                    sendResponse([
+                        'valid' => true,
+                        'message' => 'Configuration is valid'
+                    ]);
+                } else {
+                    sendResponse([
+                        'valid' => false,
+                        'errors' => $errors
+                    ], 400);
+                }
+            } catch (Exception $e) {
+                log_admin('Error validating config: ' . $e->getMessage(), 'error');
+                sendError('Failed to validate configuration: ' . $e->getMessage(), 500);
+            }
+            break;
+
+        case 'get_agent_config':
+            // Get specialized configuration for an agent
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
+            $agentId = $_GET['agent_id'] ?? null;
+
+            if (!$agentId) {
+                sendError('agent_id parameter is required', 400);
+            }
+
+            require_once __DIR__ . '/includes/AgentRegistry.php';
+            require_once __DIR__ . '/includes/SpecializedAgentService.php';
+
+            try {
+                $agentsPath = __DIR__ . '/agents';
+                $registry = new AgentRegistry($db, $agentsPath, null, $config);
+                $registry->discoverAgents();
+
+                $specializedAgentService = new SpecializedAgentService($db, $registry, null, $config);
+                $configData = $specializedAgentService->getConfig($agentId, true);
+
+                if (!$configData) {
+                    sendResponse([
+                        'agent_id' => $agentId,
+                        'has_config' => false,
+                        'config' => null
+                    ]);
+                } else {
+                    sendResponse([
+                        'agent_id' => $agentId,
+                        'has_config' => true,
+                        'agent_type' => $configData['agent_type'],
+                        'config' => $configData['config'],
+                        'created_at' => $configData['created_at'],
+                        'updated_at' => $configData['updated_at']
+                    ]);
+                }
+            } catch (Exception $e) {
+                log_admin('Error getting agent config: ' . $e->getMessage(), 'error');
+                sendError('Failed to get agent configuration: ' . $e->getMessage(), 500);
+            }
+            break;
+
+        case 'save_agent_config':
+            // Save specialized configuration for an agent
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+
+            $body = getRequestBody();
+            $agentId = $body['agent_id'] ?? null;
+            $agentType = $body['agent_type'] ?? null;
+            $configData = $body['config'] ?? null;
+
+            if (!$agentId || !$agentType || !$configData) {
+                sendError('agent_id, agent_type, and config are required', 400);
+            }
+
+            require_once __DIR__ . '/includes/AgentRegistry.php';
+            require_once __DIR__ . '/includes/SpecializedAgentService.php';
+
+            try {
+                $agentsPath = __DIR__ . '/agents';
+                $registry = new AgentRegistry($db, $agentsPath, null, $config);
+                $registry->discoverAgents();
+
+                $specializedAgentService = new SpecializedAgentService($db, $registry, null, $config);
+
+                // Save configuration (validates against schema)
+                $result = $specializedAgentService->saveConfig($agentId, $agentType, $configData);
+
+                log_admin("Saved specialized agent config for agent {$agentId} (type: {$agentType})", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Agent configuration saved successfully',
+                    'agent_id' => $agentId,
+                    'agent_type' => $result['agent_type'],
+                    'updated_at' => $result['updated_at']
+                ]);
+            } catch (ChatbotBoilerplate\Exceptions\AgentNotFoundException $e) {
+                sendError('Agent type not found: ' . $e->getMessage(), 404);
+            } catch (ChatbotBoilerplate\Exceptions\AgentConfigurationException $e) {
+                sendError('Invalid configuration: ' . $e->getMessage(), 400);
+            } catch (Exception $e) {
+                log_admin('Error saving agent config: ' . $e->getMessage(), 'error');
+                sendError('Failed to save agent configuration: ' . $e->getMessage(), 500);
+            }
+            break;
+
+        case 'delete_agent_config':
+            // Delete specialized configuration for an agent
+            requirePermission($authenticatedUser, 'delete', $adminAuth);
+
+            $agentId = $_GET['agent_id'] ?? null;
+
+            if (!$agentId) {
+                sendError('agent_id parameter is required', 400);
+            }
+
+            require_once __DIR__ . '/includes/AgentRegistry.php';
+            require_once __DIR__ . '/includes/SpecializedAgentService.php';
+
+            try {
+                $agentsPath = __DIR__ . '/agents';
+                $registry = new AgentRegistry($db, $agentsPath, null, $config);
+                $registry->discoverAgents();
+
+                $specializedAgentService = new SpecializedAgentService($db, $registry, null, $config);
+                $deleted = $specializedAgentService->deleteConfig($agentId);
+
+                log_admin("Deleted specialized agent config for agent {$agentId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Agent configuration deleted successfully',
+                    'agent_id' => $agentId,
+                    'deleted' => $deleted
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error deleting agent config: ' . $e->getMessage(), 'error');
+                sendError('Failed to delete agent configuration: ' . $e->getMessage(), 500);
+            }
+            break;
+
+        case 'discover_agents':
+            // Force re-discovery of available agent types
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
+            require_once __DIR__ . '/includes/AgentRegistry.php';
+
+            try {
+                $agentsPath = __DIR__ . '/agents';
+                $registry = new AgentRegistry($db, $agentsPath, null, $config);
+                $registry->discoverAgents(true); // Force re-discovery
+
+                $types = $registry->listAvailableTypes();
+
+                log_admin('Forced agent discovery, found ' . count($types) . ' agent types', 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Agent discovery completed',
+                    'agent_types' => $types,
+                    'count' => count($types)
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error during agent discovery: ' . $e->getMessage(), 'error');
+                sendError('Failed to discover agents: ' . $e->getMessage(), 500);
+            }
+            break;
+
         default:
             sendError('Unknown action: ' . $action, 400);
     }

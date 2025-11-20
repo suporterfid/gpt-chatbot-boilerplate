@@ -716,6 +716,138 @@ We welcome contributions! Please see our [Contributing Guide](../CONTRIBUTING.md
 
 ---
 
+---
+
+## Specialized Agents System
+
+### Overview
+
+The Specialized Agents System allows you to create domain-specific AI agents with custom behaviors, tools, and processing logic. Agents can integrate with external APIs, manage specialized tasks, and provide tailored responses.
+
+### Available Agent Types
+
+- **Generic Agent** (`generic`) - Standard LLM-based agent (default)
+- **WordPress Agent** (`wordpress`) - WordPress content management via REST API
+- **Template Agent** (`template`) - Reference implementation for developers
+
+### Admin API Endpoints
+
+#### List Agent Types
+
+Get all available agent types with metadata.
+
+```bash
+GET /admin-api.php?action=list_agent_types
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "agent_types": [
+    {
+      "agent_type": "wordpress",
+      "display_name": "WordPress Content Manager",
+      "description": "Manages WordPress content...",
+      "version": "1.0.0",
+      "config_schema": {...},
+      "custom_tools": [...]
+    }
+  ],
+  "count": 1
+}
+```
+
+#### Get Agent Type Metadata
+
+Get detailed metadata for a specific agent type.
+
+```bash
+GET /admin-api.php?action=get_agent_type&agent_type=wordpress
+Authorization: Bearer <token>
+```
+
+#### Validate Agent Configuration
+
+Validate configuration against agent's schema.
+
+```bash
+POST /admin-api.php?action=validate_agent_config
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "agent_type": "wordpress",
+  "config": {
+    "wp_site_url": "https://example.com",
+    "wp_username": "admin",
+    "wp_app_password": "${WP_PASSWORD}"
+  }
+}
+```
+
+#### Save Agent Configuration
+
+Save specialized configuration for an agent.
+
+```bash
+POST /admin-api.php?action=save_agent_config
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "agent_id": "agent-123",
+  "agent_type": "wordpress",
+  "config": {
+    "wp_site_url": "https://myblog.com",
+    "wp_username": "bot-user",
+    "wp_app_password": "${WP_APP_PASSWORD}",
+    "default_status": "draft",
+    "auto_publish": false
+  }
+}
+```
+
+#### Get Agent Configuration
+
+Retrieve specialized configuration for an agent.
+
+```bash
+GET /admin-api.php?action=get_agent_config&agent_id=agent-123
+Authorization: Bearer <token>
+```
+
+#### Delete Agent Configuration
+
+Delete specialized configuration (resets to generic).
+
+```bash
+DELETE /admin-api.php?action=delete_agent_config&agent_id=agent-123
+Authorization: Bearer <token>
+```
+
+#### Discover Agents
+
+Force re-discovery of available agent types.
+
+```bash
+GET /admin-api.php?action=discover_agents
+Authorization: Bearer <token>
+```
+
+### Creating Custom Agents
+
+See [Specialized Agents Specification](../SPECIALIZED_AGENTS_SPECIFICATION.md) for detailed information on creating custom agents.
+
+**Quick Start:**
+1. Copy `agents/_template/` to `agents/your-type/`
+2. Implement `YourTypeAgent.php`
+3. Define `config.schema.json`
+4. Run `discover_agents` endpoint
+5. Configure via `save_agent_config`
+
+---
+
 **Version:** 1.0.0
 **Last Updated:** January 2025
 **API Stability:** Stable (no breaking changes in v1.x)
@@ -724,3 +856,4 @@ We welcome contributions! Please see our [Contributing Guide](../CONTRIBUTING.md
 - 🔧 [Admin API →](admin-api.md)
 - 🌐 [Public API →](public-api.md)
 - 📱 [JavaScript Client →](client-api.md)
+- 🤖 [Specialized Agents →](../SPECIALIZED_AGENTS_SPECIFICATION.md)

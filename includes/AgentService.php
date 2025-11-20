@@ -42,18 +42,19 @@ class AgentService {
         $now = date('c'); // ISO 8601 format
         
         $sql = "INSERT INTO agents (
-            id, name, slug, description, api_type, prompt_id, prompt_version,
+            id, name, slug, description, api_type, agent_type, prompt_id, prompt_version,
             system_message, model, temperature, top_p, max_output_tokens,
             tools_json, vector_store_ids_json, max_num_results, response_format_json, is_default,
             tenant_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
         $params = [
             $id,
             $data['name'],
             $data['slug'] ?? null,
             $data['description'] ?? null,
             $data['api_type'] ?? 'responses',
+            $data['agent_type'] ?? 'generic',
             $data['prompt_id'] ?? null,
             $data['prompt_version'] ?? null,
             $data['system_message'] ?? null,
@@ -126,6 +127,10 @@ class AgentService {
         if (isset($data['api_type'])) {
             $updates[] = 'api_type = ?';
             $params[] = $data['api_type'];
+        }
+        if (isset($data['agent_type'])) {
+            $updates[] = 'agent_type = ?';
+            $params[] = $data['agent_type'];
         }
         if (array_key_exists('prompt_id', $data)) {
             $updates[] = 'prompt_id = ?';
@@ -282,7 +287,12 @@ class AgentService {
             $conditions[] = "api_type = ?";
             $params[] = $filters['api_type'];
         }
-        
+
+        if (!empty($filters['agent_type'])) {
+            $conditions[] = "agent_type = ?";
+            $params[] = $filters['agent_type'];
+        }
+
         if (isset($filters['is_default'])) {
             $conditions[] = "is_default = ?";
             $params[] = (int)(bool)$filters['is_default'];

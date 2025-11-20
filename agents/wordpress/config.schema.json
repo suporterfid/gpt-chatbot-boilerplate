@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "WordPress Agent Configuration",
+  "description": "Configuration for WordPress content management agent",
+  "required": [
+    "wp_site_url",
+    "wp_username",
+    "wp_app_password"
+  ],
+  "properties": {
+    "wp_site_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "WordPress site URL (e.g., https://example.com)",
+      "examples": [
+        "https://example.com",
+        "https://blog.example.com"
+      ],
+      "pattern": "^https?://.+"
+    },
+    "wp_username": {
+      "type": "string",
+      "description": "WordPress username for authentication",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "wp_app_password": {
+      "type": "string",
+      "description": "WordPress Application Password. Generate from Users > Profile > Application Passwords. Supports environment variables: ${WP_APP_PASSWORD}",
+      "minLength": 20,
+      "sensitive": true,
+      "examples": [
+        "${WP_APP_PASSWORD}",
+        "xxxx xxxx xxxx xxxx xxxx xxxx"
+      ]
+    },
+    "default_category": {
+      "type": "string",
+      "description": "Default category slug for new posts",
+      "default": "uncategorized",
+      "examples": [
+        "uncategorized",
+        "news",
+        "blog"
+      ]
+    },
+    "default_status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "publish",
+        "pending",
+        "private"
+      ],
+      "default": "draft",
+      "description": "Default post status for new posts"
+    },
+    "default_author_id": {
+      "type": "integer",
+      "description": "Default author ID for posts",
+      "default": 1,
+      "minimum": 1
+    },
+    "auto_publish": {
+      "type": "boolean",
+      "description": "Automatically publish posts without review. WARNING: Use with caution!",
+      "default": false
+    },
+    "post_type": {
+      "type": "string",
+      "description": "Post type to work with",
+      "default": "post",
+      "enum": [
+        "post",
+        "page"
+      ]
+    },
+    "enable_featured_images": {
+      "type": "boolean",
+      "description": "Enable featured image support",
+      "default": false
+    },
+    "api_timeout_ms": {
+      "type": "integer",
+      "description": "API request timeout in milliseconds",
+      "default": 30000,
+      "minimum": 5000,
+      "maximum": 120000
+    },
+    "max_posts_per_request": {
+      "type": "integer",
+      "description": "Maximum number of posts to fetch in search results",
+      "default": 10,
+      "minimum": 1,
+      "maximum": 100
+    }
+  },
+  "additionalProperties": false
+}

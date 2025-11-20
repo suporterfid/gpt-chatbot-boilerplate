@@ -1,0 +1,313 @@
+<?php
+/**
+ * Unit Tests for WordPressAgent
+ *
+ * Tests WordPress agent functionality, intent detection, and tools
+ */
+
+require_once __DIR__ . '/../WordPressAgent.php';
+
+// Mock classes
+class MockDB {
+    public function query($sql, $params = []) { return []; }
+    public function getOne($sql, $params = []) { return null; }
+}
+
+class MockLogger {
+    public function info($message, $context = []) {}
+    public function error($message, $context = []) {}
+    public function warning($message, $context = []) {}
+    public function debug($message, $context = []) {}
+}
+
+class WordPressAgentTest
+{
+    private $agent;
+    private $passed = 0;
+    private $failed = 0;
+
+    public function __construct()
+    {
+        $this->agent = new WordPressAgent();
+    }
+
+    private function assert($condition, $message)
+    {
+        if ($condition) {
+            $this->passed++;
+            echo "✓ {$message}\n";
+        } else {
+            $this->failed++;
+            echo "✗ {$message}\n";
+        }
+    }
+
+    private function assertEquals($expected, $actual, $message)
+    {
+        $this->assert($expected === $actual, $message);
+    }
+
+    public function testMetadata()
+    {
+        echo "\n=== Testing Agent Metadata ===\n";
+
+        $this->assertEquals('wordpress', $this->agent->getAgentType(), "Agent type should be 'wordpress'");
+        $this->assertEquals('WordPress Content Manager', $this->agent->getDisplayName(), "Display name should match");
+        $this->assert(!empty($this->agent->getDescription()), "Description should not be empty");
+        $this->assert(preg_match('/^\d+\.\d+\.\d+$/', $this->agent->getVersion()), "Version should follow semver");
+    }
+
+    public function testConfigSchema()
+    {
+        echo "\n=== Testing Config Schema ===\n";
+
+        $schema = $this->agent->getConfigSchema();
+        $this->assert(is_array($schema), "Config schema should be an array");
+        $this->assertEquals('object', $schema['type'], "Schema type should be 'object'");
+        $this->assert(isset($schema['required']), "Schema should have required fields");
+        $this->assert(isset($schema['properties']), "Schema should have properties");
+
+        // Check required fields
+        $required = $schema['required'];
+        $this->assert(in_array('wp_site_url', $required), "wp_site_url should be required");
+        $this->assert(in_array('wp_username', $required), "wp_username should be required");
+        $this->assert(in_array('wp_app_password', $required), "wp_app_password should be required");
+
+        // Check sensitive fields
+        $this->assert($schema['properties']['wp_app_password']['sensitive'] === true, "wp_app_password should be marked as sensitive");
+    }
+
+    public function testInitialization()
+    {
+        echo "\n=== Testing Initialization ===\n";
+
+        $dependencies = [
+            'db' => new MockDB(),
+            'logger' => new MockLogger(),
+            'config' => []
+        ];
+
+        try {
+            $this->agent->initialize($dependencies);
+            $this->assert(true, "Agent should initialize without errors");
+        } catch (Exception $e) {
+            $this->assert(false, "Initialization failed: " . $e->getMessage());
+        }
+    }
+
+    public function testBuildContext()
+    {
+        echo "\n=== Testing buildContext ===\n";
+
+        $this->agent->initialize([
+            'db' => new MockDB(),
+            'logger' => new MockLogger(),
+            'config' => []
+        ]);
+
+        $messages = [
+            ['role' => 'user', 'content' => 'Create a blog post about AI']
+        ];
+
+        $agentConfig = [
+            'id' => 'agent-123',
+            'tenant_id' => 'tenant-456'
+        ];
+
+        $context = $this->agent->buildContext($messages, $agentConfig);
+
+        $this->assert(is_array($context), "Context should be an array");
+        $this->assertEquals('agent-123', $context['agent_id'], "Context should have agent_id");
+        $this->assertEquals('wordpress', $context['agent_type'], "Context should have agent_type");
+        $this->assert(isset($context['user_intent']), "Context should have user_intent");
+        $this->assert(isset($context['user_message']), "Context should have user_message");
+    }
+
+    public function testValidateInput()
+    {
+        echo "\n=== Testing validateInput ===\n";
+
+        $this->agent->initialize([
+            'db' => new MockDB(),
+            'logger' => new MockLogger(),
+            'config' => []
+        ]);
+
+        $messages = [
+            ['role' => 'user', 'content' => 'Test message']
+        ];
+
+        $context = [
+            'specialized_config' => [
+                'wp_site_url' => 'https://example.com',
+                'wp_username' => 'admin',
+                'wp_app_password' => 'test-password'
+            ]
+        ];
+
+        try {
+            $validated = $this->agent->validateInput($messages, $context);
+            $this->assert(is_array($validated), "Validated input should be an array");
+        } catch (Exception $e) {
+            $this->assert(false, "Validation failed: " . $e->getMessage());
+        }
+    }
+
+    public function testValidateInputMissingConfig()
+    {
+        echo "\n=== Testing validateInput with Missing Config ===\n";
+
+        $this->agent->initialize([
+            'db' => new MockDB(),
+            'logger' => new MockLogger(),
+            'config' => []
+        ]);
+
+        $messages = [
+            ['role' => 'user', 'content' => 'Test message']
+        ];
+
+        $context = [
+            'specialized_config' => []
+        ];
+
+        try {
+            $this->agent->validateInput($messages, $context);
+            $this->assert(false, "Should throw exception for missing config");
+        } catch (ChatbotBoilerplate\Exceptions\AgentValidationException $e) {
+            $this->assert(true, "Should throw AgentValidationException for missing config");
+        }
+    }
+
+    public function testCustomTools()
+    {
+        echo "\n=== Testing Custom Tools ===\n";
+
+        $tools = $this->agent->getCustomTools();
+        $this->assert(is_array($tools), "Custom tools should be an array");
+        $this->assert(count($tools) > 0, "Should have at least one custom tool");
+
+        // Check for specific tools
+        $toolNames = array_map(function($tool) {
+            return $tool['function']['name'];
+        }, $tools);
+
+        $this->assert(in_array('create_wordpress_post', $toolNames), "Should have create_wordpress_post tool");
+        $this->assert(in_array('update_wordpress_post', $toolNames), "Should have update_wordpress_post tool");
+        $this->assert(in_array('search_wordpress_posts', $toolNames), "Should have search_wordpress_posts tool");
+    }
+
+    public function testIntentDetection()
+    {
+        echo "\n=== Testing Intent Detection ===\n";
+
+        $this->agent->initialize([
+            'db' => new MockDB(),
+            'logger' => new MockLogger(),
+            'config' => []
+        ]);
+
+        // Test create intent
+        $messages1 = [
+            ['role' => 'user', 'content' => 'Create a blog post about AI']
+        ];
+        $context1 = $this->agent->buildContext($messages1, ['id' => 'agent-123']);
+        $this->assertEquals('create_post', $context1['user_intent']['action'], "Should detect create_post intent");
+
+        // Test search intent
+        $messages2 = [
+            ['role' => 'user', 'content' => 'Find all posts about machine learning']
+        ];
+        $context2 = $this->agent->buildContext($messages2, ['id' => 'agent-123']);
+        $this->assertEquals('search_posts', $context2['user_intent']['action'], "Should detect search_posts intent");
+
+        // Test update intent
+        $messages3 = [
+            ['role' => 'user', 'content' => 'Update post 123 with new content']
+        ];
+        $context3 = $this->agent->buildContext($messages3, ['id' => 'agent-123']);
+        $this->assertEquals('update_post', $context3['user_intent']['action'], "Should detect update_post intent");
+    }
+
+    public function testRequiresLLM()
+    {
+        echo "\n=== Testing requiresLLM ===\n";
+
+        $this->agent->initialize([
+            'db' => new MockDB(),
+            'logger' => new MockLogger(),
+            'config' => []
+        ]);
+
+        // Create/update actions should require LLM
+        $processedData1 = [
+            'intent' => ['action' => 'create_post']
+        ];
+        $this->assert($this->agent->requiresLLM($processedData1, []), "create_post should require LLM");
+
+        // Search actions should NOT require LLM
+        $processedData2 = [
+            'intent' => ['action' => 'search_posts']
+        ];
+        $this->assert(!$this->agent->requiresLLM($processedData2, []), "search_posts should not require LLM");
+    }
+
+    public function testCleanup()
+    {
+        echo "\n=== Testing cleanup ===\n";
+
+        $this->agent->initialize([
+            'db' => new MockDB(),
+            'logger' => new MockLogger(),
+            'config' => []
+        ]);
+
+        try {
+            $this->agent->cleanup();
+            $this->assert(true, "Cleanup should execute without errors");
+        } catch (Exception $e) {
+            $this->assert(false, "Cleanup failed: " . $e->getMessage());
+        }
+    }
+
+    public function runAll()
+    {
+        echo "\n╔═══════════════════════════════════════════╗\n";
+        echo "║   WordPress Agent Unit Tests            ║\n";
+        echo "╚═══════════════════════════════════════════╝\n";
+
+        try {
+            $this->testMetadata();
+            $this->testConfigSchema();
+            $this->testInitialization();
+            $this->testBuildContext();
+            $this->testValidateInput();
+            $this->testValidateInputMissingConfig();
+            $this->testCustomTools();
+            $this->testIntentDetection();
+            $this->testRequiresLLM();
+            $this->testCleanup();
+
+            echo "\n╔═══════════════════════════════════════════╗\n";
+            echo "║   Test Results                           ║\n";
+            echo "╠═══════════════════════════════════════════╣\n";
+            echo "║   Passed: " . str_pad($this->passed, 30, ' ', STR_PAD_LEFT) . "   ║\n";
+            echo "║   Failed: " . str_pad($this->failed, 30, ' ', STR_PAD_LEFT) . "   ║\n";
+            echo "╚═══════════════════════════════════════════╝\n";
+
+            return $this->failed === 0;
+
+        } catch (Exception $e) {
+            echo "\n✗ Test suite failed with exception: " . $e->getMessage() . "\n";
+            echo $e->getTraceAsString() . "\n";
+            return false;
+        }
+    }
+}
+
+// Run tests if executed directly
+if (php_sapi_name() === 'cli') {
+    $test = new WordPressAgentTest();
+    $success = $test->runAll();
+    exit($success ? 0 : 1);
+}
