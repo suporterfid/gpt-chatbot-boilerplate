@@ -771,19 +771,17 @@ class WordPressAgent extends AbstractSpecializedAgent
     {
         $intent = $processedData['intent'] ?? [];
         $result = $processedData['result'] ?? [];
+        $workflow = $context['blog_workflow'] ?? [];
+        $metadata = $this->buildWorkflowMetadata($intent, $result, $workflow);
 
         // For non-LLM actions, format data directly
         if (!$this->requiresLLM($processedData, $context)) {
             return [
                 'message' => [
                     'role' => 'assistant',
-                    'content' => $this->formatDataResponse($intent, $result)
+                    'content' => $this->formatNonLlmResponse($intent, $result, $metadata)
                 ],
-                'metadata' => [
-                    'agent_type' => 'wordpress',
-                    'action' => $intent['action'],
-                    'processed_at' => date('c')
-                ]
+                'metadata' => $metadata
             ];
         }
 
@@ -791,10 +789,117 @@ class WordPressAgent extends AbstractSpecializedAgent
         $output = parent::formatOutput($processedData, $context);
 
         // Enhance metadata
-        $output['metadata']['wordpress_action'] = $intent['action'] ?? 'unknown';
-        $output['metadata']['wordpress_result'] = $result;
+        $output['metadata'] = array_merge(
+            $output['metadata'] ?? [],
+            $metadata
+        );
+
+        if (empty($output['message']['content'])) {
+            $output['message']['content'] = $this->formatWorkflowMessage($metadata, $result);
+        }
 
         return $output;
+    }
+
+    private function buildWorkflowMetadata(array $intent, array $result, array $workflow): array
+    {
+        $publication = $result['publication'] ?? $workflow['queue_entry']['publication'] ?? [];
+        $logPointer = $result['execution_log_url']
+            ?? $result['execution_log']
+            ?? $result['execution_log_path']
+            ?? $workflow['execution_log']
+            ?? null;
+
+        $metadata = [
+            'agent_type' => 'wordpress',
+            'action' => $intent['action'] ?? 'unknown',
+            'phase' => $result['phase'] ?? $workflow['metadata']['phase'] ?? null,
+            'status' => $result['status'] ?? $workflow['metadata']['last_status'] ?? null,
+            'queue_id' => $result['queue_id'] ?? $workflow['queue_id'] ?? null,
+            'article_id' => $result['article_id'] ?? $workflow['metadata']['article_id'] ?? null,
+            'configuration_id' => $result['configuration_id'] ?? $workflow['configuration_id'] ?? null,
+            'wordpress_post_id' => $publication['post_id']
+                ?? $publication['id']
+                ?? $workflow['queue_entry']['wordpress_post_id']
+                ?? null,
+            'execution_log_url' => $logPointer,
+            'processed_at' => date('c')
+        ];
+
+        if (isset($result['asset_manifest'])) {
+            $metadata['asset_manifest'] = $result['asset_manifest'];
+        } elseif (isset($result['assets'])) {
+            $metadata['asset_manifest'] = $result['assets'];
+        }
+
+        return $metadata;
+    }
+
+    private function formatNonLlmResponse(array $intent, array $result, array $metadata): string
+    {
+        $action = $intent['action'] ?? '';
+
+        $directWordpressActions = [
+            self::ACTION_SEARCH_POSTS,
+            self::ACTION_GET_POST,
+            self::ACTION_LIST_CATEGORIES,
+        ];
+
+        if (in_array($action, $directWordpressActions, true)) {
+            return $this->formatDataResponse($intent, $result);
+        }
+
+        return $this->formatWorkflowMessage($metadata, $result);
+    }
+
+    private function formatWorkflowMessage(array $metadata, array $result): string
+    {
+        $phase = $metadata['phase'] ?? 'workflow';
+        $status = $metadata['status'] ?? 'in_progress';
+        $queueId = $metadata['queue_id'] ?? 'n/a';
+        $articleId = $metadata['article_id'] ?? 'n/a';
+
+        $lines = [
+            sprintf('Phase "%s" is %s for article %s (queue %s).', $phase, $status, $articleId, $queueId)
+        ];
+
+        if (!empty($metadata['wordpress_post_id'])) {
+            $lines[] = sprintf('WordPress post ID: %s.', $metadata['wordpress_post_id']);
+        }
+
+        if (!empty($metadata['asset_manifest'])) {
+            $lines[] = 'Assets have been generated; see asset_manifest for details.';
+        }
+
+        if (!empty($metadata['execution_log_url'])) {
+            $lines[] = sprintf('Execution log: %s.', $metadata['execution_log_url']);
+        }
+
+        if (!empty($result['next_action'])) {
+            $lines[] = sprintf('Next step: %s.', $result['next_action']);
+        } elseif ($next = $this->getNextWorkflowStep($phase, $status)) {
+            $lines[] = sprintf('Next step: %s.', $next);
+        }
+
+        return implode(' ', $lines);
+    }
+
+    private function getNextWorkflowStep(string $phase, string $status): ?string
+    {
+        if ($status === 'failed') {
+            return 'review errors and re-run the failed phase';
+        }
+
+        $order = [
+            'queue' => 'generate_structure',
+            'structure' => 'write_chapters',
+            'writing' => 'generate_assets',
+            'assets' => 'assemble_article',
+            'assembly' => 'publish_article',
+            'publish' => 'monitor_workflow'
+        ];
+
+        return $order[$phase] ?? null;
     }
 
     // ==================== CUSTOM TOOLS ====================
@@ -1214,6 +1319,11 @@ class WordPressAgent extends AbstractSpecializedAgent
                     [$queuePayload],
                     [$queueId, $queuePayload],
                     [$queueId, $articleId, $queuePayload]
+                ],
+                [
+                    'queue_id' => $queueId,
+                    'article_id' => $articleId,
+                    'phase' => 'queue'
                 ]
             );
         } catch (\Throwable $exception) {
@@ -1258,6 +1368,11 @@ class WordPressAgent extends AbstractSpecializedAgent
                     [$workflow],
                     [$articleId, $workflow],
                     [$articleId, $context]
+                ],
+                [
+                    'queue_id' => $queueId,
+                    'article_id' => $articleId,
+                    'phase' => 'structure'
                 ]
             );
         } catch (\Throwable $exception) {
@@ -1300,6 +1415,11 @@ class WordPressAgent extends AbstractSpecializedAgent
                     [$workflow],
                     [$articleId, $workflow],
                     [$articleId, $context]
+                ],
+                [
+                    'queue_id' => $queueId,
+                    'article_id' => $articleId,
+                    'phase' => 'writing'
                 ]
             );
         } catch (\Throwable $exception) {
@@ -1342,6 +1462,11 @@ class WordPressAgent extends AbstractSpecializedAgent
                     [$workflow],
                     [$articleId, $workflow],
                     [$articleId, $context]
+                ],
+                [
+                    'queue_id' => $queueId,
+                    'article_id' => $articleId,
+                    'phase' => 'assets'
                 ]
             );
         } catch (\Throwable $exception) {
@@ -1384,6 +1509,11 @@ class WordPressAgent extends AbstractSpecializedAgent
                     [$workflow],
                     [$articleId, $workflow],
                     [$articleId, $context]
+                ],
+                [
+                    'queue_id' => $queueId,
+                    'article_id' => $articleId,
+                    'phase' => 'assembly'
                 ]
             );
         } catch (\Throwable $exception) {
@@ -1426,6 +1556,11 @@ class WordPressAgent extends AbstractSpecializedAgent
                     [$workflow],
                     [$articleId, $workflow],
                     [$articleId, $context]
+                ],
+                [
+                    'queue_id' => $queueId,
+                    'article_id' => $articleId,
+                    'phase' => 'publish'
                 ]
             );
         } catch (\Throwable $exception) {
@@ -1464,6 +1599,11 @@ class WordPressAgent extends AbstractSpecializedAgent
                     [$queueId],
                     [$queueId, $articleId],
                     [$articleId]
+                ],
+                [
+                    'queue_id' => $queueId,
+                    'article_id' => $articleId,
+                    'phase' => 'monitor'
                 ]
             );
             if ($serviceStatus) {
@@ -1506,6 +1646,11 @@ class WordPressAgent extends AbstractSpecializedAgent
                 [
                     [$queueId, $articleId],
                     [$logPointer]
+                ],
+                [
+                    'queue_id' => $queueId,
+                    'article_id' => $articleId,
+                    'phase' => 'log'
                 ]
             );
         } catch (\Throwable $exception) {
@@ -1547,6 +1692,11 @@ class WordPressAgent extends AbstractSpecializedAgent
                 [
                     [$configurationId, $intent, $workflow],
                     [$configurationId]
+                ],
+                [
+                    'queue_id' => $workflow['queue_id'] ?? null,
+                    'article_id' => $workflow['metadata']['article_id'] ?? null,
+                    'phase' => 'internal_links'
                 ]
             ) ?? $managedLinks;
         } catch (\Throwable $exception) {
@@ -1569,7 +1719,7 @@ class WordPressAgent extends AbstractSpecializedAgent
         ];
     }
 
-    private function callServiceMethodSafe($service, array $methods, array $argumentSets = [[]])
+    private function callServiceMethodSafe($service, array $methods, array $argumentSets = [[]], array $logContext = [])
     {
         $lastException = null;
 
@@ -1586,10 +1736,37 @@ class WordPressAgent extends AbstractSpecializedAgent
                     'arguments' => $arguments,
                     'error' => $exception->getMessage()
                 ]);
+
+                if (!empty($logContext)) {
+                    $this->logExecutionStep(
+                        $logContext['queue_id'] ?? null,
+                        $logContext['article_id'] ?? null,
+                        $logContext['phase'] ?? $logContext['action'] ?? 'workflow',
+                        $logContext['retry_status'] ?? 'retrying',
+                        [
+                            'methods' => $methods,
+                            'attempt' => ($logContext['attempt'] ?? 0) + 1,
+                            'error' => $this->sanitizeForLog($exception->getMessage())
+                        ]
+                    );
+                    $logContext['attempt'] = ($logContext['attempt'] ?? 0) + 1;
+                }
             }
         }
 
         if ($lastException) {
+            if (!empty($logContext)) {
+                $this->logExecutionStep(
+                    $logContext['queue_id'] ?? null,
+                    $logContext['article_id'] ?? null,
+                    $logContext['phase'] ?? $logContext['action'] ?? 'workflow',
+                    'failed',
+                    [
+                        'methods' => $methods,
+                        'error' => $this->sanitizeForLog($lastException->getMessage())
+                    ]
+                );
+            }
             throw $lastException;
         }
 
@@ -1635,13 +1812,38 @@ class WordPressAgent extends AbstractSpecializedAgent
         return $statusData;
     }
 
+    private function sanitizeForLog($data)
+    {
+        if (is_array($data)) {
+            $sanitized = [];
+            foreach ($data as $key => $value) {
+                if (preg_match('/(token|password|secret|credential|key)/i', (string) $key)) {
+                    $sanitized[$key] = '[REDACTED]';
+                    continue;
+                }
+
+                $sanitized[$key] = $this->sanitizeForLog($value);
+            }
+
+            return $sanitized;
+        }
+
+        if (is_string($data) && preg_match('/sk-[A-Za-z0-9]+/i', $data)) {
+            return preg_replace('/sk-[A-Za-z0-9]+/i', '[REDACTED]', $data);
+        }
+
+        return $data;
+    }
+
     private function logExecutionStep(?string $queueId, ?string $articleId, string $phase, string $status, array $details = []): ?string
     {
-        $details['phase'] = $phase;
-        $details['status'] = $status;
+        $payload = $this->sanitizeForLog($details);
+        $payload['phase'] = $phase;
+        $payload['status'] = $status;
+        $payload['timestamp'] = $payload['timestamp'] ?? date('c');
 
         if (!$this->executionLogger) {
-            return $details['execution_log'] ?? null;
+            return $payload['execution_log'] ?? $details['execution_log'] ?? null;
         }
 
         try {
@@ -1649,8 +1851,8 @@ class WordPressAgent extends AbstractSpecializedAgent
                 $this->executionLogger,
                 ['logPhase', 'append', 'appendLog', 'record', 'recordPhase', 'write'],
                 [
-                    [$queueId, $articleId, $phase, $status, $details],
-                    [$phase, $status, $details]
+                    [$queueId, $articleId, $phase, $status, $payload],
+                    [$phase, $status, $payload]
                 ]
             );
 
