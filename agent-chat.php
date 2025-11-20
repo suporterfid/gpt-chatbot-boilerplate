@@ -154,6 +154,16 @@ $apiType = htmlspecialchars($agent['api_type'] ?? 'responses', ENT_QUOTES, 'UTF-
             padding: 0;
         }
 
+        .chat-footer {
+            background: white;
+            border-top: 1px solid var(--brand-border);
+            padding: 8px 24px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--brand-muted);
+            flex-shrink: 0;
+        }
+
         /* Override chatbot widget styles for full-page mode */
         #chatbot-container {
             position: static !important;
@@ -215,6 +225,9 @@ $apiType = htmlspecialchars($agent['api_type'] ?? 'responses', ENT_QUOTES, 'UTF-
         <main class="chat-container" id="chat-main">
             <!-- Chat widget will be initialized here -->
         </main>
+        <footer class="chat-footer">
+            Version <?php echo htmlspecialchars($config['app_version'] ?? '1.0.0', ENT_QUOTES, 'UTF-8'); ?>
+        </footer>
     </div>
 
     <!-- Load chatbot widget -->

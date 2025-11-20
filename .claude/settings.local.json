@@ -5,7 +5,8 @@
       "Bash(timeout 60 bash:*)",
       "Bash(wsl --version:*)",
       "Bash(wsl:*)",
-      "Bash(docker cp:*)"
+      "Bash(docker cp:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

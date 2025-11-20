@@ -60,7 +60,9 @@ const agentListState = {
     agents: [],
     vectorStoreMap: {},
     isLoading: false,
-    lastError: null
+    lastError: null,
+    searchDebounceTimer: null,
+    isSearching: false
 };
 
 const usersPageState = {
@@ -175,6 +177,239 @@ const AgentSummaryComponent = (() => {
 })();
 
 window.AgentSummaryComponent = AgentSummaryComponent;
+
+// Skeleton Screen Generators
+const SkeletonScreens = (() => {
+    function agentCard() {
+        return `
+            <div class="skeleton-agent-card">
+                <div class="skeleton-agent-header">
+                    <div class="skeleton-agent-title">
+                        <div class="skeleton skeleton-text skeleton-text-lg skeleton-w-3-4"></div>
+                        <div class="skeleton skeleton-text skeleton-text-sm skeleton-w-1-2"></div>
+                    </div>
+                    <div class="skeleton-agent-badges">
+                        <div class="skeleton skeleton-badge"></div>
+                        <div class="skeleton skeleton-badge"></div>
+                    </div>
+                </div>
+                <div class="skeleton-agent-meta">
+                    <div class="skeleton-meta-item">
+                        <div class="skeleton skeleton-text skeleton-text-sm skeleton-w-2-3"></div>
+                        <div class="skeleton skeleton-text skeleton-w-1-2"></div>
+                    </div>
+                    <div class="skeleton-meta-item">
+                        <div class="skeleton skeleton-text skeleton-text-sm skeleton-w-2-3"></div>
+                        <div class="skeleton skeleton-text skeleton-w-1-2"></div>
+                    </div>
+                </div>
+                <div class="skeleton-agent-actions">
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+            </div>
+        `;
+    }
+
+    function agentGrid(count = 6) {
+        const cards = Array(count).fill(null).map(() => agentCard()).join('');
+        return `<div class="skeleton-grid">${cards}</div>`;
+    }
+
+    function tableRow(columns = 4) {
+        const cells = Array(columns).fill(null).map((_, i) => {
+            const width = i === 0 ? 'skeleton-w-3-4' : 'skeleton-w-1-2';
+            return `<td><div class="skeleton skeleton-text ${width}"></div></td>`;
+        }).join('');
+        return `<tr>${cells}</tr>`;
+    }
+
+    function table(columns = 4, rows = 5, headers = []) {
+        const headerRow = headers.length > 0
+            ? `<thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>`
+            : '';
+        const tableRows = Array(rows).fill(null).map(() => tableRow(columns)).join('');
+        return `
+            <div class="table-wrapper">
+                <table class="skeleton-table table">
+                    ${headerRow}
+                    <tbody>${tableRows}</tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function card() {
+        return `
+            <div class="skeleton-card">
+                <div class="skeleton-card-header">
+                    <div style="flex: 1;">
+                        <div class="skeleton skeleton-text skeleton-text-lg skeleton-w-2-3"></div>
+                        <div class="skeleton skeleton-text skeleton-text-sm skeleton-w-1-2"></div>
+                    </div>
+                </div>
+                <div class="skeleton-card-body">
+                    <div class="skeleton skeleton-text skeleton-w-full"></div>
+                    <div class="skeleton skeleton-text skeleton-w-3-4"></div>
+                    <div class="skeleton skeleton-text skeleton-w-1-2"></div>
+                </div>
+            </div>
+        `;
+    }
+
+    function conversation(messageCount = 4) {
+        const messages = [];
+        for (let i = 0; i < messageCount; i++) {
+            const isUser = i % 2 === 0;
+            const alignClass = isUser ? 'skeleton-message-right' : 'skeleton-message-left';
+            messages.push(`
+                <div class="skeleton-message ${alignClass}">
+                    <div class="skeleton skeleton-message-bubble"></div>
+                </div>
+            `);
+        }
+        return `<div class="skeleton-conversation">${messages.join('')}</div>`;
+    }
+
+    return {
+        agentCard,
+        agentGrid,
+        tableRow,
+        table,
+        card,
+        conversation
+    };
+})();
+
+window.SkeletonScreens = SkeletonScreens;
+
+// Empty State Generators
+const EmptyStates = (() => {
+    function standard(options = {}) {
+        const {
+            icon = 'inbox',
+            title = 'No items found',
+            description = '',
+            primaryAction = null,
+            secondaryAction = null,
+            learnMoreLink = null,
+            compact = false
+        } = options;
+
+        const classes = ['empty-state'];
+        if (compact) classes.push('empty-state-compact');
+
+        return `
+            <div class="${classes.join(' ')}">
+                <div class="empty-state-icon">
+                    <i data-lucide="${icon}"></i>
+                </div>
+                ${title ? `<div class="empty-state-title">${escapeHtml(title)}</div>` : ''}
+                ${description ? `<div class="empty-state-description">${escapeHtml(description)}</div>` : ''}
+                ${(primaryAction || secondaryAction || learnMoreLink) ? `
+                    <div class="empty-state-actions">
+                        ${primaryAction ? `<button class="btn btn-primary" onclick="${primaryAction.onClick}">${escapeHtml(primaryAction.label)}</button>` : ''}
+                        ${secondaryAction ? `<button class="btn btn-secondary" onclick="${secondaryAction.onClick}">${escapeHtml(secondaryAction.label)}</button>` : ''}
+                        ${learnMoreLink ? `<a href="${learnMoreLink.url}" class="empty-state-link" target="_blank">${escapeHtml(learnMoreLink.label || 'Learn more')}</a>` : ''}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function withSteps(options = {}) {
+        const {
+            icon = 'help-circle',
+            title = 'Get Started',
+            description = '',
+            steps = [],
+            primaryAction = null
+        } = options;
+
+        return `
+            <div class="empty-state empty-state-illustrated">
+                <div class="empty-state-icon">
+                    <i data-lucide="${icon}"></i>
+                </div>
+                ${title ? `<div class="empty-state-title">${escapeHtml(title)}</div>` : ''}
+                ${description ? `<div class="empty-state-description">${escapeHtml(description)}</div>` : ''}
+                ${steps.length > 0 ? `
+                    <div class="empty-state-steps">
+                        ${steps.map((step, index) => `
+                            <div class="empty-state-step">
+                                <div class="empty-state-step-number">${index + 1}</div>
+                                <div class="empty-state-step-title">${escapeHtml(step.title)}</div>
+                                <div class="empty-state-step-description">${escapeHtml(step.description)}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                ${primaryAction ? `
+                    <div class="empty-state-actions">
+                        <button class="btn btn-primary" onclick="${primaryAction.onClick}">${escapeHtml(primaryAction.label)}</button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function error(options = {}) {
+        const {
+            title = 'Something went wrong',
+            message = 'An error occurred while loading this page.',
+            retryAction = null
+        } = options;
+
+        return `
+            <div class="empty-state">
+                <div class="empty-state-icon">
+                    <i data-lucide="alert-circle"></i>
+                </div>
+                <div class="empty-state-title">${escapeHtml(title)}</div>
+                <div class="empty-state-description">${escapeHtml(message)}</div>
+                ${retryAction ? `
+                    <div class="empty-state-actions">
+                        <button class="btn btn-primary" onclick="${retryAction.onClick}">${escapeHtml(retryAction.label || 'Try Again')}</button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function filtered(options = {}) {
+        const {
+            icon = 'search',
+            title = 'No results found',
+            description = 'Try adjusting your filters or search terms.',
+            clearAction = null
+        } = options;
+
+        return `
+            <div class="empty-state empty-state-compact">
+                <div class="empty-state-icon">
+                    <i data-lucide="${icon}"></i>
+                </div>
+                <div class="empty-state-title">${escapeHtml(title)}</div>
+                ${description ? `<div class="empty-state-description">${escapeHtml(description)}</div>` : ''}
+                ${clearAction ? `
+                    <div class="empty-state-actions">
+                        <button class="btn btn-secondary" onclick="${clearAction.onClick}">${escapeHtml(clearAction.label || 'Clear Filters')}</button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    return {
+        standard,
+        withSteps,
+        error,
+        filtered
+    };
+})();
+
+window.EmptyStates = EmptyStates;
 
 // API Client
 class APIError extends Error {
@@ -662,20 +897,156 @@ function showToast(message, type = 'success') {
     toast.className = `toast toast-${type}`;
 
     const icon = type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ';
-    
+
     toast.innerHTML = `
         <div class="toast-icon">${icon}</div>
         <div class="toast-content">
             <div class="toast-message">${message}</div>
         </div>
     `;
-    
+
     container.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 300);
     }, 3000);
+}
+
+/**
+ * Enhanced error handler that provides helpful context and recovery suggestions
+ * @param {Error|string} error - The error object or message
+ * @param {Object} options - Configuration options
+ * @param {string} options.context - What operation was being performed
+ * @param {string} options.action - Suggested recovery action
+ * @param {Function} options.onRetry - Callback for retry action
+ * @param {boolean} options.showToast - Whether to show toast notification (default: true)
+ * @returns {string} Formatted error message
+ */
+function handleError(error, options = {}) {
+    const {
+        context = 'Operation',
+        action = null,
+        onRetry = null,
+        showToast: shouldShowToast = true
+    } = options;
+
+    // Extract meaningful error message
+    let errorMessage = '';
+    let errorDetails = '';
+
+    if (typeof error === 'string') {
+        errorMessage = error;
+    } else if (error instanceof Error) {
+        errorMessage = error.message;
+    } else if (error?.response?.data?.error) {
+        errorMessage = error.response.data.error;
+        errorDetails = error.response.data.details || '';
+    } else if (error?.message) {
+        errorMessage = error.message;
+    } else {
+        errorMessage = 'An unexpected error occurred';
+    }
+
+    // Map common error patterns to user-friendly messages
+    const errorMap = {
+        'Network Error': {
+            message: 'Unable to connect to the server',
+            suggestion: 'Check your internet connection and try again'
+        },
+        'timeout': {
+            message: 'The request took too long to complete',
+            suggestion: 'The server might be busy. Please try again'
+        },
+        '401': {
+            message: 'Your session has expired',
+            suggestion: 'Please log in again to continue'
+        },
+        '403': {
+            message: 'You don\'t have permission for this action',
+            suggestion: 'Contact your administrator if you need access'
+        },
+        '404': {
+            message: 'The requested resource was not found',
+            suggestion: 'The item may have been deleted or moved'
+        },
+        '409': {
+            message: 'This action conflicts with existing data',
+            suggestion: 'Please refresh the page and try again'
+        },
+        '422': {
+            message: 'Invalid data provided',
+            suggestion: 'Please check your input and try again'
+        },
+        '429': {
+            message: 'Too many requests',
+            suggestion: 'Please wait a moment before trying again'
+        },
+        '500': {
+            message: 'Server error occurred',
+            suggestion: 'Our team has been notified. Please try again later'
+        },
+        '503': {
+            message: 'Service temporarily unavailable',
+            suggestion: 'The server is undergoing maintenance. Please try again later'
+        }
+    };
+
+    // Check for matching error pattern
+    let enhancedMessage = `${context} failed`;
+    let suggestion = action;
+
+    for (const [pattern, info] of Object.entries(errorMap)) {
+        if (errorMessage.includes(pattern) || error?.response?.status?.toString() === pattern) {
+            enhancedMessage = info.message;
+            suggestion = suggestion || info.suggestion;
+            break;
+        }
+    }
+
+    // Build the full error message
+    let fullMessage = enhancedMessage;
+    if (errorMessage && !errorMessage.includes('An unexpected error')) {
+        fullMessage += `: ${errorMessage}`;
+    }
+    if (errorDetails) {
+        fullMessage += ` (${errorDetails})`;
+    }
+    if (suggestion) {
+        fullMessage += `. ${suggestion}`;
+    }
+
+    // Log to console for debugging
+    console.error(`[${context}]`, error);
+
+    // Show toast notification
+    if (shouldShowToast) {
+        showToast(fullMessage, 'error');
+    }
+
+    return fullMessage;
+}
+
+/**
+ * Format validation errors from form submissions
+ * @param {Object} errors - Validation errors object
+ * @returns {string} Formatted error message
+ */
+function formatValidationErrors(errors) {
+    if (!errors || typeof errors !== 'object') {
+        return 'Please correct the errors in the form';
+    }
+
+    const errorMessages = [];
+    for (const [field, messages] of Object.entries(errors)) {
+        const fieldName = field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const errorList = Array.isArray(messages) ? messages : [messages];
+        errorMessages.push(`${fieldName}: ${errorList.join(', ')}`);
+    }
+
+    return errorMessages.length > 0
+        ? errorMessages.join('\n')
+        : 'Please correct the errors in the form';
 }
 
 const confirmationDialogState = {
@@ -907,6 +1278,79 @@ function formatDate(dateString) {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
 }
 
+/**
+ * Format a date as relative time (e.g., "2 hours ago", "just now")
+ * @param {string|Date} dateString - The date to format
+ * @param {Object} options - Formatting options
+ * @param {boolean} options.addSuffix - Whether to add "ago" suffix (default: true)
+ * @param {boolean} options.short - Use short format (e.g., "2h" instead of "2 hours ago")
+ * @returns {string} Formatted relative time string
+ */
+function formatRelativeTime(dateString, options = {}) {
+    if (!dateString) return '—';
+
+    const { addSuffix = true, short = false } = options;
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+    const diffWeek = Math.floor(diffDay / 7);
+    const diffMonth = Math.floor(diffDay / 30);
+    const diffYear = Math.floor(diffDay / 365);
+
+    // Future dates
+    if (diffMs < 0) {
+        return formatDate(dateString);
+    }
+
+    // Short format
+    if (short) {
+        if (diffSec < 60) return 'now';
+        if (diffMin < 60) return `${diffMin}m`;
+        if (diffHour < 24) return `${diffHour}h`;
+        if (diffDay < 7) return `${diffDay}d`;
+        if (diffWeek < 4) return `${diffWeek}w`;
+        if (diffMonth < 12) return `${diffMonth}mo`;
+        return `${diffYear}y`;
+    }
+
+    // Full format with relative time
+    const suffix = addSuffix ? ' ago' : '';
+
+    if (diffSec < 10) return 'just now';
+    if (diffSec < 60) return `${diffSec} seconds${suffix}`;
+    if (diffMin === 1) return `1 minute${suffix}`;
+    if (diffMin < 60) return `${diffMin} minutes${suffix}`;
+    if (diffHour === 1) return `1 hour${suffix}`;
+    if (diffHour < 24) return `${diffHour} hours${suffix}`;
+    if (diffDay === 1) return `yesterday`;
+    if (diffDay < 7) return `${diffDay} days${suffix}`;
+    if (diffWeek === 1) return `1 week${suffix}`;
+    if (diffWeek < 4) return `${diffWeek} weeks${suffix}`;
+    if (diffMonth === 1) return `1 month${suffix}`;
+    if (diffMonth < 12) return `${diffMonth} months${suffix}`;
+    if (diffYear === 1) return `1 year${suffix}`;
+    return `${diffYear} years${suffix}`;
+}
+
+/**
+ * Format a date with relative time and exact timestamp in tooltip
+ * @param {string|Date} dateString - The date to format
+ * @param {Object} options - Formatting options
+ * @returns {string} HTML string with relative time and tooltip
+ */
+function formatDateWithTooltip(dateString, options = {}) {
+    if (!dateString) return '—';
+
+    const relativeTime = formatRelativeTime(dateString, options);
+    const exactTime = formatDate(dateString);
+
+    return `<span data-tooltip="${exactTime}" data-tooltip-position="top" style="cursor: help;">${relativeTime}</span>`;
+}
+
 function escapeHtml(text) {
     if (!text) return '';
     const map = {
@@ -932,7 +1376,7 @@ const TENANT_SCOPED_PAGES = new Set([
     'audit-conversations'
 ]);
 
-function updateStatusIndicator(message, state = 'online') {
+function updateStatusIndicator(message, state = 'online', details = null) {
     const indicator = document.getElementById('status-indicator');
     const statusText = document.getElementById('status-text');
 
@@ -951,6 +1395,25 @@ function updateStatusIndicator(message, state = 'online') {
     }
 
     statusText.textContent = message;
+
+    // Create tooltip content
+    let tooltipContent = message;
+
+    if (details) {
+        tooltipContent += '\n' + details;
+    }
+
+    // Add timestamp
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString();
+    tooltipContent += `\nLast updated: ${timeStr}`;
+
+    // Set tooltip
+    const statusWrapper = indicator.parentElement;
+    if (statusWrapper) {
+        statusWrapper.setAttribute('title', tooltipContent);
+        statusWrapper.setAttribute('data-tooltip', tooltipContent);
+    }
 }
 
 function updateRoleVisibility(role) {
@@ -1317,10 +1780,19 @@ async function handleLoginSubmit(event) {
     } catch (error) {
         if (error instanceof APIError && error.status === 401) {
             if (errorElement) {
-                errorElement.textContent = 'Invalid email or password.';
+                errorElement.textContent = 'Invalid email or password. Please check your credentials and try again.';
+            }
+        } else if (error instanceof APIError && error.status === 429) {
+            if (errorElement) {
+                errorElement.textContent = 'Too many login attempts. Please wait a few minutes before trying again.';
             }
         } else if (errorElement) {
-            errorElement.textContent = error.message || 'Unable to sign in.';
+            const friendlyMessage = handleError(error, {
+                context: 'Sign in',
+                action: 'Check your internet connection and try again',
+                showToast: false
+            });
+            errorElement.textContent = friendlyMessage;
         }
 
         updateStatusIndicator('Sign in required', 'offline');
@@ -1629,13 +2101,16 @@ function renderAgentsList() {
     const filterControls = `
         <div class="agent-filters">
             <label class="filter-field">
-                <span>Buscar</span>
-                <input type="text" class="form-input" placeholder="Nome, descrição ou prompt" value="${escapeHtml(filters.search)}" oninput="handleAgentFilterChange('search', this.value)" />
+                <span>Search</span>
+                <div class="search-input-wrapper">
+                    <input type="text" id="agent-search-input" class="form-input" placeholder="Name, description, or prompt" value="${escapeHtml(filters.search)}" oninput="handleAgentFilterChange('search', this.value)" />
+                    ${agentListState.isSearching ? '<div class="search-spinner"><div class="spinner spinner-inline"></div></div>' : ''}
+                </div>
             </label>
             <label class="filter-field">
-                <span>Tipo de API</span>
+                <span>API Type</span>
                 <select class="form-select" onchange="handleAgentFilterChange('apiType', this.value)">
-                    <option value="all" ${filters.apiType === 'all' ? 'selected' : ''}>Todos</option>
+                    <option value="all" ${filters.apiType === 'all' ? 'selected' : ''}>All</option>
                     <option value="responses" ${filters.apiType === 'responses' ? 'selected' : ''}>Responses API</option>
                     <option value="chat" ${filters.apiType === 'chat' ? 'selected' : ''}>Chat Completions</option>
                 </select>
@@ -1643,11 +2118,11 @@ function renderAgentsList() {
             <label class="filter-field">
                 <span>Status</span>
                 <select class="form-select" onchange="handleAgentFilterChange('status', this.value)">
-                    <option value="all" ${filters.status === 'all' ? 'selected' : ''}>Todos</option>
-                    <option value="ready" ${filters.status === 'ready' ? 'selected' : ''}>Pronto</option>
-                    <option value="needs-channel" ${filters.status === 'needs-channel' ? 'selected' : ''}>Sem canal</option>
-                    <option value="draft" ${filters.status === 'draft' ? 'selected' : ''}>Rascunho</option>
-                    <option value="default" ${filters.status === 'default' ? 'selected' : ''}>Padrão</option>
+                    <option value="all" ${filters.status === 'all' ? 'selected' : ''}>All</option>
+                    <option value="ready" ${filters.status === 'ready' ? 'selected' : ''}>Done</option>
+                    <option value="needs-channel" ${filters.status === 'needs-channel' ? 'selected' : ''}>No Channel</option>
+                    <option value="draft" ${filters.status === 'draft' ? 'selected' : ''}>Draft</option>
+                    <option value="default" ${filters.status === 'default' ? 'selected' : ''}>Default</option>
                 </select>
             </label>
         </div>
@@ -1656,31 +2131,61 @@ function renderAgentsList() {
     let bodyHtml = '';
 
     if (agentListState.isLoading) {
-        bodyHtml = '<div class="card-loading"><div class="spinner"></div></div>';
+        bodyHtml = SkeletonScreens.agentGrid(6);
     } else if (agentListState.lastError) {
-        bodyHtml = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">${escapeHtml(agentListState.lastError.message || 'Erro ao carregar')}</div></div>`;
+        bodyHtml = EmptyStates.error({
+            title: 'Failed to Load Agents',
+            message: agentListState.lastError.message || 'An error occurred while loading agents.',
+            retryAction: { onClick: 'loadAgentsPage()', label: 'Try Again' }
+        });
     } else {
         const filteredAgents = applyAgentFilters(agentListState.agents);
 
         if (filteredAgents.length === 0) {
-            bodyHtml = `
-                <div class="empty-state">
-                    <div class="empty-state-icon">🤖</div>
-                    <div class="empty-state-text">${agentListState.agents.length === 0 ? 'No agents registered' : 'No agents match the current filters'}</div>
-                    <button class="btn btn-primary mt-2" onclick="showCreateAgentModal()">Create Agent</button>
-                </div>
-            `;
+            if (agentListState.agents.length === 0) {
+                // No agents at all - show onboarding
+                bodyHtml = EmptyStates.withSteps({
+                    icon: 'bot',
+                    title: 'Create Your First Agent',
+                    description: 'Agents are AI-powered chatbots that can interact with users through various channels like WhatsApp, Telegram, and more.',
+                    steps: [
+                        {
+                            title: 'Choose API Type',
+                            description: 'Select between Responses API (advanced features) or Chat Completions (simpler, faster).'
+                        },
+                        {
+                            title: 'Configure Behavior',
+                            description: 'Set up your agent\'s personality, instructions, and knowledge sources.'
+                        },
+                        {
+                            title: 'Connect Channels',
+                            description: 'Enable WhatsApp, Telegram, or other channels for users to interact with your agent.'
+                        }
+                    ],
+                    primaryAction: { onClick: 'showCreateAgentModal()', label: 'Create Your First Agent' }
+                });
+            } else {
+                // Filtered results are empty
+                bodyHtml = EmptyStates.filtered({
+                    title: 'No agents match your filters',
+                    description: 'Try adjusting your search terms or filter settings.',
+                    clearAction: {
+                        onClick: 'clearAgentFilters()',
+                        label: 'Clear All Filters'
+                    }
+                });
+            }
         } else {
             const cards = filteredAgents.map(agent => {
                 const statusMeta = getAgentStatusMeta(agent);
                 const apiTypeBadge = agent.api_type === 'responses'
-                    ? '<span class="badge badge-success">Responses API</span>'
-                    : '<span class="badge badge-warning">Chat API</span>';
+                    ? '<span class="badge badge-success" data-tooltip="Uses OpenAI Responses API with full features and streaming">Responses API</span>'
+                    : '<span class="badge badge-warning" data-tooltip="Uses legacy Chat API - consider upgrading to Responses API">Chat API</span>';
                 const promptLabel = getAgentPromptLabel(agent);
                 const connectedChannels = (agent.channels || []).filter(channel => channel.enabled).length;
                 const totalChannels = (agent.channels || []).length;
                 const channelSummary = totalChannels === 0 ? 'No channels configured' : `${connectedChannels}/${totalChannels} connected`;
-                const updatedAt = agent.updated_at ? formatDate(agent.updated_at) : '—';
+                const updatedAt = agent.updated_at ? formatDateWithTooltip(agent.updated_at) : '—';
                 const summaryHtml = AgentSummaryComponent.render(agent, {
                     showTitle: false,
                     compact: true,
@@ -1695,34 +2200,34 @@ function renderAgentsList() {
                                 <p>${escapeHtml(agent.description || 'No description')}</p>
                             </div>
                             <div class="agent-card-tags">
-                                ${statusMeta ? `<span class="badge ${statusMeta.badgeClass}">${escapeHtml(statusMeta.label)}</span>` : ''}
-                                ${agent.is_default ? '<span class="badge badge-primary">Default</span>' : ''}
+                                ${statusMeta ? `<span class="badge ${statusMeta.badgeClass}" data-tooltip="${statusMeta.tooltip || ''}" ${statusMeta.tooltip ? '' : 'style="cursor: default;"'}>${escapeHtml(statusMeta.label)}</span>` : ''}
+                                ${agent.is_default ? '<span class="badge badge-primary" data-tooltip="This is the default agent used when no specific agent is selected">Default</span>' : ''}
                                 ${apiTypeBadge}
                             </div>
                         </header>
                         <dl class="agent-card-meta">
                             <div>
-                                <dt>Active Prompt</dt>
+                                <dt data-tooltip="The system prompt that guides this agent's behavior" data-tooltip-position="top">Active Prompt</dt>
                                 <dd>${escapeHtml(promptLabel)}</dd>
                             </div>
                             <div>
-                                <dt>Channels</dt>
+                                <dt data-tooltip="Communication channels (WhatsApp, etc.) connected to this agent" data-tooltip-position="top">Channels</dt>
                                 <dd>${escapeHtml(channelSummary)}</dd>
                             </div>
                             <div>
-                                <dt>Updated</dt>
+                                <dt data-tooltip="Last time this agent was modified" data-tooltip-position="top">Updated</dt>
                                 <dd>${escapeHtml(updatedAt)}</dd>
                             </div>
                         </dl>
                         ${summaryHtml}
                         <div class="agent-card-actions">
-                            <button class="btn btn-small btn-secondary" onclick="editAgent('${agent.id}')">Edit</button>
-                            ${agent.slug ? `<button class="btn btn-small btn-teal" onclick="openAgentChat('${escapeHtml(agent.slug)}')" title="Open public chat page">💬 Open Chat</button>` : `<button class="btn btn-small btn-muted" disabled title="Define a slug in the edit screen to enable public access">💬 Open Chat</button>`}
-                            <button class="btn btn-small btn-purple" onclick="showPromptBuilderModal('${agent.id}', '${agent.name}')">✨ Prompt Builder</button>
-                            <button class="btn btn-small btn-info" onclick="manageChannels('${agent.id}', '${agent.name}')">Channels</button>
-                            <button class="btn btn-small btn-primary" onclick="testAgent('${agent.id}')">Test</button>
-                            ${!agent.is_default ? `<button class="btn btn-small btn-success" onclick="makeDefaultAgent('${agent.id}')">Set as Default</button>` : ''}
-                            <button class="btn btn-small btn-danger" onclick="deleteAgent('${agent.id}', '${agent.name}')">Delete</button>
+                            <button class="btn btn-small btn-secondary" onclick="editAgent('${agent.id}')" data-tooltip="Edit agent configuration" data-tooltip-position="top">Edit</button>
+                            <button class="btn btn-small btn-teal" onclick="openAgentChat('${agent.slug || ''}', '${agent.id}')" data-tooltip="Open public chat page in new window" data-tooltip-position="top">💬 Open Chat</button>
+                            <button class="btn btn-small btn-purple" onclick="showPromptBuilderModal('${agent.id}', '${agent.name}')" data-tooltip="Build and customize agent prompts" data-tooltip-position="top">✨ Prompt Builder</button>
+                            <button class="btn btn-small btn-info" onclick="manageChannels('${agent.id}', '${agent.name}')" data-tooltip="Configure WhatsApp and other channels" data-tooltip-position="top">Channels</button>
+                            <button class="btn btn-small btn-primary" onclick="testAgent('${agent.id}')" data-tooltip="Test agent in sandbox environment" data-tooltip-position="top">Test</button>
+                            ${!agent.is_default ? `<button class="btn btn-small btn-success" onclick="makeDefaultAgent('${agent.id}')" data-tooltip="Make this the default agent" data-tooltip-position="top">Set as Default</button>` : ''}
+                            <button class="btn btn-small btn-danger" onclick="deleteAgent('${agent.id}', '${agent.name}')" data-tooltip="Permanently delete this agent" data-tooltip-position="top">Delete</button>
                         </div>
                     </article>
                 `;
@@ -1747,6 +2252,11 @@ function renderAgentsList() {
             </div>
         </div>
     `;
+
+    // Re-initialize Lucide icons after rendering
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
 }
 
 function handleAgentFilterChange(filterKey, value) {
@@ -1758,6 +2268,35 @@ function handleAgentFilterChange(filterKey, value) {
         return;
     }
     agentListState.filters[filterKey] = normalized;
+
+    // Add debouncing for search field
+    if (filterKey === 'search') {
+        // Clear any existing timer
+        if (agentListState.searchDebounceTimer) {
+            clearTimeout(agentListState.searchDebounceTimer);
+        }
+
+        // Show searching indicator
+        agentListState.isSearching = true;
+        renderAgentsList();
+
+        // Debounce the actual filtering
+        agentListState.searchDebounceTimer = setTimeout(() => {
+            agentListState.isSearching = false;
+            renderAgentsList();
+        }, 300);
+    } else {
+        // For non-search filters, apply immediately
+        renderAgentsList();
+    }
+}
+
+function clearAgentFilters() {
+    agentListState.filters = {
+        search: '',
+        apiType: 'all',
+        status: 'all'
+    };
     renderAgentsList();
 }
 
@@ -1798,21 +2337,41 @@ function getAgentStatusMeta(agent) {
     }
 
     if (agent.is_default) {
-        return { label: 'Padrão', value: 'default', badgeClass: 'badge-primary' };
+        return {
+            label: 'Padrão',
+            value: 'default',
+            badgeClass: 'badge-primary',
+            tooltip: 'This is the default agent used when no specific agent is selected'
+        };
     }
 
     const hasPrompt = Boolean(agent.prompt_id || agent.system_message);
     const connectedChannels = (agent.channels || []).filter(channel => channel.enabled).length;
 
     if (hasPrompt && connectedChannels > 0) {
-        return { label: 'Pronto', value: 'ready', badgeClass: 'badge-success' };
+        return {
+            label: 'Pronto',
+            value: 'ready',
+            badgeClass: 'badge-success',
+            tooltip: 'Agent is configured with a prompt and connected to at least one channel'
+        };
     }
 
     if (hasPrompt) {
-        return { label: 'Sem canal', value: 'needs-channel', badgeClass: 'badge-warning' };
+        return {
+            label: 'Sem canal',
+            value: 'needs-channel',
+            badgeClass: 'badge-warning',
+            tooltip: 'Agent has a prompt but needs to be connected to a channel to be active'
+        };
     }
 
-    return { label: 'Rascunho', value: 'draft', badgeClass: 'badge-secondary' };
+    return {
+        label: 'Rascunho',
+        value: 'draft',
+        badgeClass: 'badge-secondary',
+        tooltip: 'Agent is in draft mode - configure a prompt and connect a channel to activate'
+    };
 }
 
 function getAgentPromptLabel(agent) {
@@ -1838,6 +2397,7 @@ async function handleUpdateAgent(event, id) {
     const data = {
         name: formData.get('name'),
         description: formData.get('description'),
+        slug: formData.get('slug') || null,
         api_type: formData.get('api_type'),
         model: formData.get('model') || null,
         prompt_id: formData.get('prompt_id') || null,
@@ -1936,12 +2496,18 @@ async function editAgent(id) {
                     <label class="form-label">Name *</label>
                     <input type="text" name="name" class="form-input" value="${agent.name || ''}" required />
                 </div>
-                
+
                 <div class="form-group">
                     <label class="form-label">Description</label>
                     <textarea name="description" class="form-textarea">${agent.description || ''}</textarea>
                 </div>
-                
+
+                <div class="form-group">
+                    <label class="form-label">Slug (unique identifier)</label>
+                    <input type="text" name="slug" class="form-input" placeholder="e.g., premium-support" value="${agent.slug || ''}" pattern="[a-z0-9-]{1,64}" />
+                    <small class="form-help">Lowercase letters, numbers, and hyphens only. Used for public URL: /a/your-slug</small>
+                </div>
+
                 <div class="form-group">
                     <label class="form-label">API Type *</label>
                     <select name="api_type" class="form-select">
@@ -2023,13 +2589,16 @@ async function deleteAgent(id, name) {
     if (!confirm(`Are you sure you want to delete agent "${name}"?`)) {
         return;
     }
-    
+
     try {
         await api.deleteAgent(id);
         showToast('Agent deleted successfully', 'success');
         loadAgentsPage();
     } catch (error) {
-        showToast('Failed to delete agent: ' + error.message, 'error');
+        handleError(error, {
+            context: 'Delete agent',
+            action: 'The agent may be in use. Try removing it from channels first'
+        });
     }
 }
 
@@ -2039,7 +2608,10 @@ async function makeDefaultAgent(id) {
         showToast('Default agent updated', 'success');
         loadAgentsPage();
     } catch (error) {
-        showToast('Failed to set default agent: ' + error.message, 'error');
+        handleError(error, {
+            context: 'Set default agent',
+            action: 'Please try again or refresh the page'
+        });
     }
 }
 
@@ -2051,12 +2623,14 @@ function testAgent(id) {
     }
 }
 
-function openAgentChat(slug) {
-    if (!slug) {
-        showToast('This agent does not have a public URL configured.', 'warning');
+function openAgentChat(slug, agentId) {
+    // Use slug if available, otherwise use agent ID
+    const identifier = slug || agentId;
+    if (!identifier) {
+        showToast('Unable to open chat - missing agent identifier.', 'error');
         return;
     }
-    const url = `${window.location.origin}/a/${slug}`;
+    const url = `${window.location.origin}/a/${identifier}`;
     window.open(url, '_blank', 'noopener,noreferrer');
 }
 
@@ -2064,8 +2638,21 @@ function openAgentChat(slug) {
 
 async function loadPromptsPage() {
     const content = document.getElementById('content');
-    content.innerHTML = '<div class="spinner"></div>';
-    
+    content.innerHTML = `
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Prompts</h3>
+                <div class="flex gap-1">
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+            </div>
+            <div class="card-body">
+                ${SkeletonScreens.table(5, 5, ['Name', 'OpenAI ID', 'Description', 'Created', 'Actions'])}
+            </div>
+        </div>
+    `;
+
     try {
         const prompts = await api.listPrompts();
         
@@ -2082,13 +2669,13 @@ async function loadPromptsPage() {
         `;
         
         if (prompts.length === 0) {
-            html += `
-                <div class="empty-state">
-                    <div class="empty-state-icon">📝</div>
-                    <div class="empty-state-text">No prompts yet</div>
-                    <button class="btn btn-primary mt-2" onclick="showCreatePromptModal()">Create Your First Prompt</button>
-                </div>
-            `;
+            html += EmptyStates.standard({
+                icon: 'file-text',
+                title: 'No Prompts Yet',
+                description: 'Prompts are reusable templates that define how your AI agents behave and respond. Create your first prompt to get started.',
+                primaryAction: { onClick: 'showCreatePromptModal()', label: 'Create Your First Prompt' },
+                secondaryAction: { onClick: 'syncPrompts()', label: 'Sync from OpenAI' }
+            });
         } else {
             html += `
                 <div class="table-container">
@@ -2111,10 +2698,10 @@ async function loadPromptsPage() {
                         <td><strong>${prompt.name}</strong></td>
                         <td>${prompt.openai_prompt_id || '<span style="color: #6b7280;">Local only</span>'}</td>
                         <td>${prompt.description || '-'}</td>
-                        <td>${formatDate(prompt.created_at)}</td>
+                        <td>${formatDateWithTooltip(prompt.created_at)}</td>
                         <td class="table-actions">
-                            <button class="btn btn-small btn-secondary" onclick="viewPromptVersions('${prompt.id}')">Versions</button>
-                            <button class="btn btn-small btn-danger" onclick="deletePrompt('${prompt.id}', '${prompt.name}')">Delete</button>
+                            <button class="btn btn-small btn-secondary" onclick="viewPromptVersions('${prompt.id}')" data-tooltip="View version history" data-tooltip-position="top">Versions</button>
+                            <button class="btn btn-small btn-danger" onclick="deletePrompt('${prompt.id}', '${prompt.name}')" data-tooltip="Delete this prompt" data-tooltip-position="top">Delete</button>
                         </td>
                     </tr>
                 `;
@@ -2233,13 +2820,16 @@ async function deletePrompt(id, name) {
     if (!confirm(`Are you sure you want to delete prompt "${name}"?`)) {
         return;
     }
-    
+
     try {
         await api.deletePrompt(id);
         showToast('Prompt deleted successfully', 'success');
         loadPromptsPage();
     } catch (error) {
-        showToast('Failed to delete prompt: ' + error.message, 'error');
+        handleError(error, {
+            context: 'Delete prompt',
+            action: 'The prompt may be in use by agents. Check agent configurations first'
+        });
     }
 }
 
@@ -2257,8 +2847,21 @@ async function syncPrompts() {
 
 async function loadVectorStoresPage() {
     const content = document.getElementById('content');
-    content.innerHTML = '<div class="spinner"></div>';
-    
+    content.innerHTML = `
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Vector Stores</h3>
+                <div class="flex gap-1">
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+            </div>
+            <div class="card-body">
+                ${SkeletonScreens.table(6, 5, ['Name', 'OpenAI ID', 'Status', 'Files', 'Created', 'Actions'])}
+            </div>
+        </div>
+    `;
+
     try {
         const stores = await api.listVectorStores();
         
@@ -2275,13 +2878,13 @@ async function loadVectorStoresPage() {
         `;
         
         if (stores.length === 0) {
-            html += `
-                <div class="empty-state">
-                    <div class="empty-state-icon">📚</div>
-                    <div class="empty-state-text">No vector stores yet</div>
-                    <button class="btn btn-primary mt-2" onclick="showCreateVectorStoreModal()">Create Your First Vector Store</button>
-                </div>
-            `;
+            html += EmptyStates.standard({
+                icon: 'database',
+                title: 'No Knowledge Bases Yet',
+                description: 'Vector stores (knowledge bases) allow your agents to access and search through documents, PDFs, and other files to provide accurate, context-aware responses.',
+                primaryAction: { onClick: 'showCreateVectorStoreModal()', label: 'Create Your First Knowledge Base' },
+                secondaryAction: { onClick: 'syncVectorStores()', label: 'Sync from OpenAI' }
+            });
         } else {
             html += `
                 <div class="table-container">
@@ -2310,10 +2913,10 @@ async function loadVectorStoresPage() {
                         <td>${store.openai_store_id || '<span style="color: #6b7280;">Local only</span>'}</td>
                         <td>${statusBadge}</td>
                         <td>${store.file_count || 0}</td>
-                        <td>${formatDate(store.created_at)}</td>
+                        <td>${formatDateWithTooltip(store.created_at)}</td>
                         <td class="table-actions">
-                            <button class="btn btn-small btn-primary" onclick="viewVectorStoreFiles('${store.id}', '${store.name}')">Manage Files</button>
-                            <button class="btn btn-small btn-danger" onclick="deleteVectorStore('${store.id}', '${store.name}')">Delete</button>
+                            <button class="btn btn-small btn-primary" onclick="viewVectorStoreFiles('${store.id}', '${store.name}')" data-tooltip="Upload and manage files in this knowledge base" data-tooltip-position="top">Manage Files</button>
+                            <button class="btn btn-small btn-danger" onclick="deleteVectorStore('${store.id}', '${store.name}')" data-tooltip="Delete this knowledge base" data-tooltip-position="top">Delete</button>
                         </td>
                     </tr>
                 `;
@@ -2455,12 +3058,15 @@ async function uploadFileToVectorStore(storeId) {
             showToast('Uploading file...', 'warning');
             await api.addVectorStoreFile(storeId, data);
             showToast('File uploaded successfully', 'success');
-            
+
             // Reload the files list
             const store = await api.getVectorStore(storeId);
             viewVectorStoreFiles(storeId, store.name);
         } catch (error) {
-            showToast('Failed to upload file: ' + error.message, 'error');
+            handleError(error, {
+                context: 'Upload file',
+                action: 'Check the file size (max 512MB) and format. Supported: PDF, TXT, MD, DOC, DOCX'
+            });
         }
     };
     
@@ -2488,13 +3094,16 @@ async function deleteVectorStore(id, name) {
     if (!confirm(`Are you sure you want to delete vector store "${name}"?`)) {
         return;
     }
-    
+
     try {
         await api.deleteVectorStore(id);
         showToast('Vector store deleted successfully', 'success');
         loadVectorStoresPage();
     } catch (error) {
-        showToast('Failed to delete vector store: ' + error.message, 'error');
+        handleError(error, {
+            context: 'Delete knowledge base',
+            action: 'The knowledge base may be attached to agents. Remove it from agents first'
+        });
     }
 }
 
@@ -2514,14 +3123,29 @@ let jobsRefreshInterval = null;
 
 async function loadJobsPage() {
     const content = document.getElementById('content');
-    content.innerHTML = '<div class="spinner"></div>';
-    
+    content.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+            ${SkeletonScreens.card()}
+            ${SkeletonScreens.card()}
+            ${SkeletonScreens.card()}
+            ${SkeletonScreens.card()}
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Pending Jobs</h3>
+            </div>
+            <div class="card-body">
+                ${SkeletonScreens.table(4, 5, ['Type', 'Status', 'Attempts', 'Created'])}
+            </div>
+        </div>
+    `;
+
     // Clear existing interval if any
     if (jobsRefreshInterval) {
         clearInterval(jobsRefreshInterval);
         jobsRefreshInterval = null;
     }
-    
+
     await refreshJobsPage();
     
     // Auto-refresh every 5 seconds
@@ -2635,35 +3259,38 @@ function renderJobsTable(jobs, emptyMessage) {
                     </tr>
                 </thead>
                 <tbody>
-                    ${jobs.map(job => `
+                    ${jobs.map(job => {
+                        const statusBadge = getJobStatusBadge(job.status);
+                        return `
                         <tr>
                             <td>
                                 <code style="font-size: 0.875rem;">${job.type}</code>
                             </td>
                             <td>
-                                <span class="badge ${getJobStatusBadge(job.status)}">
+                                <span class="badge ${statusBadge.class}" data-tooltip="${statusBadge.tooltip}">
                                     ${job.status}
                                 </span>
                             </td>
                             <td>${job.attempts}/${job.max_attempts}</td>
-                            <td style="font-size: 0.875rem;">${formatDate(job.created_at)}</td>
+                            <td style="font-size: 0.875rem;">${formatDateWithTooltip(job.created_at)}</td>
                             <td>
-                                <button class="btn btn-sm" onclick="viewJobDetails('${job.id}')" title="View Details">
+                                <button class="btn btn-sm" onclick="viewJobDetails('${job.id}')" data-tooltip="View job details and logs" data-tooltip-position="top">
                                     👁️
                                 </button>
                                 ${job.status === 'failed' ? `
-                                    <button class="btn btn-sm btn-warning" onclick="retryJobAction('${job.id}')" title="Retry">
+                                    <button class="btn btn-sm btn-warning" onclick="retryJobAction('${job.id}')" data-tooltip="Retry failed job" data-tooltip-position="top">
                                         🔄
                                     </button>
                                 ` : ''}
                                 ${job.status === 'pending' || job.status === 'running' ? `
-                                    <button class="btn btn-sm btn-danger" onclick="cancelJobAction('${job.id}')" title="Cancel">
+                                    <button class="btn btn-sm btn-danger" onclick="cancelJobAction('${job.id}')" data-tooltip="Cancel running job" data-tooltip-position="top">
                                         ❌
                                     </button>
                                 ` : ''}
                             </td>
                         </tr>
-                    `).join('')}
+                        `;
+                    }).join('')}
                 </tbody>
             </table>
         </div>
@@ -2675,13 +3302,13 @@ function getJobStatusBadge(status) {
     // Cancelled jobs are stored as 'failed' with error_text = 'Cancelled by user'.
     // The 'cancelled' mapping is kept here for future schema enhancement.
     const badges = {
-        'pending': 'badge-warning',
-        'running': 'badge-primary',
-        'completed': 'badge-success',
-        'failed': 'badge-danger',
-        'cancelled': 'badge-secondary'  // Reserved for future use
+        'pending': { class: 'badge-warning', tooltip: 'Job is waiting to be processed' },
+        'running': { class: 'badge-primary', tooltip: 'Job is currently being processed' },
+        'completed': { class: 'badge-success', tooltip: 'Job completed successfully' },
+        'failed': { class: 'badge-danger', tooltip: 'Job failed - click to view error details' },
+        'cancelled': { class: 'badge-secondary', tooltip: 'Job was cancelled by user' }  // Reserved for future use
     };
-    return badges[status] || 'badge-secondary';
+    return badges[status] || { class: 'badge-secondary', tooltip: 'Unknown status' };
 }
 
 async function viewJobDetails(jobId) {
@@ -2707,12 +3334,12 @@ async function viewJobDetails(jobId) {
             </div>
             <div class="form-group">
                 <label class="form-label">Created</label>
-                <div>${formatDate(job.created_at)}</div>
+                <div>${formatDateWithTooltip(job.created_at)}</div>
             </div>
             ${job.completed_at ? `
                 <div class="form-group">
                     <label class="form-label">Completed</label>
-                    <div>${formatDate(job.completed_at)}</div>
+                    <div>${formatDateWithTooltip(job.completed_at)}</div>
                 </div>
             ` : ''}
             ${job.payload_json ? `
@@ -3531,8 +4158,18 @@ async function deleteTenant(id) {
 
 async function loadAuditPage() {
     const content = document.getElementById('content');
-    content.innerHTML = '<div class="spinner"></div>';
-    
+    content.innerHTML = `
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Audit Log</h3>
+                <div class="skeleton skeleton-button"></div>
+            </div>
+            <div class="card-body">
+                ${SkeletonScreens.table(6, 10, ['Timestamp', 'User', 'Action', 'Resource Type', 'Resource', 'Details'])}
+            </div>
+        </div>
+    `;
+
     try {
         const auditLogs = await api.listAuditLog(100);
         
@@ -3546,7 +4183,12 @@ async function loadAuditPage() {
         `;
         
         if (!auditLogs || auditLogs.length === 0) {
-            html += `<p style="color: #6b7280; text-align: center; padding: 2rem;">No audit logs yet</p>`;
+            html += EmptyStates.standard({
+                icon: 'list',
+                title: 'No Audit Logs Yet',
+                description: 'System activity and changes will be tracked here for security and compliance purposes.',
+                compact: true
+            });
         } else {
             html += `
                 <div style="overflow-x: auto;">
@@ -3563,7 +4205,7 @@ async function loadAuditPage() {
                             ${auditLogs.map(log => `
                                 <tr>
                                     <td style="white-space: nowrap; font-size: 0.875rem;">
-                                        ${formatDate(log.created_at)}
+                                        ${formatDateWithTooltip(log.created_at)}
                                     </td>
                                     <td>
                                         <code style="font-size: 0.875rem;">${log.actor}</code>
@@ -3619,7 +4261,7 @@ async function viewAuditDetails(logId) {
         const content = `
             <div class="form-group">
                 <label class="form-label">Timestamp</label>
-                <div>${formatDate(log.created_at)}</div>
+                <div>${formatDateWithTooltip(log.created_at)}</div>
             </div>
             <div class="form-group">
                 <label class="form-label">Actor</label>
@@ -4014,6 +4656,26 @@ async function loadSettingsPage() {
                     </div>
                 </div>
             ` : ''}
+
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">System Information</h3>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label class="form-label">Software Version</label>
+                        <div>
+                            <span class="badge badge-info">v${escapeHtml(health.version || '1.0.0')}</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Environment</label>
+                        <div>
+                            <span class="badge badge-secondary">${escapeHtml(health.environment || 'production')}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <div class="card">
                 <div class="card-header">
@@ -4435,7 +5097,22 @@ document.addEventListener('DOMContentLoaded', function() {
     updateRoleVisibility(authState.user?.role || null);
     initializeAuthentication();
     initializeSidebarAccordion();
+    loadSidebarVersion();
 });
+
+// ========== Load Version in Sidebar ==========
+async function loadSidebarVersion() {
+    try {
+        const health = await api.health();
+        const versionElement = document.getElementById('sidebar-version');
+        if (versionElement && health.version) {
+            versionElement.textContent = `v${health.version}`;
+        }
+    } catch (error) {
+        // Silently fail - version display is not critical
+        console.debug('Failed to load version:', error);
+    }
+}
 
 // ========== Sidebar Accordion ==========
 
@@ -4507,7 +5184,23 @@ function initializeSidebarAccordion() {
 
 async function loadAuditConversationsPage() {
     const content = document.getElementById('content');
-    
+
+    // Show skeleton loading state
+    content.innerHTML = `
+        <div class="card">
+            <div class="card-header">
+                <h3>Conversation Audit Trails</h3>
+                <div class="card-actions">
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+            </div>
+            <div class="card-body">
+                ${SkeletonScreens.table(6, 8, ['Conversation ID', 'Agent', 'Channel', 'Started', 'Last Activity', 'Actions'])}
+            </div>
+        </div>
+    `;
+
     try {
         const data = await api.listAuditConversations({ limit: 50 });
         const conversations = data.conversations || [];
@@ -4525,7 +5218,12 @@ async function loadAuditConversationsPage() {
         `;
         
         if (!conversations || conversations.length === 0) {
-            html += `<p style="color: #6b7280; text-align: center; padding: 2rem;">No audit conversations yet</p>`;
+            html += EmptyStates.standard({
+                icon: 'message-square',
+                title: 'No Conversations Yet',
+                description: 'Conversation history will appear here once users start interacting with your agents through connected channels.',
+                compact: true
+            });
         } else {
             html += `
                 <div style="overflow-x: auto;">
@@ -4583,7 +5281,7 @@ async function viewAuditConversation(conversationId) {
                     <strong>Conversation ID:</strong> <code>${escapeHtml(conversationId)}</code><br>
                     <strong>Agent ID:</strong> ${escapeHtml(data.conversation.agent_id || 'N/A')}<br>
                     <strong>Channel:</strong> ${escapeHtml(data.conversation.channel)}<br>
-                    <strong>Started:</strong> ${formatDate(data.conversation.started_at)}<br>
+                    <strong>Started:</strong> ${formatDateWithTooltip(data.conversation.started_at)}<br>
                 </div>
                 
                 <h4>Messages</h4>
@@ -5259,7 +5957,7 @@ async function viewConsentAudit(consentId) {
                                     <td>${log.new_status}</td>
                                     <td>${escapeHtml(log.reason || '')}</td>
                                     <td>${log.triggered_by}</td>
-                                    <td>${formatDate(log.created_at)}</td>
+                                    <td>${formatDateWithTooltip(log.created_at)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -5350,9 +6048,25 @@ function renderUsersPage() {
 
     if (usersPageState.isLoading && usersPageState.users.length === 0) {
         content.innerHTML = `
-            <div class="card">
-                <div class="card-body">
-                    <div class="card-loading"><div class="spinner"></div></div>
+            <div class="users-page">
+                <div class="users-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Users</h3>
+                            <div class="skeleton skeleton-button"></div>
+                        </div>
+                        <div class="card-body">
+                            ${SkeletonScreens.table(5, 5, ['Email', 'Role', 'Tenant', 'Status', 'Actions'])}
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Create User</h3>
+                        </div>
+                        <div class="card-body">
+                            ${SkeletonScreens.card()}
+                        </div>
+                    </div>
                 </div>
             </div>
         `;

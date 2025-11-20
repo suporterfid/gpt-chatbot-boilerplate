@@ -243,6 +243,13 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
             color: #666;
             font-size: 0.875rem;
         }
+
+        .wl-version {
+            padding: 0.5rem 2rem;
+            text-align: center;
+            color: #999;
+            font-size: 0.75rem;
+        }
         
         .wl-footer a {
             color: <?php echo htmlspecialchars($theme['primaryColor']); ?>;
@@ -321,20 +328,24 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
     
     <?php if (!empty($publicConfig['footer_brand_md'])): ?>
     <div class="wl-footer">
-        <?php 
+        <?php
         $footer = htmlspecialchars($publicConfig['footer_brand_md']);
-        
+
         // Limit length to prevent DoS
         if (strlen($footer) > 500) {
             $footer = substr($footer, 0, 500) . '...';
         }
-        
+
         // Simple link conversion (safe, non-recursive)
         $footer = preg_replace('/\[(.{1,50}?)\]\((.{1,200}?)\)/', '<a href="$2" target="_blank" rel="noopener">$1</a>', $footer);
         echo $footer;
         ?>
     </div>
     <?php endif; ?>
+
+    <div class="wl-version">
+        Version <?php echo htmlspecialchars($config['app_version'] ?? '1.0.0', ENT_QUOTES, 'UTF-8'); ?>
+    </div>
     
     <!-- Chatbot Script -->
     <script src="<?php echo $baseUrl; ?>/chatbot-enhanced.js"></script>

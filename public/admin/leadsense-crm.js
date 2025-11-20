@@ -476,6 +476,47 @@ window.LeadSenseCRM = (function() {
         UI.showNotification(`Lead: ${lead.name}\nEmail: ${lead.email}\nCompany: ${lead.company}\nScore: ${lead.score}`, 'info');
     }
 
+    function openCreatePipelineModal() {
+        const pipelineName = prompt('Enter a name for your new pipeline:');
+
+        if (!pipelineName || pipelineName.trim() === '') {
+            return;
+        }
+
+        createPipeline(pipelineName.trim());
+    }
+
+    async function createPipeline(name) {
+        try {
+            const response = await API.request('leadsense.crm.create_pipeline', {
+                name: name
+            }, 'POST');
+
+            if (response.error) {
+                UI.showNotification('Failed to create pipeline: ' + response.error.message, 'error');
+                return;
+            }
+
+            UI.showNotification('Pipeline created successfully!', 'success');
+
+            // Reload pipelines and switch to the new one
+            await loadPipelines();
+            if (response.data && response.data.id) {
+                await loadBoard(response.data.id);
+
+                // Update the select dropdown
+                const pipelineSelect = document.getElementById('pipeline-select');
+                if (pipelineSelect) {
+                    pipelineSelect.value = response.data.id;
+                }
+            }
+
+        } catch (error) {
+            console.error('Failed to create pipeline:', error);
+            UI.showNotification('Failed to create pipeline', 'error');
+        }
+    }
+
     function setupEventListeners() {
         // Pipeline selector
         const pipelineSelect = document.getElementById('pipeline-select');
@@ -484,7 +525,22 @@ window.LeadSenseCRM = (function() {
                 loadBoard(e.target.value);
             });
         }
-        
+
+        // Create Pipeline buttons
+        const createPipelineBtn = document.getElementById('create-pipeline-btn');
+        if (createPipelineBtn) {
+            createPipelineBtn.addEventListener('click', () => {
+                openCreatePipelineModal();
+            });
+        }
+
+        const createFirstPipelineBtn = document.getElementById('create-first-pipeline-btn');
+        if (createFirstPipelineBtn) {
+            createFirstPipelineBtn.addEventListener('click', () => {
+                openCreatePipelineModal();
+            });
+        }
+
         // Search
         const searchInput = document.getElementById('search-leads');
         if (searchInput) {
@@ -497,7 +553,7 @@ window.LeadSenseCRM = (function() {
                 }, 300);
             });
         }
-        
+
         // Score filter
         const scoreFilter = document.getElementById('filter-score');
         if (scoreFilter) {

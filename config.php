@@ -211,6 +211,9 @@ $defaultMaxNumResults = parseIntFromEnv($responsesMaxResultsEnv, 1, 200);
 $defaultResponseFormat = parseResponseFormatEnv($responsesResponseFormatEnv);
 
 $config = [
+    // Application Version
+    'app_version' => $_ENV['APP_VERSION'] ?? getenv('APP_VERSION') ?: '1.0.0',
+
     // Environment - determines error handling behavior
     'app_env' => $_ENV['APP_ENV'] ?? getenv('APP_ENV') ?: 'development',
 
@@ -490,6 +493,13 @@ $config = [
         'enabled' => filter_var($_ENV['ASAAS_ENABLED'] ?? getenv('ASAAS_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN),
         'api_key' => $_ENV['ASAAS_API_KEY'] ?? getenv('ASAAS_API_KEY') ?: '',
         'production' => filter_var($_ENV['ASAAS_PRODUCTION'] ?? getenv('ASAAS_PRODUCTION') ?: 'false', FILTER_VALIDATE_BOOLEAN),
+    ],
+
+    // Branding Configuration
+    'branding' => [
+        'brand_name' => $_ENV['BRAND_NAME'] ?? getenv('BRAND_NAME') ?: 'Assistant Chat Boilerplate',
+        'logo_url' => $_ENV['LOGO_URL'] ?? getenv('LOGO_URL') ?: '',
+        'powered_by_label' => $_ENV['POWERED_BY_LABEL'] ?? getenv('POWERED_BY_LABEL') ?: 'Powered by',
     ]
 ];
 

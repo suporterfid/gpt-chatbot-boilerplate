@@ -1638,6 +1638,8 @@ try {
             $health = [
                 'status' => 'ok',
                 'timestamp' => date('c'),
+                'version' => $config['app_version'] ?? '1.0.0',
+                'environment' => $config['app_env'] ?? 'production',
                 'checks' => [
                     'database' => ['status' => 'unknown', 'message' => null],
                     'openai' => ['status' => 'unknown', 'message' => null],

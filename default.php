@@ -1,9 +1,23 @@
+<?php
+// Load configuration if not already loaded
+if (!isset($config)) {
+    $config = require __DIR__ . '/config.php';
+}
+
+// Get branding configuration
+$brandName = $config['branding']['brand_name'] ?? 'Assistant Chat Boilerplate';
+$logoUrl = $config['branding']['logo_url'] ?? '';
+$poweredByLabel = $config['branding']['powered_by_label'] ?? 'Powered by';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Website with AI Assistant</title>
+    <title><?php echo htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8'); ?> - AI Assistant</title>
+    <?php if (!empty($logoUrl)): ?>
+    <link rel="icon" type="image/png" href="<?php echo htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8'); ?>">
+    <?php endif; ?>
     <link rel="stylesheet" href="chatbot.css">
     <style>
         /* Brand visual identity styles */
@@ -341,13 +355,19 @@
     <div class="page-wrapper">
         <header class="site-header">
             <div class="container header-inner">
-                <div class="brand" aria-label="GPT Assistant Boilerplate brand">
-                    <span class="brand-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
-                            <path d="M12 3v3m0 12v3m9-9h-3M6 12H3m15.07-6.07l-2.12 2.12M9.05 14.95l-2.12 2.12m0-10.6 2.12 2.12m8.02 8.02 2.12 2.12" />
-                        </svg>
-                    </span>
-                    <span class="brand-name">GPT Assistant Boilerplate</span>
+                <div class="brand" aria-label="<?php echo htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8'); ?> brand">
+                    <?php if (!empty($logoUrl)): ?>
+                        <img src="<?php echo htmlspecialchars($logoUrl, ENT_QUOTES, 'UTF-8'); ?>"
+                             alt="<?php echo htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8'); ?>"
+                             style="height: 48px; width: auto;">
+                    <?php else: ?>
+                        <span class="brand-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                                <path d="M12 3v3m0 12v3m9-9h-3M6 12H3m15.07-6.07l-2.12 2.12M9.05 14.95l-2.12 2.12m0-10.6 2.12 2.12m8.02 8.02 2.12 2.12" />
+                            </svg>
+                        </span>
+                    <?php endif; ?>
+                    <span class="brand-name"><?php echo htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8'); ?></span>
                 </div>
                 <nav class="nav-links" aria-label="Primary">
                     <a href="#features">Features</a>
@@ -363,7 +383,7 @@
                 <div class="container grid">
                     <div class="hero-content">
                         <p class="hero-subtitle">Conversational intelligence for forward-thinking teams.</p>
-                        <h1 class="hero-title">Welcome to the GPT Assistant Boilerplate</h1>
+                        <h1 class="hero-title">Welcome to <?php echo htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8'); ?></h1>
                         <p>Empower your applications with a production-ready AI assistant framework. Launch custom experiences that respond instantly, understand context, and help your users get more done.</p>
                         <button class="cta-button" type="button">Launch the assistant</button>
                     </div>
@@ -446,8 +466,11 @@
 
         <footer class="site-footer">
             <div class="container footer-inner">
-                <span>&copy; <?php echo date('Y'); ?> GPT Assistant Boilerplate. All rights reserved.</span>
-                <span>Designed for clarity, performance, and innovation.</span>
+                <span>&copy; <?php echo date('Y'); ?> <?php echo htmlspecialchars($brandName, ENT_QUOTES, 'UTF-8'); ?>. All rights reserved.</span>
+                <?php if (!empty($poweredByLabel)): ?>
+                <span><?php echo htmlspecialchars($poweredByLabel, ENT_QUOTES, 'UTF-8'); ?> GPT Assistant Boilerplate</span>
+                <?php endif; ?>
+                <span>Version <?php echo htmlspecialchars($config['app_version'] ?? '1.0.0', ENT_QUOTES, 'UTF-8'); ?></span>
                 <span><a href="https://github.com/suporterfid/gpt-chatbot-boilerplate" target="_blank" rel="noopener">View on GitHub</a></span>
             </div>
         </footer>
