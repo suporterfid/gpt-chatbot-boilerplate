@@ -48,13 +48,35 @@ class WordPressAgent extends AbstractSpecializedAgent
     private $credentialCache = [];
 
     /**
-     * Supported actions
+     * Supported actions for direct WordPress operations
      */
     private const ACTION_CREATE_POST = 'create_post';
     private const ACTION_UPDATE_POST = 'update_post';
     private const ACTION_SEARCH_POSTS = 'search_posts';
     private const ACTION_GET_POST = 'get_post';
     private const ACTION_LIST_CATEGORIES = 'list_categories';
+
+    /**
+     * Workflow orchestration actions aligned with automation phases
+     * - queue_article: enqueue or pick up items for processing
+     * - generate_structure: create outlines/metadata for the article
+     * - write_chapters: draft chapter content
+     * - generate_assets: create images and other assets
+     * - assemble_article: merge chapters/assets into publishable output
+     * - publish_article: push assembled content to WordPress
+     * - monitor_workflow: check processing status or health
+     * - fetch_execution_log: retrieve execution logs for debugging
+     * - manage_internal_links: maintain internal link repository
+     */
+    private const ACTION_QUEUE_ARTICLE = 'queue_article';
+    private const ACTION_GENERATE_STRUCTURE = 'generate_structure';
+    private const ACTION_WRITE_CHAPTERS = 'write_chapters';
+    private const ACTION_GENERATE_ASSETS = 'generate_assets';
+    private const ACTION_ASSEMBLE_ARTICLE = 'assemble_article';
+    private const ACTION_PUBLISH_ARTICLE = 'publish_article';
+    private const ACTION_MONITOR_WORKFLOW = 'monitor_workflow';
+    private const ACTION_FETCH_EXECUTION_LOG = 'fetch_execution_log';
+    private const ACTION_MANAGE_INTERNAL_LINKS = 'manage_internal_links';
 
     // ==================== METADATA ====================
 
@@ -406,13 +428,6 @@ class WordPressAgent extends AbstractSpecializedAgent
     {
         $context = parent::buildContext($messages, $agentConfig);
 
-        // Extract user intent from recent messages
-        $userMessage = $this->extractUserMessage($messages, -1);
-        $intent = $this->detectUserIntent($userMessage);
-
-        $context['user_intent'] = $intent;
-        $context['user_message'] = $userMessage;
-
         $specializedConfig = $context['specialized_config'] ?? [];
         $configurationId = $specializedConfig['configuration_id'] ?? null;
         $queueId = $specializedConfig['article_queue_id'] ?? null;
@@ -420,6 +435,18 @@ class WordPressAgent extends AbstractSpecializedAgent
         $configuration = $this->loadBlogConfiguration($configurationId);
         $queueEntry = $this->loadQueueEntry($queueId);
         $internalLinks = $this->loadInternalLinks($configurationId);
+
+        // Extract user intent from recent messages (after loading workflow context)
+        $userMessage = $this->extractUserMessage($messages, -1);
+        $intent = $this->detectUserIntent($userMessage, [
+            'queue_entry' => $queueEntry,
+            'workflow_phases' => $specializedConfig['workflow_phases'] ?? [],
+            'configuration_id' => $configurationId,
+            'queue_id' => $queueId
+        ]);
+
+        $context['user_intent'] = $intent;
+        $context['user_message'] = $userMessage;
 
         $context['blog_workflow'] = [
             'configuration_id' => $configurationId,
@@ -559,6 +586,18 @@ class WordPressAgent extends AbstractSpecializedAgent
                     $result = $this->handleListCategories($context);
                     break;
 
+                case self::ACTION_QUEUE_ARTICLE:
+                case self::ACTION_GENERATE_STRUCTURE:
+                case self::ACTION_WRITE_CHAPTERS:
+                case self::ACTION_GENERATE_ASSETS:
+                case self::ACTION_ASSEMBLE_ARTICLE:
+                case self::ACTION_PUBLISH_ARTICLE:
+                case self::ACTION_MONITOR_WORKFLOW:
+                case self::ACTION_FETCH_EXECUTION_LOG:
+                case self::ACTION_MANAGE_INTERNAL_LINKS:
+                    $result = $this->handleWorkflowDirective($intent['action'], $intent, $context);
+                    break;
+
                 default:
                     // Unknown action - let LLM handle it
                     $this->logInfo('No specific action detected, using LLM');
@@ -600,7 +639,9 @@ class WordPressAgent extends AbstractSpecializedAgent
         if (in_array($action, [
             self::ACTION_SEARCH_POSTS,
             self::ACTION_GET_POST,
-            self::ACTION_LIST_CATEGORIES
+            self::ACTION_LIST_CATEGORIES,
+            self::ACTION_MONITOR_WORKFLOW,
+            self::ACTION_FETCH_EXECUTION_LOG
         ])) {
             return false; // Return data directly
         }
@@ -907,6 +948,43 @@ class WordPressAgent extends AbstractSpecializedAgent
         ];
     }
 
+    /**
+     * Handle workflow orchestration directives
+     */
+    private function handleWorkflowDirective(string $action, array $intent, array $context): array
+    {
+        $workflowContext = $context['blog_workflow'] ?? [];
+        $metadata = $workflowContext['metadata'] ?? [];
+        $queueEntry = $workflowContext['queue_entry'] ?? [];
+        $queueStatus = $metadata['last_status'] ?? ($queueEntry['status'] ?? null);
+
+        $messages = [
+            self::ACTION_QUEUE_ARTICLE => 'Article queued for automation pipeline.',
+            self::ACTION_GENERATE_STRUCTURE => 'Structure generation requested for the queued article.',
+            self::ACTION_WRITE_CHAPTERS => 'Chapter drafting requested using current outline.',
+            self::ACTION_GENERATE_ASSETS => 'Asset generation (images/media) requested.',
+            self::ACTION_ASSEMBLE_ARTICLE => 'Assembly requested to merge chapters and assets.',
+            self::ACTION_PUBLISH_ARTICLE => 'Publish request issued for assembled article.',
+            self::ACTION_MONITOR_WORKFLOW => 'Monitoring request captured; returning latest status.',
+            self::ACTION_FETCH_EXECUTION_LOG => 'Execution log retrieval requested.',
+            self::ACTION_MANAGE_INTERNAL_LINKS => 'Internal link management requested for the configuration.'
+        ];
+
+        return [
+            'action' => $action,
+            'status' => 'routed',
+            'message' => $messages[$action] ?? 'Workflow directive captured.',
+            'queue_id' => $workflowContext['queue_id'] ?? null,
+            'article_id' => $metadata['article_id'] ?? null,
+            'workflow_status' => $queueStatus,
+            'debug_matches' => $intent['matches'] ?? [],
+            'execution_log' => $workflowContext['execution_log'] ?? null,
+            'internal_link_count' => is_array($workflowContext['internal_links'] ?? null)
+                ? count($workflowContext['internal_links'])
+                : null
+        ];
+    }
+
     // ==================== TOOL IMPLEMENTATIONS ====================
 
     /**
@@ -1130,29 +1208,116 @@ class WordPressAgent extends AbstractSpecializedAgent
     /**
      * Detect user intent from message
      */
-    private function detectUserIntent(string $message): array
+    private function detectUserIntent(string $message, array $workflowContext = []): array
     {
         $patterns = [
-            self::ACTION_CREATE_POST => '/\b(create|write|make|publish|post|new)\b.*\b(post|article|blog)/i',
-            self::ACTION_UPDATE_POST => '/\b(update|edit|modify|change)\b.*\b(post|article)/i',
-            self::ACTION_SEARCH_POSTS => '/\b(search|find|look for|query)\b.*\b(post|article)/i',
-            self::ACTION_GET_POST => '/\b(get|show|display|view)\b.*\b(post|article)/i',
-            self::ACTION_LIST_CATEGORIES => '/\b(list|show|get)\b.*\b(categories|category)/i'
+            self::ACTION_QUEUE_ARTICLE => [
+                '/\b(queue|enqueue|schedule|add)\b.*\b(article|post|job)\b/i',
+                '/\bstart\b.*\b(workflow|automation|run)\b/i'
+            ],
+            self::ACTION_GENERATE_STRUCTURE => [
+                '/\b(outline|structure|blueprint|brief|skeleton)\b.*\b(article|post)?/i',
+                '/\bchapter\b.*\bplan\b/i'
+            ],
+            self::ACTION_WRITE_CHAPTERS => [
+                '/\b(write|draft|fill|expand)\b.*\b(chapter|section)s?/i',
+                '/\bchapter content\b/i'
+            ],
+            self::ACTION_GENERATE_ASSETS => [
+                '/\b(generate|create|produce)\b.*\b(image|asset|graphic|visual|media)s?/i',
+                '/\bfeatured image\b|\bchapter image\b/i'
+            ],
+            self::ACTION_ASSEMBLE_ARTICLE => [
+                '/\b(assemble|merge|compile|stitch|combine)\b.*\b(article|chapters|assets)\b/i'
+            ],
+            self::ACTION_PUBLISH_ARTICLE => [
+                '/\b(publish|go live|post live|push)\b.*\b(article|post)\b/i'
+            ],
+            self::ACTION_MONITOR_WORKFLOW => [
+                '/\b(status|progress|monitor|check)\b.*\b(queue|article|job|run)\b/i',
+                '/\bhow\b.*\bgoing\b/i'
+            ],
+            self::ACTION_FETCH_EXECUTION_LOG => [
+                '/\b(execution|run|processing)\b.*\blog\b/i',
+                '/\b(show|share|get)\b.*\b(logs|trace|audit)\b/i'
+            ],
+            self::ACTION_MANAGE_INTERNAL_LINKS => [
+                '/\b(internal\s+link|cross[- ]link|linking strategy|link graph)\b/i'
+            ],
+            self::ACTION_CREATE_POST => [
+                '/\b(create|write|make|publish|post|new)\b.*\b(post|article|blog)/i'
+            ],
+            self::ACTION_UPDATE_POST => [
+                '/\b(update|edit|modify|change)\b.*\b(post|article)/i'
+            ],
+            self::ACTION_SEARCH_POSTS => [
+                '/\b(search|find|look for|query)\b.*\b(post|article)/i'
+            ],
+            self::ACTION_GET_POST => [
+                '/\b(get|show|display|view)\b.*\b(post|article)/i'
+            ],
+            self::ACTION_LIST_CATEGORIES => [
+                '/\b(list|show|get)\b.*\b(categories|category)/i'
+            ]
         ];
 
-        $detected = $this->detectIntent($message, $patterns);
+        foreach ($patterns as $action => $actionPatterns) {
+            foreach ($actionPatterns as $pattern) {
+                if (preg_match($pattern, $message, $matches)) {
+                    return [
+                        'action' => $action,
+                        'confidence' => 'high',
+                        'matches' => [
+                            'pattern' => $pattern,
+                            'excerpt' => $matches[0] ?? null
+                        ]
+                    ];
+                }
+            }
+        }
 
-        if ($detected) {
+        // Fallback heuristics using queue metadata or known workflow status
+        $queueEntry = $workflowContext['queue_entry'] ?? [];
+        $queueStatus = $queueEntry['status'] ?? null;
+        $heuristicMatches = [];
+
+        if ($queueStatus) {
+            $statusMap = [
+                'queued' => self::ACTION_QUEUE_ARTICLE,
+                'pending_outline' => self::ACTION_GENERATE_STRUCTURE,
+                'structure_ready' => self::ACTION_WRITE_CHAPTERS,
+                'writing' => self::ACTION_WRITE_CHAPTERS,
+                'chapters_ready' => self::ACTION_GENERATE_ASSETS,
+                'assets_ready' => self::ACTION_ASSEMBLE_ARTICLE,
+                'assembly_ready' => self::ACTION_PUBLISH_ARTICLE,
+                'published' => self::ACTION_MONITOR_WORKFLOW,
+                'failed' => self::ACTION_FETCH_EXECUTION_LOG
+            ];
+
+            if (isset($statusMap[$queueStatus])) {
+                $heuristicMatches[] = 'queue_status:' . $queueStatus;
+
+                return [
+                    'action' => $statusMap[$queueStatus],
+                    'confidence' => 'medium',
+                    'matches' => $heuristicMatches
+                ];
+            }
+        }
+
+        // If user is asking about status but no regex matched, default to monitoring
+        if (preg_match('/\b(status|progress|state)\b/i', $message)) {
             return [
-                'action' => $detected['intent'],
-                'confidence' => 'high',
-                'matches' => $detected['matches']
+                'action' => self::ACTION_MONITOR_WORKFLOW,
+                'confidence' => 'medium',
+                'matches' => ['keyword:status']
             ];
         }
 
         return [
             'action' => 'unknown',
-            'confidence' => 'low'
+            'confidence' => 'low',
+            'matches' => []
         ];
     }
 
@@ -1310,6 +1475,15 @@ class WordPressAgent extends AbstractSpecializedAgent
                 }
 
                 return $output;
+
+            case self::ACTION_MONITOR_WORKFLOW:
+                $status = $result['workflow_status'] ?? 'unknown';
+                $articleId = $result['article_id'] ?? 'n/a';
+                return "Workflow status for article {$articleId}: {$status}.";
+
+            case self::ACTION_FETCH_EXECUTION_LOG:
+                $logPointer = $result['execution_log'] ?? 'not provided';
+                return "Execution log reference: {$logPointer}.";
 
             default:
                 return "Action completed: " . $action;
