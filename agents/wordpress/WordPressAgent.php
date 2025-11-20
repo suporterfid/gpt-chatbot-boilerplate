@@ -640,50 +640,128 @@ class WordPressAgent extends AbstractSpecializedAgent
         $intent = $processedData['intent'] ?? [];
         $action = $intent['action'] ?? null;
 
-        // Skip LLM for simple data retrieval
-        if (in_array($action, [
+        $nonLlmActions = [
             self::ACTION_SEARCH_POSTS,
             self::ACTION_GET_POST,
             self::ACTION_LIST_CATEGORIES,
+            self::ACTION_QUEUE_ARTICLE,
+            self::ACTION_GENERATE_ASSETS,
+            self::ACTION_ASSEMBLE_ARTICLE,
+            self::ACTION_PUBLISH_ARTICLE,
             self::ACTION_MONITOR_WORKFLOW,
-            self::ACTION_FETCH_EXECUTION_LOG
-        ])) {
+            self::ACTION_FETCH_EXECUTION_LOG,
+            self::ACTION_MANAGE_INTERNAL_LINKS
+        ];
+
+        if (in_array($action, $nonLlmActions, true)) {
+            $this->logInfo('Skipping LLM - non-creative workflow action', [
+                'action' => $action,
+                'reason' => 'admin_or_operational'
+            ]);
+
             return false; // Return data directly
         }
 
-        // Use LLM for content creation and updates
-        return true;
+        $creativeActions = [
+            self::ACTION_CREATE_POST,
+            self::ACTION_UPDATE_POST,
+            self::ACTION_GENERATE_STRUCTURE,
+            self::ACTION_WRITE_CHAPTERS
+        ];
+
+        $requiresLlm = in_array($action, $creativeActions, true) || $action === 'unknown';
+
+        $this->logInfo('LLM decision evaluated', [
+            'action' => $action,
+            'requires_llm' => $requiresLlm,
+            'reason' => $requiresLlm ? 'creative_generation' : 'default_skip'
+        ]);
+
+        return $requiresLlm;
     }
 
     public function prepareLLMMessages(array $processedData, array $context): array
     {
-        $messages = $processedData['messages'];
-        $intent = $processedData['intent'];
-        $result = $processedData['result'];
+        $messages = $processedData['messages'] ?? [];
+        $intent = $processedData['intent'] ?? [];
+        $result = $processedData['result'] ?? [];
+        $workflow = $context['blog_workflow'] ?? [];
+        $configuration = $workflow['configuration'] ?? [];
+        $queueEntry = $workflow['queue_entry'] ?? [];
 
-        // Build enhanced system message
-        $systemMessage = $context['agent_config']['system_message'] ??
-            'You are a WordPress content management assistant.';
+        $systemMessage = $context['agent_config']['system_message'] ?? 'You are a WordPress Blog Automation Pro agent.';
 
-        $systemMessage .= "\n\nYou help users create and manage WordPress content.";
-        $systemMessage .= "\nYou have access to the WordPress REST API.";
+        $metadata = [
+            'site' => $configuration['website_url'] ?? $context['specialized_config']['wp_site_url'] ?? null,
+            'post_type' => $context['specialized_config']['post_type'] ?? 'post',
+            'default_status' => $context['specialized_config']['default_status'] ?? 'draft',
+            'tone' => $configuration['writing_style'] ?? $queueEntry['writing_style'] ?? null,
+            'audience' => $configuration['target_audience'] ?? $queueEntry['target_audience'] ?? null,
+            'max_word_count' => $configuration['max_word_count'] ?? $queueEntry['max_word_count'] ?? null,
+            'chapters' => $configuration['number_of_chapters'] ?? $queueEntry['number_of_chapters'] ?? null,
+            'primary_keywords' => $queueEntry['primary_keywords'] ?? $configuration['primary_keywords'] ?? null,
+            'secondary_keywords' => $queueEntry['secondary_keywords'] ?? $configuration['secondary_keywords'] ?? null,
+            'cta_message' => $configuration['cta_message'] ?? $queueEntry['cta_message'] ?? null,
+            'cta_url' => $configuration['cta_url'] ?? $queueEntry['cta_url'] ?? null,
+        ];
 
-        // Add context about the detected action
-        if (isset($intent['action'])) {
-            $systemMessage .= "\n\nThe user wants to: " . $intent['action'];
-        }
+        $brief = array_filter([
+            'seed_keyword' => $queueEntry['seed_keyword'] ?? null,
+            'topic' => $queueEntry['topic'] ?? ($result['topic'] ?? null),
+            'goal' => $queueEntry['goal'] ?? null,
+            'target_language' => $queueEntry['language'] ?? $configuration['language'] ?? null,
+            'style' => $queueEntry['style'] ?? null,
+            'tone' => $queueEntry['tone'] ?? null,
+        ]);
 
-        // Add context about available tools
-        $systemMessage .= "\n\nUse the available tools to interact with WordPress.";
+        $chapterSpecs = $processedData['structure']['chapters'] ?? $queueEntry['chapter_specs'] ?? $queueEntry['chapters'] ?? [];
+        $existingChapters = $processedData['chapters'] ?? $queueEntry['chapters'] ?? [];
 
-        // Inject result context if available
-        if ($result && isset($result['post_id'])) {
-            $systemMessage .= "\n\nA post operation was initiated (Post ID: " . $result['post_id'] . ").";
-        }
+        $progress = array_filter([
+            'article_id' => $workflow['metadata']['article_id'] ?? null,
+            'queue_status' => $workflow['metadata']['last_status'] ?? ($queueEntry['status'] ?? null),
+            'retry_count' => $workflow['metadata']['retry_count'] ?? 0,
+            'execution_log' => $workflow['execution_log'] ?? null,
+        ]);
 
-        array_unshift($messages, [
-            'role' => 'system',
-            'content' => $systemMessage
+        $tools = array_map(function (array $tool) {
+            return $tool['function']['name'] ?? $tool['type'] ?? 'unknown';
+        }, $this->getCustomTools());
+
+        $structuredContext = [
+            'workflow_intent' => $intent,
+            'blog_configuration' => $metadata,
+            'article_brief' => $brief,
+            'chapter_plan' => $chapterSpecs,
+            'existing_chapters' => $existingChapters,
+            'progress' => $progress,
+            'tools' => $tools,
+            'streaming_guidance' => 'Stream concise chunks, mark partial completions, avoid regenerating finished sections.',
+        ];
+
+        $systemMessage .= "\nAlways enforce SEO keywords, tone, word counts, and CTA placement from the context.";
+        $systemMessage .= "\nUse available tools only when needed and prefer idempotent operations.";
+        $systemMessage .= "\nAvoid duplicating already completed chapters or outlines.";
+        $systemMessage .= "\nIf partial content exists, continue from remaining gaps and note progress for streaming consumers.";
+
+        $contextBlock = "Workflow context:\n" . json_encode($structuredContext, JSON_PRETTY_PRINT);
+
+        $messages = array_merge([
+            [
+                'role' => 'system',
+                'content' => $systemMessage
+            ],
+            [
+                'role' => 'system',
+                'content' => $contextBlock
+            ]
+        ], $messages);
+
+        $this->logInfo('Prepared LLM prompt for creative workflow', [
+            'action' => $intent['action'] ?? null,
+            'has_brief' => !empty($brief),
+            'chapter_spec_count' => is_array($chapterSpecs) ? count($chapterSpecs) : 0,
+            'existing_chapter_count' => is_array($existingChapters) ? count($existingChapters) : 0
         ]);
 
         return $messages;
