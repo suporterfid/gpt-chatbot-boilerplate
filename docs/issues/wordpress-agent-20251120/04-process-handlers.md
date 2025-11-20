@@ -1,5 +1,8 @@
 # Task 4: Implement workflow-specific process handlers
 
+## Status: Completed
+## Completion Date: 2025-11-20
+
 ## Goal
 Add private handler methods for each new action so `process()` can orchestrate queue management, generation phases, and publishing according to the spec.
 
@@ -16,3 +19,11 @@ Add private handler methods for each new action so `process()` can orchestrate q
 ## Relevant Files
 - `agents/wordpress/WordPressAgent.php`
 - Service classes under `includes/WordPressBlog/*`
+
+## Implementation Performed
+- Updated `process()` to surface domain-aware `AgentProcessingException` instances while preserving existing action routing.
+- Added workflow handlers for queueing, structure generation, chapter drafting, asset creation, assembly, publishing, monitoring, log retrieval, and internal link management with per-phase status updates and execution log hooks.
+- Introduced shared helpers to safely invoke optional services, update queue statuses, log execution steps, and wrap workflow failures with domain context.
+
+## Related Commits
+- 2e3fd3b

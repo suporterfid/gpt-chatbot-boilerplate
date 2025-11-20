@@ -606,6 +606,8 @@ class WordPressAgent extends AbstractSpecializedAgent
                         'message' => $userMessage
                     ];
             }
+        } catch (AgentProcessingException $processingException) {
+            throw $processingException;
         } catch (Exception $e) {
             $this->logError('WordPress action failed', [
                 'action' => $intent['action'],
@@ -613,7 +615,10 @@ class WordPressAgent extends AbstractSpecializedAgent
             ]);
 
             throw new AgentProcessingException(
-                'Failed to execute WordPress action: ' . $e->getMessage()
+                'Failed to execute WordPress action: ' . $e->getMessage(),
+                'wordpress',
+                500,
+                $e
             );
         }
 
@@ -953,36 +958,553 @@ class WordPressAgent extends AbstractSpecializedAgent
      */
     private function handleWorkflowDirective(string $action, array $intent, array $context): array
     {
-        $workflowContext = $context['blog_workflow'] ?? [];
-        $metadata = $workflowContext['metadata'] ?? [];
-        $queueEntry = $workflowContext['queue_entry'] ?? [];
-        $queueStatus = $metadata['last_status'] ?? ($queueEntry['status'] ?? null);
+        switch ($action) {
+            case self::ACTION_QUEUE_ARTICLE:
+                return $this->handleQueueArticle($intent, $context);
+            case self::ACTION_GENERATE_STRUCTURE:
+                return $this->handleGenerateStructure($intent, $context);
+            case self::ACTION_WRITE_CHAPTERS:
+                return $this->handleWriteChapters($intent, $context);
+            case self::ACTION_GENERATE_ASSETS:
+                return $this->handleGenerateAssets($intent, $context);
+            case self::ACTION_ASSEMBLE_ARTICLE:
+                return $this->handleAssembleArticle($intent, $context);
+            case self::ACTION_PUBLISH_ARTICLE:
+                return $this->handlePublishArticle($intent, $context);
+            case self::ACTION_MONITOR_WORKFLOW:
+                return $this->handleMonitorStatus($intent, $context);
+            case self::ACTION_FETCH_EXECUTION_LOG:
+                return $this->handleFetchExecutionLog($intent, $context);
+            case self::ACTION_MANAGE_INTERNAL_LINKS:
+                return $this->handleManageInternalLinks($intent, $context);
+            default:
+                throw new AgentProcessingException('Unsupported workflow directive: ' . $action, 'wordpress');
+        }
+    }
 
-        $messages = [
-            self::ACTION_QUEUE_ARTICLE => 'Article queued for automation pipeline.',
-            self::ACTION_GENERATE_STRUCTURE => 'Structure generation requested for the queued article.',
-            self::ACTION_WRITE_CHAPTERS => 'Chapter drafting requested using current outline.',
-            self::ACTION_GENERATE_ASSETS => 'Asset generation (images/media) requested.',
-            self::ACTION_ASSEMBLE_ARTICLE => 'Assembly requested to merge chapters and assets.',
-            self::ACTION_PUBLISH_ARTICLE => 'Publish request issued for assembled article.',
-            self::ACTION_MONITOR_WORKFLOW => 'Monitoring request captured; returning latest status.',
-            self::ACTION_FETCH_EXECUTION_LOG => 'Execution log retrieval requested.',
-            self::ACTION_MANAGE_INTERNAL_LINKS => 'Internal link management requested for the configuration.'
-        ];
+    private function handleQueueArticle(array $intent, array $context): array
+    {
+        $workflow = $context['blog_workflow'] ?? [];
+        $queueId = $workflow['queue_id'] ?? null;
+        $articleId = $workflow['metadata']['article_id'] ?? null;
+        $logPointer = $workflow['execution_log'] ?? null;
+
+        $this->updateQueueStatus($queueId, $articleId, 'queueing', ['intent' => $intent]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'queue', 'in_progress', [
+            'message' => 'Queueing article for automation',
+            'intent' => $intent
+        ]) ?? $logPointer;
+
+        try {
+            $queuePayload = [
+                'configuration' => $workflow['configuration'] ?? null,
+                'queue_entry' => $workflow['queue_entry'] ?? null,
+                'intent' => $intent,
+                'context' => $context
+            ];
+
+            $result = $this->callServiceMethodSafe(
+                $this->queueService,
+                ['queueArticle', 'enqueue', 'enqueueArticle', 'addToQueue'],
+                [
+                    [$queuePayload],
+                    [$queueId, $queuePayload],
+                    [$queueId, $articleId, $queuePayload]
+                ]
+            );
+        } catch (\Throwable $exception) {
+            throw $this->wrapWorkflowException(self::ACTION_QUEUE_ARTICLE, 'queue', $exception, $context);
+        }
+
+        $finalStatus = 'queued';
+        $this->updateQueueStatus($queueId, $articleId, $finalStatus, ['service_result' => $result]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'queue', 'completed', [
+            'result' => $result
+        ]) ?? $logPointer;
 
         return [
-            'action' => $action,
-            'status' => 'routed',
-            'message' => $messages[$action] ?? 'Workflow directive captured.',
-            'queue_id' => $workflowContext['queue_id'] ?? null,
-            'article_id' => $metadata['article_id'] ?? null,
-            'workflow_status' => $queueStatus,
-            'debug_matches' => $intent['matches'] ?? [],
-            'execution_log' => $workflowContext['execution_log'] ?? null,
-            'internal_link_count' => is_array($workflowContext['internal_links'] ?? null)
-                ? count($workflowContext['internal_links'])
-                : null
+            'action' => self::ACTION_QUEUE_ARTICLE,
+            'phase' => 'queue',
+            'status' => $finalStatus,
+            'queue_id' => $queueId,
+            'article_id' => $articleId,
+            'result' => $result,
+            'execution_log' => $logPointer,
+            'debug_matches' => $intent['matches'] ?? []
         ];
+    }
+
+    private function handleGenerateStructure(array $intent, array $context): array
+    {
+        $workflow = $context['blog_workflow'] ?? [];
+        $queueId = $workflow['queue_id'] ?? null;
+        $articleId = $workflow['metadata']['article_id'] ?? null;
+        $logPointer = $workflow['execution_log'] ?? null;
+
+        $this->updateQueueStatus($queueId, $articleId, 'processing_outline', ['intent' => $intent]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'structure', 'in_progress', [
+            'message' => 'Generating outline and metadata'
+        ]) ?? $logPointer;
+
+        try {
+            $structure = $this->callServiceMethodSafe(
+                $this->generatorService,
+                ['generateStructure', 'buildStructure', 'createOutline', 'generateOutline'],
+                [
+                    [$workflow],
+                    [$articleId, $workflow],
+                    [$articleId, $context]
+                ]
+            );
+        } catch (\Throwable $exception) {
+            throw $this->wrapWorkflowException(self::ACTION_GENERATE_STRUCTURE, 'structure', $exception, $context);
+        }
+
+        $this->updateQueueStatus($queueId, $articleId, 'structure_ready', ['structure' => $structure]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'structure', 'completed', [
+            'outline_generated' => (bool) $structure
+        ]) ?? $logPointer;
+
+        return [
+            'action' => self::ACTION_GENERATE_STRUCTURE,
+            'phase' => 'structure',
+            'status' => 'structure_ready',
+            'queue_id' => $queueId,
+            'article_id' => $articleId,
+            'structure' => $structure,
+            'execution_log' => $logPointer
+        ];
+    }
+
+    private function handleWriteChapters(array $intent, array $context): array
+    {
+        $workflow = $context['blog_workflow'] ?? [];
+        $queueId = $workflow['queue_id'] ?? null;
+        $articleId = $workflow['metadata']['article_id'] ?? null;
+        $logPointer = $workflow['execution_log'] ?? null;
+
+        $this->updateQueueStatus($queueId, $articleId, 'writing', ['intent' => $intent]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'writing', 'in_progress', [
+            'message' => 'Drafting chapters'
+        ]) ?? $logPointer;
+
+        try {
+            $chapters = $this->callServiceMethodSafe(
+                $this->generatorService,
+                ['writeChapters', 'generateChapters', 'draftChapters', 'createChapters'],
+                [
+                    [$workflow],
+                    [$articleId, $workflow],
+                    [$articleId, $context]
+                ]
+            );
+        } catch (\Throwable $exception) {
+            throw $this->wrapWorkflowException(self::ACTION_WRITE_CHAPTERS, 'writing', $exception, $context);
+        }
+
+        $this->updateQueueStatus($queueId, $articleId, 'chapters_ready', ['chapters' => $chapters]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'writing', 'completed', [
+            'chapters_generated' => is_array($chapters)
+        ]) ?? $logPointer;
+
+        return [
+            'action' => self::ACTION_WRITE_CHAPTERS,
+            'phase' => 'writing',
+            'status' => 'chapters_ready',
+            'queue_id' => $queueId,
+            'article_id' => $articleId,
+            'chapters' => $chapters,
+            'execution_log' => $logPointer
+        ];
+    }
+
+    private function handleGenerateAssets(array $intent, array $context): array
+    {
+        $workflow = $context['blog_workflow'] ?? [];
+        $queueId = $workflow['queue_id'] ?? null;
+        $articleId = $workflow['metadata']['article_id'] ?? null;
+        $logPointer = $workflow['execution_log'] ?? null;
+
+        $this->updateQueueStatus($queueId, $articleId, 'generating_assets', ['intent' => $intent]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'assets', 'in_progress', [
+            'message' => 'Generating images and media assets'
+        ]) ?? $logPointer;
+
+        try {
+            $assets = $this->callServiceMethodSafe(
+                $this->generatorService,
+                ['generateAssets', 'createAssets', 'generateImages', 'produceAssets'],
+                [
+                    [$workflow],
+                    [$articleId, $workflow],
+                    [$articleId, $context]
+                ]
+            );
+        } catch (\Throwable $exception) {
+            throw $this->wrapWorkflowException(self::ACTION_GENERATE_ASSETS, 'assets', $exception, $context);
+        }
+
+        $this->updateQueueStatus($queueId, $articleId, 'assets_ready', ['assets' => $assets]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'assets', 'completed', [
+            'assets_generated' => is_array($assets)
+        ]) ?? $logPointer;
+
+        return [
+            'action' => self::ACTION_GENERATE_ASSETS,
+            'phase' => 'assets',
+            'status' => 'assets_ready',
+            'queue_id' => $queueId,
+            'article_id' => $articleId,
+            'assets' => $assets,
+            'execution_log' => $logPointer
+        ];
+    }
+
+    private function handleAssembleArticle(array $intent, array $context): array
+    {
+        $workflow = $context['blog_workflow'] ?? [];
+        $queueId = $workflow['queue_id'] ?? null;
+        $articleId = $workflow['metadata']['article_id'] ?? null;
+        $logPointer = $workflow['execution_log'] ?? null;
+
+        $this->updateQueueStatus($queueId, $articleId, 'assembling', ['intent' => $intent]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'assembly', 'in_progress', [
+            'message' => 'Assembling chapters and assets into article'
+        ]) ?? $logPointer;
+
+        try {
+            $assembled = $this->callServiceMethodSafe(
+                $this->generatorService,
+                ['assembleArticle', 'assemble', 'buildArticle', 'finalizeArticle'],
+                [
+                    [$workflow],
+                    [$articleId, $workflow],
+                    [$articleId, $context]
+                ]
+            );
+        } catch (\Throwable $exception) {
+            throw $this->wrapWorkflowException(self::ACTION_ASSEMBLE_ARTICLE, 'assembly', $exception, $context);
+        }
+
+        $this->updateQueueStatus($queueId, $articleId, 'assembly_ready', ['assembled' => $assembled]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'assembly', 'completed', [
+            'assembled' => (bool) $assembled
+        ]) ?? $logPointer;
+
+        return [
+            'action' => self::ACTION_ASSEMBLE_ARTICLE,
+            'phase' => 'assembly',
+            'status' => 'assembly_ready',
+            'queue_id' => $queueId,
+            'article_id' => $articleId,
+            'assembled_article' => $assembled,
+            'execution_log' => $logPointer
+        ];
+    }
+
+    private function handlePublishArticle(array $intent, array $context): array
+    {
+        $workflow = $context['blog_workflow'] ?? [];
+        $queueId = $workflow['queue_id'] ?? null;
+        $articleId = $workflow['metadata']['article_id'] ?? null;
+        $logPointer = $workflow['execution_log'] ?? null;
+
+        $this->updateQueueStatus($queueId, $articleId, 'publishing', ['intent' => $intent]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'publish', 'in_progress', [
+            'message' => 'Publishing article to WordPress'
+        ]) ?? $logPointer;
+
+        try {
+            $publication = $this->callServiceMethodSafe(
+                $this->publisherService,
+                ['publishArticle', 'publish', 'pushArticle', 'postToWordPress', 'post'],
+                [
+                    [$workflow],
+                    [$articleId, $workflow],
+                    [$articleId, $context]
+                ]
+            );
+        } catch (\Throwable $exception) {
+            throw $this->wrapWorkflowException(self::ACTION_PUBLISH_ARTICLE, 'publish', $exception, $context);
+        }
+
+        $finalStatus = 'published';
+        $this->updateQueueStatus($queueId, $articleId, $finalStatus, ['publication' => $publication]);
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'publish', 'completed', [
+            'publication' => $publication
+        ]) ?? $logPointer;
+
+        return [
+            'action' => self::ACTION_PUBLISH_ARTICLE,
+            'phase' => 'publish',
+            'status' => $finalStatus,
+            'queue_id' => $queueId,
+            'article_id' => $articleId,
+            'publication' => $publication,
+            'execution_log' => $logPointer
+        ];
+    }
+
+    private function handleMonitorStatus(array $intent, array $context): array
+    {
+        $workflow = $context['blog_workflow'] ?? [];
+        $queueId = $workflow['queue_id'] ?? null;
+        $articleId = $workflow['metadata']['article_id'] ?? null;
+        $currentStatus = $workflow['metadata']['last_status'] ?? ($workflow['queue_entry']['status'] ?? null);
+
+        try {
+            $serviceStatus = $this->callServiceMethodSafe(
+                $this->queueService,
+                ['getStatus', 'getQueueStatus', 'getArticleStatus', 'getStatusForArticle'],
+                [
+                    [$queueId],
+                    [$queueId, $articleId],
+                    [$articleId]
+                ]
+            );
+            if ($serviceStatus) {
+                $currentStatus = $serviceStatus;
+            }
+        } catch (\Throwable $exception) {
+            $this->logWarning('Failed to fetch workflow status', [
+                'queue_id' => $queueId,
+                'article_id' => $articleId,
+                'error' => $exception->getMessage()
+            ]);
+        }
+
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'monitor', 'observed', [
+            'status' => $currentStatus
+        ]) ?? ($workflow['execution_log'] ?? null);
+
+        return [
+            'action' => self::ACTION_MONITOR_WORKFLOW,
+            'phase' => 'monitor',
+            'status' => $currentStatus,
+            'queue_id' => $queueId,
+            'article_id' => $articleId,
+            'execution_log' => $logPointer
+        ];
+    }
+
+    private function handleFetchExecutionLog(array $intent, array $context): array
+    {
+        $workflow = $context['blog_workflow'] ?? [];
+        $queueId = $workflow['queue_id'] ?? null;
+        $articleId = $workflow['metadata']['article_id'] ?? null;
+        $logPointer = $workflow['execution_log'] ?? null;
+        $logContents = null;
+
+        try {
+            $logContents = $this->callServiceMethodSafe(
+                $this->executionLogger,
+                ['getLog', 'fetchLog', 'retrieve', 'retrieveLog', 'read'],
+                [
+                    [$queueId, $articleId],
+                    [$logPointer]
+                ]
+            );
+        } catch (\Throwable $exception) {
+            $this->logWarning('Failed to fetch execution log', [
+                'queue_id' => $queueId,
+                'article_id' => $articleId,
+                'error' => $exception->getMessage()
+            ]);
+        }
+
+        $logPointer = $this->logExecutionStep($queueId, $articleId, 'log', 'requested', [
+            'execution_log' => $logPointer,
+            'retrieved' => (bool) $logContents
+        ]) ?? $logPointer;
+
+        return [
+            'action' => self::ACTION_FETCH_EXECUTION_LOG,
+            'phase' => 'log',
+            'status' => $workflow['metadata']['last_status'] ?? ($workflow['queue_entry']['status'] ?? null),
+            'queue_id' => $queueId,
+            'article_id' => $articleId,
+            'execution_log' => $logPointer,
+            'log_contents' => $logContents
+        ];
+    }
+
+    private function handleManageInternalLinks(array $intent, array $context): array
+    {
+        $workflow = $context['blog_workflow'] ?? [];
+        $configurationId = $workflow['configuration_id'] ?? null;
+        $logPointer = $workflow['execution_log'] ?? null;
+
+        $managedLinks = $workflow['internal_links'] ?? [];
+
+        try {
+            $managedLinks = $this->callServiceMethodSafe(
+                $this->configurationService,
+                ['syncInternalLinks', 'manageInternalLinks', 'updateInternalLinks', 'getInternalLinks'],
+                [
+                    [$configurationId, $intent, $workflow],
+                    [$configurationId]
+                ]
+            ) ?? $managedLinks;
+        } catch (\Throwable $exception) {
+            throw $this->wrapWorkflowException(self::ACTION_MANAGE_INTERNAL_LINKS, 'internal_links', $exception, $context);
+        }
+
+        $logPointer = $this->logExecutionStep($workflow['queue_id'] ?? null, $workflow['metadata']['article_id'] ?? null, 'internal_links', 'completed', [
+            'link_count' => is_array($managedLinks) ? count($managedLinks) : 0
+        ]) ?? $logPointer;
+
+        return [
+            'action' => self::ACTION_MANAGE_INTERNAL_LINKS,
+            'phase' => 'internal_links',
+            'status' => 'links_updated',
+            'configuration_id' => $configurationId,
+            'queue_id' => $workflow['queue_id'] ?? null,
+            'article_id' => $workflow['metadata']['article_id'] ?? null,
+            'internal_links' => $managedLinks,
+            'execution_log' => $logPointer
+        ];
+    }
+
+    private function callServiceMethodSafe($service, array $methods, array $argumentSets = [[]])
+    {
+        $lastException = null;
+
+        foreach ($argumentSets as $arguments) {
+            try {
+                $result = $this->callServiceMethod($service, $methods, $arguments);
+                if ($result !== null) {
+                    return $result;
+                }
+            } catch (\Throwable $exception) {
+                $lastException = $exception;
+                $this->logWarning('Service method invocation failed', [
+                    'methods' => $methods,
+                    'arguments' => $arguments,
+                    'error' => $exception->getMessage()
+                ]);
+            }
+        }
+
+        if ($lastException) {
+            throw $lastException;
+        }
+
+        return null;
+    }
+
+    private function updateQueueStatus(?string $queueId, ?string $articleId, string $status, array $details = []): array
+    {
+        $statusData = [
+            'queue_id' => $queueId,
+            'article_id' => $articleId,
+            'status' => $status,
+            'details' => $details
+        ];
+
+        if (!$this->queueService) {
+            return $statusData;
+        }
+
+        try {
+            $response = $this->callServiceMethodSafe(
+                $this->queueService,
+                ['updateStatus', 'updateQueueStatus', 'markStatus', 'markArticleStatus', 'setStatus', 'updateArticleStatus'],
+                [
+                    [$queueId, $status, $details],
+                    [$articleId, $status],
+                    [$status, $details]
+                ]
+            );
+
+            if ($response !== null) {
+                $statusData['service_response'] = $response;
+            }
+        } catch (\Throwable $exception) {
+            $this->logWarning('Queue status update failed', [
+                'queue_id' => $queueId,
+                'article_id' => $articleId,
+                'status' => $status,
+                'error' => $exception->getMessage()
+            ]);
+        }
+
+        return $statusData;
+    }
+
+    private function logExecutionStep(?string $queueId, ?string $articleId, string $phase, string $status, array $details = []): ?string
+    {
+        $details['phase'] = $phase;
+        $details['status'] = $status;
+
+        if (!$this->executionLogger) {
+            return $details['execution_log'] ?? null;
+        }
+
+        try {
+            $result = $this->callServiceMethodSafe(
+                $this->executionLogger,
+                ['logPhase', 'append', 'appendLog', 'record', 'recordPhase', 'write'],
+                [
+                    [$queueId, $articleId, $phase, $status, $details],
+                    [$phase, $status, $details]
+                ]
+            );
+
+            if (is_string($result)) {
+                return $result;
+            }
+
+            if (is_array($result)) {
+                return $result['log_url'] ?? $result['log'] ?? $result['path'] ?? null;
+            }
+        } catch (\Throwable $exception) {
+            $this->logWarning('Execution logging failed', [
+                'queue_id' => $queueId,
+                'article_id' => $articleId,
+                'phase' => $phase,
+                'status' => $status,
+                'error' => $exception->getMessage()
+            ]);
+        }
+
+        return $details['execution_log'] ?? null;
+    }
+
+    private function wrapWorkflowException(string $action, string $phase, \Throwable $exception, array $context): AgentProcessingException
+    {
+        $workflow = $context['blog_workflow'] ?? [];
+        $queueId = $workflow['queue_id'] ?? null;
+        $articleId = $workflow['metadata']['article_id'] ?? null;
+
+        $this->updateQueueStatus($queueId, $articleId, 'failed', [
+            'phase' => $phase,
+            'error' => $exception->getMessage(),
+            'action' => $action
+        ]);
+
+        $this->logExecutionStep($queueId, $articleId, $phase, 'failed', [
+            'action' => $action,
+            'exception' => $exception->getMessage()
+        ]);
+
+        $domainError = [
+            self::ACTION_QUEUE_ARTICLE => 'ConfigurationException',
+            self::ACTION_GENERATE_STRUCTURE => 'ContentGenerationException',
+            self::ACTION_WRITE_CHAPTERS => 'ContentGenerationException',
+            self::ACTION_GENERATE_ASSETS => 'ImageGenerationException',
+            self::ACTION_ASSEMBLE_ARTICLE => 'ContentAssemblyException',
+            self::ACTION_PUBLISH_ARTICLE => 'WordPressPublishException',
+            self::ACTION_MANAGE_INTERNAL_LINKS => 'ConfigurationException'
+        ][$action] ?? 'WorkflowException';
+
+        $message = sprintf(
+            '[%s] %s phase failed: %s',
+            $domainError,
+            $phase,
+            $exception->getMessage()
+        );
+
+        return new AgentProcessingException($message, 'wordpress', 500, $exception);
     }
 
     // ==================== TOOL IMPLEMENTATIONS ====================
