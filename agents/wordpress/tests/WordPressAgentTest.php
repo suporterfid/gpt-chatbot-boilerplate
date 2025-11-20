@@ -22,6 +22,54 @@ class MockLogger {
     public function debug($message, $context = []) {}
 }
 
+class MockQueueService {
+    public $statusCalls = [];
+
+    public function updateStatus($queueId, $status, $details = []) {
+        $this->statusCalls[] = [
+            'queueId' => $queueId,
+            'status' => $status,
+            'details' => $details
+        ];
+
+        return [
+            'queue_id' => $queueId,
+            'status' => $status,
+            'details' => $details
+        ];
+    }
+}
+
+class MockExecutionLogger {
+    public $logCalls = [];
+
+    public function logPhase($queueId, $articleId, $phase, $status, $payload) {
+        $this->logCalls[] = compact('queueId', 'articleId', 'phase', 'status', 'payload');
+
+        return 'https://logs.example.com/' . $queueId . '/' . $phase;
+    }
+
+    public function append($queueId, $articleId, $phase, $status, $payload) {
+        return $this->logPhase($queueId, $articleId, $phase, $status, $payload);
+    }
+
+    public function appendLog($queueId, $articleId, $phase, $status, $payload) {
+        return $this->logPhase($queueId, $articleId, $phase, $status, $payload);
+    }
+
+    public function record($queueId, $articleId, $phase, $status, $payload) {
+        return $this->logPhase($queueId, $articleId, $phase, $status, $payload);
+    }
+
+    public function recordPhase($queueId, $articleId, $phase, $status, $payload) {
+        return $this->logPhase($queueId, $articleId, $phase, $status, $payload);
+    }
+
+    public function write($queueId, $articleId, $phase, $status, $payload) {
+        return $this->logPhase($queueId, $articleId, $phase, $status, $payload);
+    }
+}
+
 class WordPressAgentTest
 {
     private $agent;
@@ -294,6 +342,100 @@ class WordPressAgentTest
         }
     }
 
+    public function testQueueStatusNormalization()
+    {
+        echo "\n=== Testing queue status normalization ===\n";
+
+        $queueService = new MockQueueService();
+        $executionLogger = new MockExecutionLogger();
+
+        $this->agent->initialize([
+            'db' => new MockDB(),
+            'logger' => new MockLogger(),
+            'config' => [],
+            'wordpress_blog_queue_service' => $queueService,
+            'wordpress_blog_execution_logger' => $executionLogger
+        ]);
+
+        $method = new ReflectionMethod(WordPressAgent::class, 'updateQueueStatus');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($this->agent, 'queue-1', 'article-1', 'structure_ready', ['phase' => 'structure']);
+
+        $this->assertEquals('completed', $result['status'], 'structure_ready should normalize to completed');
+        $this->assert(!empty($queueService->statusCalls), 'Queue status should be written');
+        $this->assertEquals('completed', $queueService->statusCalls[0]['status'], 'Queue service should receive canonical status');
+        $this->assert(isset($result['details']['operator_message']), 'Operator guidance should be present');
+    }
+
+    public function testRetryTransitionSchedulesStatus()
+    {
+        echo "\n=== Testing retry scheduling on transient failure ===\n";
+
+        $queueService = new MockQueueService();
+        $executionLogger = new MockExecutionLogger();
+
+        $this->agent->initialize([
+            'db' => new MockDB(),
+            'logger' => new MockLogger(),
+            'config' => [],
+            'wordpress_blog_queue_service' => $queueService,
+            'wordpress_blog_execution_logger' => $executionLogger
+        ]);
+
+        $method = new ReflectionMethod(WordPressAgent::class, 'wrapWorkflowException');
+        $method->setAccessible(true);
+
+        $context = [
+            'blog_workflow' => [
+                'queue_id' => 'queue-99',
+                'metadata' => ['article_id' => 'article-99'],
+                'execution_log' => 'https://logs.example.com/fallback'
+            ]
+        ];
+
+        $exception = new Exception('Rate limit exceeded', 429);
+        $result = $method->invoke($this->agent, 'generate_structure', 'structure', $exception, $context);
+
+        $this->assert($result instanceof ChatbotBoilerplate\Exceptions\AgentProcessingException, 'Should return processing exception');
+        $this->assertEquals('retry_scheduled', end($queueService->statusCalls)['status'], 'Rate limit should schedule retry');
+        $this->assert(str_contains($result->getMessage(), 'retry'), 'Operator message should mention retry path');
+    }
+
+    public function testHardFailureSetsFailedStatus()
+    {
+        echo "\n=== Testing hard failure transition ===\n";
+
+        $queueService = new MockQueueService();
+        $executionLogger = new MockExecutionLogger();
+
+        $this->agent->initialize([
+            'db' => new MockDB(),
+            'logger' => new MockLogger(),
+            'config' => [],
+            'wordpress_blog_queue_service' => $queueService,
+            'wordpress_blog_execution_logger' => $executionLogger
+        ]);
+
+        $method = new ReflectionMethod(WordPressAgent::class, 'wrapWorkflowException');
+        $method->setAccessible(true);
+
+        $context = [
+            'blog_workflow' => [
+                'queue_id' => 'queue-100',
+                'metadata' => ['article_id' => 'article-100'],
+                'execution_log' => 'https://logs.example.com/hard-failure'
+            ]
+        ];
+
+        $exception = new Exception('Invalid publish payload', 500);
+        $result = $method->invoke($this->agent, 'publish_article', 'publish', $exception, $context);
+
+        $this->assert($result instanceof ChatbotBoilerplate\Exceptions\AgentProcessingException, 'Should return processing exception');
+        $this->assertEquals('failed', end($queueService->statusCalls)['status'], 'Hard failure should mark queue as failed');
+        $this->assert(str_contains($result->getMessage(), 'failed'), 'Operator message should describe failure');
+    }
+
     public function runAll()
     {
         echo "\n╔═══════════════════════════════════════════╗\n";
@@ -311,6 +453,9 @@ class WordPressAgentTest
             $this->testIntentDetection();
             $this->testRequiresLLM();
             $this->testCleanup();
+            $this->testQueueStatusNormalization();
+            $this->testRetryTransitionSchedulesStatus();
+            $this->testHardFailureSetsFailedStatus();
 
             echo "\n╔═══════════════════════════════════════════╗\n";
             echo "║   Test Results                           ║\n";
