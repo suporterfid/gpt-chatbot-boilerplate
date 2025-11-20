@@ -12,18 +12,19 @@
 | [06-tools-and-tool-calls](06-tools-and-tool-calls.md) | Completed | 2025-11-20 | 2025-11-20 | Custom tools |
 | [07-output-and-logging](07-output-and-logging.md) | Completed | 2025-11-20 | 2025-11-20 | Output formatting/logging |
 | [08-error-handling-and-status](08-error-handling-and-status.md) | Completed | 2025-11-20 | 2025-11-20 | Error handling/status transitions |
-| [09-testing-and-validation](09-testing-and-validation.md) | Pending | 2025-11-20 | - | Testing tasks |
+| [09-testing-and-validation](09-testing-and-validation.md) | Completed | 2025-11-20 | 2025-11-20 | Testing tasks |
 
 ## Progress Overview
 - Total issues: 9
-- Completed: 8
-- Pending: 1
+- Completed: 9
+- Pending: 0
 - In Progress: 0
 
 ## Pending Next
-1. 09-testing-and-validation
+- All issues completed
 
 ## Changelog
+- 2025-11-20: Completed 09-testing-and-validation; updated progress metrics and pending queue.
 - 2025-11-20: Completed 08-error-handling-and-status; updated progress metrics and pending queue.
 - 2025-11-20: Completed 07-output-and-logging; updated progress metrics and pending queue.
 - 2025-11-20: Completed 06-tools-and-tool-calls; updated progress metrics and pending queue.
