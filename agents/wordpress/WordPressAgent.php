@@ -805,97 +805,214 @@ class WordPressAgent extends AbstractSpecializedAgent
             [
                 'type' => 'function',
                 'function' => [
-                    'name' => 'create_wordpress_post',
-                    'description' => 'Create a new WordPress blog post',
+                    'name' => 'queue_article_request',
+                    'description' => 'Queue a blog article request for the automation workflow. Side effects: creates or updates queue entries and returns execution log pointers.',
                     'parameters' => [
                         'type' => 'object',
                         'properties' => [
-                            'title' => [
+                            'configuration_id' => [
                                 'type' => 'string',
-                                'description' => 'Post title'
+                                'description' => 'Configuration ID to bind queue entry to'
                             ],
-                            'content' => [
+                            'seed_keyword' => [
                                 'type' => 'string',
-                                'description' => 'Post content (HTML allowed)'
+                                'description' => 'Primary keyword or topic for the article brief'
                             ],
-                            'excerpt' => [
+                            'target_audience' => [
                                 'type' => 'string',
-                                'description' => 'Post excerpt (optional)'
+                                'description' => 'Audience or persona description'
                             ],
-                            'status' => [
+                            'language' => [
                                 'type' => 'string',
-                                'enum' => ['draft', 'publish', 'pending', 'private'],
-                                'description' => 'Post status'
+                                'description' => 'Language to generate content in'
                             ],
-                            'categories' => [
-                                'type' => 'array',
-                                'items' => ['type' => 'string'],
-                                'description' => 'Category slugs'
+                            'priority' => [
+                                'type' => 'string',
+                                'enum' => ['low', 'normal', 'high'],
+                                'description' => 'Queue priority (controls processing order)'
                             ],
-                            'tags' => [
-                                'type' => 'array',
-                                'items' => ['type' => 'string'],
-                                'description' => 'Tag names'
+                            'schedule_at' => [
+                                'type' => 'string',
+                                'format' => 'date-time',
+                                'description' => 'Optional scheduled start time'
+                            ],
+                            'metadata' => [
+                                'type' => 'object',
+                                'description' => 'Arbitrary metadata to persist on the queue entry'
+                            ],
+                            'queue_id' => [
+                                'type' => 'string',
+                                'description' => 'Existing queue identifier if refreshing a request'
+                            ],
+                            'article_id' => [
+                                'type' => 'string',
+                                'description' => 'Existing article identifier if re-queuing'
                             ]
                         ],
-                        'required' => ['title', 'content']
+                        'required' => ['configuration_id', 'seed_keyword'],
+                        'additionalProperties' => false
                     ]
                 ]
             ],
             [
                 'type' => 'function',
                 'function' => [
-                    'name' => 'update_wordpress_post',
-                    'description' => 'Update an existing WordPress post',
+                    'name' => 'update_article_brief',
+                    'description' => 'Update the queued article brief (title, angle, keywords). Side effects: patches queue payload and refreshes execution log context.',
                     'parameters' => [
                         'type' => 'object',
                         'properties' => [
-                            'post_id' => [
-                                'type' => 'integer',
-                                'description' => 'Post ID to update'
-                            ],
-                            'title' => [
+                            'queue_id' => [
                                 'type' => 'string',
-                                'description' => 'New post title (optional)'
+                                'description' => 'Queue identifier for the article request'
                             ],
-                            'content' => [
+                            'article_id' => [
                                 'type' => 'string',
-                                'description' => 'New post content (optional)'
+                                'description' => 'Article identifier for the queued item'
                             ],
-                            'status' => [
-                                'type' => 'string',
-                                'enum' => ['draft', 'publish', 'pending', 'private'],
-                                'description' => 'New post status (optional)'
+                            'updates' => [
+                                'type' => 'object',
+                                'description' => 'Fields to update on the brief (topic, angle, keywords, CTA, tone)',
+                                'properties' => [
+                                    'topic' => ['type' => 'string'],
+                                    'angle' => ['type' => 'string'],
+                                    'primary_keywords' => ['type' => 'array', 'items' => ['type' => 'string']],
+                                    'secondary_keywords' => ['type' => 'array', 'items' => ['type' => 'string']],
+                                    'cta_message' => ['type' => 'string'],
+                                    'cta_url' => ['type' => 'string', 'format' => 'uri'],
+                                    'writing_style' => ['type' => 'string'],
+                                    'tone' => ['type' => 'string'],
+                                    'language' => ['type' => 'string']
+                                ],
+                                'additionalProperties' => false
                             ]
                         ],
-                        'required' => ['post_id']
+                        'required' => ['queue_id', 'article_id', 'updates'],
+                        'additionalProperties' => false
                     ]
                 ]
             ],
             [
                 'type' => 'function',
                 'function' => [
-                    'name' => 'search_wordpress_posts',
-                    'description' => 'Search for WordPress posts',
+                    'name' => 'run_generation_phase',
+                    'description' => 'Trigger a workflow phase (outline, chapters, assets, assembly, publish). Side effects: advances queue status and logs execution.',
                     'parameters' => [
                         'type' => 'object',
                         'properties' => [
-                            'search' => [
+                            'queue_id' => [
                                 'type' => 'string',
-                                'description' => 'Search query'
+                                'description' => 'Queue identifier for the workflow run'
                             ],
-                            'per_page' => [
-                                'type' => 'integer',
-                                'description' => 'Number of results (max 100)',
-                                'default' => 10
-                            ],
-                            'status' => [
+                            'article_id' => [
                                 'type' => 'string',
-                                'enum' => ['publish', 'draft', 'pending', 'private', 'any'],
-                                'description' => 'Post status filter'
+                                'description' => 'Article identifier tied to the queue entry'
+                            ],
+                            'phase' => [
+                                'type' => 'string',
+                                'enum' => ['queue', 'structure', 'writing', 'assets', 'assembly', 'publish', 'monitor'],
+                                'description' => 'Workflow phase to trigger'
+                            ],
+                            'force' => [
+                                'type' => 'boolean',
+                                'description' => 'Force execution even if already completed'
+                            ],
+                            'options' => [
+                                'type' => 'object',
+                                'description' => 'Optional phase-specific options (e.g., retry counts, dry-run)'
                             ]
                         ],
-                        'required' => ['search']
+                        'required' => ['queue_id', 'article_id', 'phase'],
+                        'additionalProperties' => false
+                    ]
+                ]
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'submit_required_action_output',
+                    'description' => 'Submit output for a required manual action (e.g., client approval, updated CTA). Side effects: resumes or unblocks workflow.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'queue_id' => [
+                                'type' => 'string',
+                                'description' => 'Queue identifier for the blocked run'
+                            ],
+                            'article_id' => [
+                                'type' => 'string',
+                                'description' => 'Article identifier'
+                            ],
+                            'action_name' => [
+                                'type' => 'string',
+                                'description' => 'Name of the required action being satisfied'
+                            ],
+                            'payload' => [
+                                'type' => 'object',
+                                'description' => 'Data that fulfills the required action (links, approvals, comments)'
+                            ],
+                            'notes' => [
+                                'type' => 'string',
+                                'description' => 'Free-form notes for auditors/logs'
+                            ]
+                        ],
+                        'required' => ['queue_id', 'article_id', 'action_name', 'payload'],
+                        'additionalProperties' => false
+                    ]
+                ]
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'fetch_execution_log',
+                    'description' => 'Retrieve the execution log pointer for a queued article. Side effects: none (read-only).',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'queue_id' => [
+                                'type' => 'string',
+                                'description' => 'Queue identifier for the workflow run'
+                            ],
+                            'article_id' => [
+                                'type' => 'string',
+                                'description' => 'Article identifier (optional when queue_id present)'
+                            ],
+                            'phase' => [
+                                'type' => 'string',
+                                'description' => 'Optional phase filter (queue, structure, writing, assets, assembly, publish)'
+                            ]
+                        ],
+                        'required' => [],
+                        'additionalProperties' => false,
+                        'description' => 'Returns: {status, log_url, log_path, last_entry, last_status}'
+                    ]
+                ]
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'list_internal_links',
+                    'description' => 'List internal links for the configuration to inform SEO linking. Side effects: none (read-only).',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'configuration_id' => [
+                                'type' => 'string',
+                                'description' => 'Configuration ID owning the internal link repository'
+                            ],
+                            'match_keywords' => [
+                                'type' => 'array',
+                                'items' => ['type' => 'string'],
+                                'description' => 'Optional keyword filters to narrow links'
+                            ],
+                            'limit' => [
+                                'type' => 'integer',
+                                'description' => 'Maximum links to return',
+                                'default' => 20
+                            ]
+                        ],
+                        'required' => ['configuration_id'],
+                        'additionalProperties' => false
                     ]
                 ]
             ]
@@ -907,14 +1024,23 @@ class WordPressAgent extends AbstractSpecializedAgent
         $this->logInfo('Executing WordPress tool', ['tool' => $toolName]);
 
         switch ($toolName) {
-            case 'create_wordpress_post':
-                return $this->toolCreatePost($arguments, $context);
+            case 'queue_article_request':
+                return $this->toolQueueArticleRequest($arguments, $context);
 
-            case 'update_wordpress_post':
-                return $this->toolUpdatePost($arguments, $context);
+            case 'update_article_brief':
+                return $this->toolUpdateArticleBrief($arguments, $context);
 
-            case 'search_wordpress_posts':
-                return $this->toolSearchPosts($arguments, $context);
+            case 'run_generation_phase':
+                return $this->toolRunGenerationPhase($arguments, $context);
+
+            case 'submit_required_action_output':
+                return $this->toolSubmitRequiredActionOutput($arguments, $context);
+
+            case 'fetch_execution_log':
+                return $this->toolFetchExecutionLog($arguments, $context);
+
+            case 'list_internal_links':
+                return $this->toolListInternalLinks($arguments, $context);
 
             default:
                 return parent::executeCustomTool($toolName, $arguments, $context);
@@ -1587,114 +1713,248 @@ class WordPressAgent extends AbstractSpecializedAgent
 
     // ==================== TOOL IMPLEMENTATIONS ====================
 
-    /**
-     * Tool: Create WordPress post
-     */
-    private function toolCreatePost(array $arguments, array $context): array
+    private function toolQueueArticleRequest(array $arguments, array $context): array
     {
-        $config = $context['specialized_config'];
+        $tool = 'queue_article_request';
+        $this->requireFields($arguments, ['configuration_id', 'seed_keyword'], $tool);
 
-        $postData = [
-            'title' => $arguments['title'],
-            'content' => $arguments['content'],
-            'excerpt' => $arguments['excerpt'] ?? '',
-            'status' => $arguments['status'] ?? ($config['default_status'] ?? 'draft'),
-            'author' => $config['default_author_id'] ?? 1
+        $queueId = $arguments['queue_id'] ?? $context['blog_workflow']['queue_id'] ?? null;
+        $articleId = $arguments['article_id'] ?? $context['blog_workflow']['metadata']['article_id'] ?? uniqid('article_', true);
+
+        $payload = [
+            'configuration_id' => $arguments['configuration_id'],
+            'seed_keyword' => $arguments['seed_keyword'],
+            'target_audience' => $arguments['target_audience'] ?? null,
+            'language' => $arguments['language'] ?? null,
+            'priority' => $arguments['priority'] ?? 'normal',
+            'schedule_at' => $arguments['schedule_at'] ?? null,
+            'metadata' => $arguments['metadata'] ?? [],
+            'article_id' => $articleId,
+            'queue_id' => $queueId
         ];
 
-        // Handle categories
-        if (isset($arguments['categories']) && !empty($arguments['categories'])) {
-            $postData['categories'] = $this->resolveCategoryIds($arguments['categories']);
+        $serviceResult = $this->callServiceMethod($this->queueService, [
+            'queueArticleRequest',
+            'queueArticle',
+            'enqueue',
+            'enqueueArticle',
+            'addToQueue'
+        ], [$payload]);
+
+        $resolvedQueueId = $serviceResult['queue_id'] ?? $serviceResult['id'] ?? $queueId ?? uniqid('queue_', true);
+        $logPointer = $serviceResult['execution_log_url'] ?? $context['blog_workflow']['execution_log'] ?? $serviceResult['execution_log_path'] ?? null;
+
+        return $this->normalizeToolResponse($tool, 'queued', [
+            'queue_id' => $resolvedQueueId,
+            'article_id' => $serviceResult['article_id'] ?? $articleId,
+            'status' => $serviceResult['status'] ?? 'queued',
+            'execution_log_url' => $logPointer,
+            'metadata' => $serviceResult
+        ], [
+            'phase' => 'queue',
+            'side_effects' => ['queue_entry_created' => true],
+            'log_pointer' => $logPointer
+        ]);
+    }
+
+    private function toolUpdateArticleBrief(array $arguments, array $context): array
+    {
+        $tool = 'update_article_brief';
+        $this->requireFields($arguments, ['queue_id', 'article_id', 'updates'], $tool);
+
+        if (!is_array($arguments['updates']) || empty($arguments['updates'])) {
+            throw new AgentValidationException('update_article_brief requires at least one update field');
         }
 
-        // Handle tags
-        if (isset($arguments['tags']) && !empty($arguments['tags'])) {
-            $postData['tags'] = $this->resolveTagIds($arguments['tags']);
+        $serviceResult = $this->callServiceMethod($this->configurationService, [
+            'updateArticleBrief',
+            'saveArticleBrief',
+            'patchArticleBrief'
+        ], [
+            $arguments['queue_id'],
+            $arguments['article_id'],
+            $arguments['updates']
+        ]);
+
+        $logPointer = $serviceResult['execution_log_url'] ?? $context['blog_workflow']['execution_log'] ?? null;
+
+        return $this->normalizeToolResponse($tool, 'updated', [
+            'queue_id' => $arguments['queue_id'],
+            'article_id' => $arguments['article_id'],
+            'applied_updates' => $arguments['updates'],
+            'execution_log_url' => $logPointer,
+            'service_result' => $serviceResult
+        ], [
+            'phase' => 'queue',
+            'side_effects' => ['brief_patched' => true],
+            'log_pointer' => $logPointer
+        ]);
+    }
+
+    private function toolRunGenerationPhase(array $arguments, array $context): array
+    {
+        $tool = 'run_generation_phase';
+        $this->requireFields($arguments, ['queue_id', 'article_id', 'phase'], $tool);
+
+        $phase = $arguments['phase'];
+        $options = $arguments['options'] ?? [];
+
+        $serviceResult = $this->callServiceMethod($this->generatorService, [
+            'runPhase',
+            'runGenerationPhase',
+            'executePhase'
+        ], [
+            $phase,
+            $arguments['queue_id'],
+            $arguments['article_id'],
+            $options + ['force' => $arguments['force'] ?? false]
+        ]);
+
+        $logPointer = $serviceResult['execution_log_url'] ?? $context['blog_workflow']['execution_log'] ?? null;
+
+        return $this->normalizeToolResponse($tool, $serviceResult['status'] ?? 'accepted', [
+            'queue_id' => $arguments['queue_id'],
+            'article_id' => $arguments['article_id'],
+            'phase' => $phase,
+            'execution_log_url' => $logPointer,
+            'result' => $serviceResult
+        ], [
+            'phase' => $phase,
+            'side_effects' => ['workflow_phase_triggered' => true],
+            'log_pointer' => $logPointer
+        ]);
+    }
+
+    private function toolSubmitRequiredActionOutput(array $arguments, array $context): array
+    {
+        $tool = 'submit_required_action_output';
+        $this->requireFields($arguments, ['queue_id', 'article_id', 'action_name', 'payload'], $tool);
+
+        $serviceResult = $this->callServiceMethod($this->queueService, [
+            'submitRequiredActionOutput',
+            'submitActionOutput',
+            'completeActionRequirement'
+        ], [
+            $arguments['queue_id'],
+            $arguments['article_id'],
+            $arguments['action_name'],
+            $arguments['payload'],
+            $arguments['notes'] ?? null
+        ]);
+
+        $logPointer = $serviceResult['execution_log_url'] ?? $context['blog_workflow']['execution_log'] ?? null;
+
+        return $this->normalizeToolResponse($tool, $serviceResult['status'] ?? 'submitted', [
+            'queue_id' => $arguments['queue_id'],
+            'article_id' => $arguments['article_id'],
+            'action_name' => $arguments['action_name'],
+            'execution_log_url' => $logPointer,
+            'service_result' => $serviceResult
+        ], [
+            'phase' => 'monitor',
+            'side_effects' => ['workflow_unblocked' => true],
+            'log_pointer' => $logPointer
+        ]);
+    }
+
+    private function toolFetchExecutionLog(array $arguments, array $context): array
+    {
+        $tool = 'fetch_execution_log';
+
+        $queueId = $arguments['queue_id'] ?? $context['blog_workflow']['queue_id'] ?? null;
+        $articleId = $arguments['article_id'] ?? $context['blog_workflow']['metadata']['article_id'] ?? null;
+
+        if (!$queueId && !$articleId) {
+            throw new AgentValidationException('fetch_execution_log requires queue_id or article_id');
         }
 
-        $result = $this->wpClient->createPost($postData);
+        $serviceResult = $this->callServiceMethod($this->executionLogger, [
+            'getLogByArticleId',
+            'getExecutionLog',
+            'fetchExecutionLog'
+        ], array_filter([
+            $articleId,
+            $queueId,
+            $arguments['phase'] ?? null
+        ]));
 
-        $this->logInfo('Post created', ['post_id' => $result['id']]);
+        $logPointer = $serviceResult['log_url'] ?? $serviceResult['execution_log_url'] ?? $context['blog_workflow']['execution_log'] ?? null;
 
+        return $this->normalizeToolResponse($tool, $serviceResult['status'] ?? 'ok', [
+            'queue_id' => $queueId,
+            'article_id' => $articleId,
+            'log_url' => $logPointer,
+            'log_path' => $serviceResult['log_path'] ?? null,
+            'last_status' => $serviceResult['last_status'] ?? ($context['blog_workflow']['metadata']['last_status'] ?? null),
+            'last_entry' => $serviceResult['last_entry'] ?? null
+        ], [
+            'phase' => $arguments['phase'] ?? 'monitor',
+            'side_effects' => ['read_only' => true],
+            'log_pointer' => $logPointer
+        ]);
+    }
+
+    private function toolListInternalLinks(array $arguments, array $context): array
+    {
+        $tool = 'list_internal_links';
+        $this->requireFields($arguments, ['configuration_id'], $tool);
+
+        $links = $this->callServiceMethod($this->configurationService, [
+            'getInternalLinks',
+            'listInternalLinks',
+            'getInternalLinksByConfigurationId'
+        ], [$arguments['configuration_id']]);
+
+        $links = is_array($links) ? $links : $context['blog_workflow']['internal_links'] ?? [];
+
+        if (!empty($arguments['match_keywords']) && is_array($arguments['match_keywords'])) {
+            $keywords = array_map('strtolower', $arguments['match_keywords']);
+            $links = array_values(array_filter($links, function ($link) use ($keywords) {
+                $haystack = strtolower(($link['anchor_text'] ?? '') . ' ' . ($link['url'] ?? '') . ' ' . implode(' ', $link['relevance_keywords'] ?? []));
+
+                foreach ($keywords as $keyword) {
+                    if (strpos($haystack, $keyword) !== false) {
+                        return true;
+                    }
+                }
+
+                return empty($keywords);
+            }));
+        }
+
+        $limit = $arguments['limit'] ?? 20;
+        $limitedLinks = array_slice($links, 0, $limit);
+
+        return $this->normalizeToolResponse($tool, 'ok', [
+            'configuration_id' => $arguments['configuration_id'],
+            'count' => count($limitedLinks),
+            'links' => $limitedLinks
+        ], [
+            'phase' => 'internal_links',
+            'side_effects' => ['read_only' => true]
+        ]);
+    }
+
+    private function normalizeToolResponse(string $tool, string $status, array $data, array $metadata = []): array
+    {
         return [
-            'success' => true,
-            'post_id' => $result['id'],
-            'post_url' => $result['link'] ?? null,
-            'status' => $result['status'],
-            'message' => "Post '{$arguments['title']}' created successfully"
+            'status' => $status,
+            'tool' => $tool,
+            'data' => $data,
+            'metadata' => array_merge([
+                'timestamp' => date('c'),
+                'sse_event' => 'tool_execution',
+            ], $metadata)
         ];
     }
 
-    /**
-     * Tool: Update WordPress post
-     */
-    private function toolUpdatePost(array $arguments, array $context): array
+    private function requireFields(array $arguments, array $fields, string $tool): void
     {
-        $postId = $arguments['post_id'];
-
-        $updateData = [];
-
-        if (isset($arguments['title'])) {
-            $updateData['title'] = $arguments['title'];
+        foreach ($fields as $field) {
+            if (!array_key_exists($field, $arguments) || $arguments[$field] === '' || $arguments[$field] === null) {
+                throw new AgentValidationException(sprintf('%s requires field: %s', $tool, $field));
+            }
         }
-
-        if (isset($arguments['content'])) {
-            $updateData['content'] = $arguments['content'];
-        }
-
-        if (isset($arguments['status'])) {
-            $updateData['status'] = $arguments['status'];
-        }
-
-        $result = $this->wpClient->updatePost($postId, $updateData);
-
-        $this->logInfo('Post updated', ['post_id' => $postId]);
-
-        return [
-            'success' => true,
-            'post_id' => $postId,
-            'post_url' => $result['link'] ?? null,
-            'message' => "Post {$postId} updated successfully"
-        ];
-    }
-
-    /**
-     * Tool: Search WordPress posts
-     */
-    private function toolSearchPosts(array $arguments, array $context): array
-    {
-        $config = $context['specialized_config'];
-
-        $params = [
-            'search' => $arguments['search'],
-            'per_page' => min(
-                $arguments['per_page'] ?? 10,
-                $config['max_posts_per_request'] ?? 10
-            )
-        ];
-
-        if (isset($arguments['status'])) {
-            $params['status'] = $arguments['status'];
-        }
-
-        $posts = $this->wpClient->searchPosts($params);
-
-        $this->logInfo('Posts searched', ['count' => count($posts)]);
-
-        return [
-            'success' => true,
-            'count' => count($posts),
-            'posts' => array_map(function ($post) {
-                return [
-                    'id' => $post['id'],
-                    'title' => $post['title']['rendered'] ?? '',
-                    'excerpt' => strip_tags($post['excerpt']['rendered'] ?? ''),
-                    'status' => $post['status'],
-                    'date' => $post['date'],
-                    'link' => $post['link']
-                ];
-            }, $posts)
-        ];
     }
 
     // ==================== HELPER METHODS ====================

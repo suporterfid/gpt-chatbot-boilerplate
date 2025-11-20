@@ -1,5 +1,8 @@
 # Task 6: Redesign custom tools and tool-call handling
 
+## Status: Completed
+## Completion Date: 2025-11-20
+
 ## Goal
 Expose tooling that mirrors the WordPress Blog Automation Pro workflow and allow the agent/LLM to interact with queue/config resources programmatically.
 
@@ -16,3 +19,11 @@ Expose tooling that mirrors the WordPress Blog Automation Pro workflow and allow
 ## Relevant Files
 - `agents/wordpress/WordPressAgent.php`
 - Tool service implementations used inside the handlers
+
+## Implementation Performed
+- Replaced legacy post-oriented tool definitions with workflow-specific tools (queue, brief updates, generation phases, manual action outputs, execution log retrieval, and internal link listings) using explicit JSON schemas and side-effect descriptions.
+- Added tool execution handlers that validate required fields, call available services, and normalize responses with SSE-friendly metadata and log pointers.
+- Updated agent documentation and automated tests to reflect the new tooling surface and validation expectations.
+
+## Related Commits
+- (see git log)

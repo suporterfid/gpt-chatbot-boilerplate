@@ -5,6 +5,8 @@
  * Tests WordPress agent functionality, intent detection, and tools
  */
 
+require_once __DIR__ . '/../../../includes/Interfaces/SpecializedAgentInterface.php';
+require_once __DIR__ . '/../../../includes/Exceptions/AgentException.php';
 require_once __DIR__ . '/../WordPressAgent.php';
 
 // Mock classes
@@ -141,7 +143,20 @@ class WordPressAgentTest
             'specialized_config' => [
                 'wp_site_url' => 'https://example.com',
                 'wp_username' => 'admin',
-                'wp_app_password' => 'test-password'
+                'wp_app_password' => 'test-password',
+                'configuration_id' => 'config-123',
+                'article_queue_id' => 'queue-123',
+                'workflow_phases' => ['generate_assets' => false],
+                'image_preferences' => ['enabled' => false],
+                'enable_execution_logging' => false
+            ],
+            'blog_workflow' => [
+                'configuration_id' => 'config-123',
+                'queue_id' => 'queue-123',
+                'configuration' => ['website_url' => 'https://example.com'],
+                'queue_entry' => ['article_id' => 'article-abc', 'status' => 'queued'],
+                'execution_log' => 'https://logs.example.com/queue-123',
+                'metadata' => ['article_id' => 'article-abc', 'last_status' => 'queued', 'retry_count' => 0]
             ]
         ];
 
@@ -192,9 +207,18 @@ class WordPressAgentTest
             return $tool['function']['name'];
         }, $tools);
 
-        $this->assert(in_array('create_wordpress_post', $toolNames), "Should have create_wordpress_post tool");
-        $this->assert(in_array('update_wordpress_post', $toolNames), "Should have update_wordpress_post tool");
-        $this->assert(in_array('search_wordpress_posts', $toolNames), "Should have search_wordpress_posts tool");
+        $expectedTools = [
+            'queue_article_request',
+            'update_article_brief',
+            'run_generation_phase',
+            'submit_required_action_output',
+            'fetch_execution_log',
+            'list_internal_links'
+        ];
+
+        foreach ($expectedTools as $toolName) {
+            $this->assert(in_array($toolName, $toolNames), "Should expose {$toolName} tool");
+        }
     }
 
     public function testIntentDetection()

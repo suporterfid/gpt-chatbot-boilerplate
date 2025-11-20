@@ -4,15 +4,13 @@ A specialized agent for managing WordPress content through the WordPress REST AP
 
 ## Features
 
-- ✅ **Create Posts** - Generate and publish blog posts
-- ✅ **Update Posts** - Modify existing content
-- ✅ **Search Posts** - Find posts by keywords
-- ✅ **Query Posts** - Retrieve specific posts by ID
-- ✅ **Manage Categories** - List and organize categories
-- ✅ **Manage Tags** - Add and organize tags
-- ✅ **LLM Integration** - Uses LLM to generate content when needed
-- ✅ **Intent Detection** - Automatically detects user intentions
-- ✅ **Custom Tools** - LLM can call WordPress-specific functions
+- ✅ **Automation-Ready Workflow** - Queue article briefs and trigger generation phases (outline, writing, assets, assembly, publish)
+- ✅ **Execution Visibility** - Fetch execution logs and status snapshots for any queued article
+- ✅ **Queue & Brief Management** - Update queued briefs, priorities, and manual required actions
+- ✅ **Internal Link Intelligence** - Surface internal links per configuration for SEO-friendly drafts
+- ✅ **LLM Integration** - Uses LLM for creative steps while skipping admin operations
+- ✅ **Intent Detection** - Automatically detects workflow directives and creative requests
+- ✅ **Custom Tools** - LLM can call workflow-focused functions with normalized responses
 
 ## Prerequisites
 
@@ -98,10 +96,10 @@ WP_APP_PASSWORD="xxxx xxxx xxxx xxxx xxxx xxxx"
 
 **Behind the Scenes:**
 1. Agent detects "create post" intent
-2. Uses LLM to generate content
-3. Calls `create_wordpress_post` tool
-4. Creates draft post in WordPress
-5. Returns post URL and ID
+2. Queues the request with `queue_article_request` including the brief and priorities
+3. Triggers `run_generation_phase` for outline and writing steps
+4. Publishes or leaves the post as draft based on configuration
+5. Returns queue ID, article ID, and log URL for monitoring
 
 ### Example 2: Search Posts
 
@@ -131,49 +129,42 @@ WP_APP_PASSWORD="xxxx xxxx xxxx xxxx xxxx xxxx"
 
 ## Custom Tools
 
-The WordPress agent provides these custom tools that the LLM can call:
+The WordPress agent exposes workflow-focused tools with structured payloads and normalized responses for SSE streaming:
 
-### `create_wordpress_post`
+### `queue_article_request`
+- **Purpose:** Queue a new or refreshed article request tied to a blog configuration.
+- **Required:** `configuration_id`, `seed_keyword`
+- **Optional:** `target_audience`, `language`, `priority`, `schedule_at`, `metadata`, `queue_id`, `article_id`
+- **Side Effects:** Creates/updates queue entries and returns execution log pointers.
 
-Creates a new WordPress post.
+### `update_article_brief`
+- **Purpose:** Patch the queued article brief (topic, keywords, CTA, tone, language).
+- **Required:** `queue_id`, `article_id`, `updates`
+- **Side Effects:** Brief is updated and execution log context is refreshed.
 
-**Parameters:**
-- `title` (string, required) - Post title
-- `content` (string, required) - Post content (HTML allowed)
-- `excerpt` (string, optional) - Post excerpt
-- `status` (string, optional) - Post status: `draft`, `publish`, `pending`, `private`
-- `categories` (array, optional) - Category slugs
-- `tags` (array, optional) - Tag names
+### `run_generation_phase`
+- **Purpose:** Trigger a workflow phase: `queue`, `structure`, `writing`, `assets`, `assembly`, `publish`, or `monitor`.
+- **Required:** `queue_id`, `article_id`, `phase`
+- **Optional:** `force`, `options`
+- **Side Effects:** Advances queue status and logs the request.
 
-**Example:**
-```json
-{
-  "title": "My New Post",
-  "content": "<p>This is the post content.</p>",
-  "status": "publish",
-  "categories": ["technology", "ai"],
-  "tags": ["machine-learning", "chatbots"]
-}
-```
+### `submit_required_action_output`
+- **Purpose:** Submit output for a manual requirement (client approval, CTA change, etc.).
+- **Required:** `queue_id`, `article_id`, `action_name`, `payload`
+- **Optional:** `notes`
+- **Side Effects:** Unblocks or resumes the workflow.
 
-### `update_wordpress_post`
+### `fetch_execution_log`
+- **Purpose:** Retrieve execution log pointers and last-known status.
+- **Required:** `queue_id` **or** `article_id`
+- **Optional:** `phase`
+- **Side Effects:** Read-only.
 
-Updates an existing post.
-
-**Parameters:**
-- `post_id` (integer, required) - Post ID to update
-- `title` (string, optional) - New title
-- `content` (string, optional) - New content
-- `status` (string, optional) - New status
-
-### `search_wordpress_posts`
-
-Searches for posts.
-
-**Parameters:**
-- `search` (string, required) - Search query
-- `per_page` (integer, optional) - Results per page (max 100)
-- `status` (string, optional) - Filter by status
+### `list_internal_links`
+- **Purpose:** Surface internal links for SEO-aware drafting.
+- **Required:** `configuration_id`
+- **Optional:** `match_keywords`, `limit`
+- **Side Effects:** Read-only.
 
 ## Intent Detection
 
