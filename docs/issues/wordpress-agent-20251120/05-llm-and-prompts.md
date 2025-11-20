@@ -1,5 +1,8 @@
 # Task 5: Update LLM decisioning and prompt construction
 
+## Status: Completed
+## Completion Date: 2025-11-20
+
 ## Goal
 Ensure the agent only invokes the LLM when necessary (outline/chapter writing, CTA polish) and supplies it with complete context from the blog workflow.
 
@@ -15,3 +18,10 @@ Ensure the agent only invokes the LLM when necessary (outline/chapter writing, C
 
 ## Relevant Files
 - `agents/wordpress/WordPressAgent.php`
+
+## Implementation Performed
+- Updated LLM decisioning to bypass admin, queue, publishing, and monitoring steps while logging when creative generation is required.
+- Enriched prompt construction with workflow configuration, queued article brief, chapter specs, CTA metadata, available tools, streaming guidance, and partial-completion safeguards.
+
+## Related Commits
+- 1268498

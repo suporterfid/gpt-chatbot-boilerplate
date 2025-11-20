@@ -8,7 +8,7 @@
 | [02-context-and-validation](02-context-and-validation.md) | Completed | 2025-11-20 | 2025-11-20 | Context enrichment + validation |
 | [03-actions-and-intents](03-actions-and-intents.md) | Completed | 2025-11-20 | 2025-11-20 | Intent detection and actions |
 | [04-process-handlers](04-process-handlers.md) | Completed | 2025-11-20 | 2025-11-20 | Workflow handlers |
-| [05-llm-and-prompts](05-llm-and-prompts.md) | Pending | 2025-11-20 | - | LLM usage and prompts |
+| [05-llm-and-prompts](05-llm-and-prompts.md) | Completed | 2025-11-20 | 2025-11-20 | LLM usage and prompts |
 | [06-tools-and-tool-calls](06-tools-and-tool-calls.md) | Pending | 2025-11-20 | - | Custom tools |
 | [07-output-and-logging](07-output-and-logging.md) | Pending | 2025-11-20 | - | Output formatting/logging |
 | [08-error-handling-and-status](08-error-handling-and-status.md) | Pending | 2025-11-20 | - | Error handling/status transitions |
@@ -16,16 +16,17 @@
 
 ## Progress Overview
 - Total issues: 9
-- Completed: 4
-- Pending: 5
+- Completed: 5
+- Pending: 4
 - In Progress: 0
 
 ## Pending Next
-1. 05-llm-and-prompts
-2. 06-tools-and-tool-calls
-3. 07-output-and-logging
+1. 06-tools-and-tool-calls
+2. 07-output-and-logging
+3. 08-error-handling-and-status
 
 ## Changelog
+- 2025-11-20: Completed 05-llm-and-prompts; updated progress metrics and pending queue.
 - 2025-11-20: Completed 04-process-handlers; updated progress metrics and pending queue.
 - 2025-11-20: Completed 03-actions-and-intents; updated progress metrics and pending queue.
 - 2025-11-20: Completed 02-context-and-validation; updated progress metrics and pending queue.
