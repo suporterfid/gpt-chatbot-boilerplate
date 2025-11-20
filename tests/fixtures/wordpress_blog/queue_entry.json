@@ -1,0 +1,10 @@
+{
+  "queue_id": "queue-789",
+  "article_id": "article-789",
+  "status": "chapters_ready",
+  "seed_keyword": "automated testing",
+  "target_audience": "site owners",
+  "writing_style": "practical",
+  "execution_log_url": "https://logs.example.com/queue-789",
+  "retry_count": 1
+}

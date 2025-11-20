@@ -1,0 +1,12 @@
+[
+  {
+    "url": "https://demo.example.com/getting-started",
+    "anchor_text": "getting started guide",
+    "relevance_keywords": ["setup", "installation"]
+  },
+  {
+    "url": "https://demo.example.com/faq",
+    "anchor_text": "FAQ",
+    "relevance_keywords": ["questions", "troubleshooting"]
+  }
+]

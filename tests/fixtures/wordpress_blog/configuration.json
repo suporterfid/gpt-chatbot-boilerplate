@@ -1,0 +1,10 @@
+{
+  "configuration_id": "config-123",
+  "config_name": "Demo WordPress Automation",
+  "website_url": "https://demo.example.com",
+  "writing_style": "practical",
+  "target_audience": "developers",
+  "max_word_count": 1400,
+  "default_publish_status": "draft",
+  "number_of_chapters": 4
+}
