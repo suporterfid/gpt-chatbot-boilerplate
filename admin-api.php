@@ -26,6 +26,14 @@ require_once 'includes/ResourceAuthService.php';
 require_once 'includes/WebhookSubscriberRepository.php';
 require_once 'includes/WebhookLogRepository.php';
 
+// WordPress Blog services
+require_once 'includes/SecretsManager.php';
+require_once 'includes/CryptoAdapter.php';
+require_once 'includes/WordPressBlog/Services/WordPressBlogConfigurationService.php';
+require_once 'includes/WordPressBlog/Services/WordPressBlogQueueService.php';
+require_once 'includes/WordPressBlog/Services/WordPressBlogGeneratorService.php';
+require_once 'includes/WordPressBlog/Orchestration/WordPressBlogWorkflowOrchestrator.php';
+
 // CORS headers
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
@@ -453,7 +461,28 @@ try {
     
     // Initialize Resource Authorization Service
     $resourceAuth = new ResourceAuthService($db, $adminAuth, $auditService);
-    
+
+    // Initialize WordPress Blog Services
+    $secretsManager = new SecretsManager();
+    $encryptionKey = $secretsManager->get('WORDPRESS_BLOG_ENCRYPTION_KEY')
+        ?? $secretsManager->get('ENCRYPTION_KEY')
+        ?? 'default-key-please-change-in-production';
+    $cryptoAdapter = new CryptoAdapter(['encryption_key' => $encryptionKey]);
+    $wordpressBlogConfigService = new WordPressBlogConfigurationService($db, $cryptoAdapter);
+    $wordpressBlogQueueService = new WordPressBlogQueueService($db);
+    $wordpressBlogOrchestrator = null;
+    if ($openaiClient) {
+        // Convert OpenAIAdminClient to OpenAIClient for orchestrator
+        $openaiApiKey = $secretsManager->get('OPENAI_API_KEY');
+        if ($openaiApiKey) {
+            $openAIClientForBlog = new OpenAIClient([
+                'api_key' => $openaiApiKey,
+                'base_url' => 'https://api.openai.com/v1'
+            ]);
+            $wordpressBlogOrchestrator = new WordPressBlogWorkflowOrchestrator($db, $cryptoAdapter, $openAIClientForBlog);
+        }
+    }
+
     // Initialize Billing Services
     require_once __DIR__ . '/includes/UsageTrackingService.php';
     require_once __DIR__ . '/includes/QuotaService.php';
@@ -833,13 +862,24 @@ try {
                 sendError('Whitelabel not enabled for this agent', 400);
             }
             
-            // Build the whitelabel URL
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $host = $_SERVER['HTTP_HOST'];
-            $baseUrl = $protocol . '://' . $host;
-            
+            // Build the whitelabel URL using configured base URL to prevent host header injection
+            $baseUrl = getEnvValue('APP_BASE_URL');
+            if (empty($baseUrl)) {
+                // Fallback: validate and sanitize the host header
+                $allowedHosts = explode(',', getEnvValue('ALLOWED_HOSTS') ?? '');
+                $requestHost = $_SERVER['HTTP_HOST'] ?? '';
+
+                if (!empty($allowedHosts) && in_array($requestHost, $allowedHosts)) {
+                    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                    $baseUrl = $protocol . '://' . $requestHost;
+                } else {
+                    sendError('Invalid host header. Please configure APP_BASE_URL in .env', 500);
+                    break;
+                }
+            }
+
             $url = $baseUrl . '/public/whitelabel.php?id=' . urlencode($agent['agent_public_id']);
-            
+
             if (!empty($agent['vanity_path'])) {
                 $vanityUrl = $baseUrl . '/public/whitelabel.php?path=' . urlencode($agent['vanity_path']);
                 $prettyUrl = $baseUrl . '/chat/@' . urlencode($agent['vanity_path']);
@@ -847,7 +887,7 @@ try {
                 $vanityUrl = null;
                 $prettyUrl = null;
             }
-            
+
             if (!empty($agent['custom_domain'])) {
                 $customUrl = 'https://' . $agent['custom_domain'];
             } else {
@@ -1070,6 +1110,8 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
             $filters = [];
             if (isset($_GET['name'])) {
                 $filters['name'] = $_GET['name'];
@@ -1111,6 +1153,8 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'create', $adminAuth);
+
             $data = getRequestBody();
             $prompt = $promptService->createPrompt($data);
             log_admin('Prompt created: ' . $prompt['id'] . ' (' . $prompt['name'] . ')');
@@ -1222,6 +1266,8 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'create', $adminAuth);
+
             $synced = $promptService->syncPromptsFromOpenAI();
             log_admin('Synced ' . $synced . ' prompts from OpenAI');
             sendResponse(['synced' => $synced, 'message' => "Synced $synced prompts from OpenAI"]);
@@ -1233,6 +1279,8 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
             $filters = [];
             if (isset($_GET['name'])) {
                 $filters['name'] = $_GET['name'];
@@ -1277,6 +1325,8 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
+            requirePermission($authenticatedUser, 'create', $adminAuth);
+
             $data = getRequestBody();
             $store = $vectorStoreService->createVectorStore($data);
             log_admin('Vector store created: ' . $store['id'] . ' (' . $store['name'] . ')');
@@ -1854,7 +1904,8 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
-            
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
             // Prometheus text format
             header('Content-Type: text/plain; version=0.0.4');
             
@@ -1902,7 +1953,8 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
-            
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
             $filters = [];
             if (isset($_GET['status'])) {
                 $filters['status'] = $_GET['status'];
@@ -2000,7 +2052,8 @@ try {
             if ($method !== 'GET') {
                 sendError('Method not allowed', 405);
             }
-            
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
             $stats = $jobQueue->getStats();
             sendResponse($stats);
             break;
@@ -2358,9 +2411,11 @@ try {
         // ==================== Audit Log ====================
         
         case 'list_audit_log':
+            requirePermission($authenticatedUser, 'read', $adminAuth);
+
             $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
             $limit = min($limit, 1000); // Cap at 1000
-            
+
             try {
                 $logs = $db->query(
                     "SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?",
@@ -3676,12 +3731,13 @@ try {
             if ($method !== 'POST') {
                 sendError('Method not allowed', 405);
             }
-            
+            requirePermission($authenticatedUser, 'update', $adminAuth);
+
             $id = $_GET['id'] ?? null;
             if (!$id) {
                 sendError('Notification ID is required', 400);
             }
-            
+
             $notification = $notificationService->markAsRead($id);
             sendResponse($notification);
             break;
@@ -5321,6 +5377,751 @@ try {
             } catch (Exception $e) {
                 log_admin('Error during agent discovery: ' . $e->getMessage(), 'error');
                 sendError('Failed to discover agents: ' . $e->getMessage(), 500);
+            }
+            break;
+
+        // ====================================================================
+        // WordPress Blog - Configuration Management Endpoints
+        // ====================================================================
+
+        case 'wordpress_blog_create_config':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $body = getRequestBody();
+
+            try {
+                $configId = $wordpressBlogConfigService->createConfiguration($body);
+                $config = $wordpressBlogConfigService->getConfiguration($configId, false);
+
+                log_admin("Created WordPress blog configuration: {$configId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Configuration created successfully',
+                    'configuration' => $config
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error creating WordPress blog configuration: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_get_config':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            $configId = $_GET['id'] ?? '';
+            if (empty($configId)) {
+                sendError('Configuration ID required', 400);
+            }
+
+            try {
+                $config = $wordpressBlogConfigService->getConfiguration($configId, false);
+
+                if (!$config) {
+                    sendError('Configuration not found', 404);
+                }
+
+                sendResponse([
+                    'success' => true,
+                    'configuration' => $config
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error retrieving WordPress blog configuration: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_list_configs':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            try {
+                $configs = $wordpressBlogConfigService->listConfigurations();
+
+                sendResponse([
+                    'success' => true,
+                    'configurations' => $configs,
+                    'count' => count($configs)
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error listing WordPress blog configurations: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_update_config':
+            if ($method !== 'PUT' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $configId = $_GET['id'] ?? '';
+            if (empty($configId)) {
+                sendError('Configuration ID required', 400);
+            }
+
+            $body = getRequestBody();
+
+            try {
+                $success = $wordpressBlogConfigService->updateConfiguration($configId, $body);
+
+                if (!$success) {
+                    sendError('Configuration not found', 404);
+                }
+
+                $config = $wordpressBlogConfigService->getConfiguration($configId, false);
+
+                log_admin("Updated WordPress blog configuration: {$configId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Configuration updated successfully',
+                    'configuration' => $config
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error updating WordPress blog configuration: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_delete_config':
+            if ($method !== 'DELETE' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $configId = $_GET['id'] ?? '';
+            if (empty($configId)) {
+                sendError('Configuration ID required', 400);
+            }
+
+            try {
+                $success = $wordpressBlogConfigService->deleteConfiguration($configId);
+
+                if (!$success) {
+                    sendError('Configuration not found', 404);
+                }
+
+                log_admin("Deleted WordPress blog configuration: {$configId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Configuration deleted successfully'
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error deleting WordPress blog configuration: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_add_internal_link':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $configId = $_GET['config_id'] ?? '';
+            if (empty($configId)) {
+                sendError('Configuration ID required', 400);
+            }
+
+            $body = getRequestBody();
+
+            try {
+                $linkId = $wordpressBlogConfigService->addInternalLink($configId, $body);
+                $link = $wordpressBlogConfigService->getInternalLink($linkId);
+
+                log_admin("Added internal link to configuration {$configId}: {$linkId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Internal link added successfully',
+                    'link' => $link
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error adding internal link: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_list_internal_links':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            $configId = $_GET['config_id'] ?? '';
+            if (empty($configId)) {
+                sendError('Configuration ID required', 400);
+            }
+
+            try {
+                $links = $wordpressBlogConfigService->getInternalLinks($configId);
+
+                sendResponse([
+                    'success' => true,
+                    'links' => $links,
+                    'count' => count($links)
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error listing internal links: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_update_internal_link':
+            if ($method !== 'PUT' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $linkId = $_GET['link_id'] ?? '';
+            if (empty($linkId)) {
+                sendError('Link ID required', 400);
+            }
+
+            $body = getRequestBody();
+
+            try {
+                $success = $wordpressBlogConfigService->updateInternalLink($linkId, $body);
+
+                if (!$success) {
+                    sendError('Internal link not found', 404);
+                }
+
+                $link = $wordpressBlogConfigService->getInternalLink($linkId);
+
+                log_admin("Updated internal link: {$linkId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Internal link updated successfully',
+                    'link' => $link
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error updating internal link: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_delete_internal_link':
+            if ($method !== 'DELETE' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $linkId = $_GET['link_id'] ?? '';
+            if (empty($linkId)) {
+                sendError('Link ID required', 400);
+            }
+
+            try {
+                $success = $wordpressBlogConfigService->deleteInternalLink($linkId);
+
+                if (!$success) {
+                    sendError('Internal link not found', 404);
+                }
+
+                log_admin("Deleted internal link: {$linkId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Internal link deleted successfully'
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error deleting internal link: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        // ====================================================================
+        // WordPress Blog - Article Queue Management Endpoints
+        // ====================================================================
+
+        case 'wordpress_blog_add_article':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $body = getRequestBody();
+
+            try {
+                $articleId = $wordpressBlogQueueService->addToQueue($body);
+                $article = $wordpressBlogQueueService->getArticle($articleId);
+
+                log_admin("Added article to WordPress blog queue: {$articleId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Article added to queue successfully',
+                    'article' => $article
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error adding article to queue: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_get_article':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            $articleId = $_GET['id'] ?? '';
+            if (empty($articleId)) {
+                sendError('Article ID required', 400);
+            }
+
+            try {
+                $article = $wordpressBlogQueueService->getArticle($articleId);
+
+                if (!$article) {
+                    sendError('Article not found', 404);
+                }
+
+                sendResponse([
+                    'success' => true,
+                    'article' => $article
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error retrieving article: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_list_articles':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            try {
+                $status = $_GET['status'] ?? null;
+                $configId = $_GET['config_id'] ?? null;
+                $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 50;
+                $offset = isset($_GET['offset']) ? intval($_GET['offset']) : 0;
+
+                $articles = $wordpressBlogQueueService->listArticles($status, $configId, $limit, $offset);
+                $stats = $wordpressBlogQueueService->getQueueStatistics();
+
+                sendResponse([
+                    'success' => true,
+                    'articles' => $articles,
+                    'count' => count($articles),
+                    'statistics' => $stats
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error listing articles: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_update_article':
+            if ($method !== 'PUT' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $articleId = $_GET['id'] ?? '';
+            if (empty($articleId)) {
+                sendError('Article ID required', 400);
+            }
+
+            $body = getRequestBody();
+
+            try {
+                $success = $wordpressBlogQueueService->updateArticle($articleId, $body);
+
+                if (!$success) {
+                    sendError('Article not found', 404);
+                }
+
+                $article = $wordpressBlogQueueService->getArticle($articleId);
+
+                log_admin("Updated article in WordPress blog queue: {$articleId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Article updated successfully',
+                    'article' => $article
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error updating article: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_delete_article':
+            if ($method !== 'DELETE' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $articleId = $_GET['id'] ?? '';
+            if (empty($articleId)) {
+                sendError('Article ID required', 400);
+            }
+
+            try {
+                $success = $wordpressBlogQueueService->deleteArticle($articleId);
+
+                if (!$success) {
+                    sendError('Article not found', 404);
+                }
+
+                log_admin("Deleted article from WordPress blog queue: {$articleId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Article deleted successfully'
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error deleting article: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_requeue_article':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $articleId = $_GET['id'] ?? '';
+            if (empty($articleId)) {
+                sendError('Article ID required', 400);
+            }
+
+            try {
+                $success = $wordpressBlogQueueService->requeueArticle($articleId);
+
+                if (!$success) {
+                    sendError('Article not found or cannot be requeued', 404);
+                }
+
+                $article = $wordpressBlogQueueService->getArticle($articleId);
+
+                log_admin("Requeued article in WordPress blog queue: {$articleId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Article requeued successfully',
+                    'article' => $article
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error requeuing article: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_add_category':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $articleId = $_GET['article_id'] ?? '';
+            if (empty($articleId)) {
+                sendError('Article ID required', 400);
+            }
+
+            $body = getRequestBody();
+            $category = $body['category'] ?? '';
+
+            if (empty($category)) {
+                sendError('Category required', 400);
+            }
+
+            try {
+                $success = $wordpressBlogQueueService->addCategory($articleId, $category);
+
+                if (!$success) {
+                    sendError('Article not found', 404);
+                }
+
+                log_admin("Added category '{$category}' to article {$articleId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Category added successfully'
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error adding category: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_get_categories':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            $articleId = $_GET['article_id'] ?? '';
+            if (empty($articleId)) {
+                sendError('Article ID required', 400);
+            }
+
+            try {
+                $categories = $wordpressBlogQueueService->getCategories($articleId);
+
+                sendResponse([
+                    'success' => true,
+                    'categories' => $categories,
+                    'count' => count($categories)
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error retrieving categories: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_remove_category':
+            if ($method !== 'DELETE' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $articleId = $_GET['article_id'] ?? '';
+            $category = $_GET['category'] ?? '';
+
+            if (empty($articleId) || empty($category)) {
+                sendError('Article ID and category required', 400);
+            }
+
+            try {
+                $success = $wordpressBlogQueueService->removeCategory($articleId, $category);
+
+                if (!$success) {
+                    sendError('Category not found', 404);
+                }
+
+                log_admin("Removed category '{$category}' from article {$articleId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Category removed successfully'
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error removing category: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_add_tag':
+            if ($method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $articleId = $_GET['article_id'] ?? '';
+            if (empty($articleId)) {
+                sendError('Article ID required', 400);
+            }
+
+            $body = getRequestBody();
+            $tag = $body['tag'] ?? '';
+
+            if (empty($tag)) {
+                sendError('Tag required', 400);
+            }
+
+            try {
+                $success = $wordpressBlogQueueService->addTag($articleId, $tag);
+
+                if (!$success) {
+                    sendError('Article not found', 404);
+                }
+
+                log_admin("Added tag '{$tag}' to article {$articleId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Tag added successfully'
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error adding tag: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_get_tags':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            $articleId = $_GET['article_id'] ?? '';
+            if (empty($articleId)) {
+                sendError('Article ID required', 400);
+            }
+
+            try {
+                $tags = $wordpressBlogQueueService->getTags($articleId);
+
+                sendResponse([
+                    'success' => true,
+                    'tags' => $tags,
+                    'count' => count($tags)
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error retrieving tags: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_remove_tag':
+            if ($method !== 'DELETE' && $method !== 'POST') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'manage_blog', $adminAuth);
+
+            $articleId = $_GET['article_id'] ?? '';
+            $tag = $_GET['tag'] ?? '';
+
+            if (empty($articleId) || empty($tag)) {
+                sendError('Article ID and tag required', 400);
+            }
+
+            try {
+                $success = $wordpressBlogQueueService->removeTag($articleId, $tag);
+
+                if (!$success) {
+                    sendError('Tag not found', 404);
+                }
+
+                log_admin("Removed tag '{$tag}' from article {$articleId}", 'info');
+
+                sendResponse([
+                    'success' => true,
+                    'message' => 'Tag removed successfully'
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error removing tag: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        // ====================================================================
+        // WordPress Blog - Monitoring & Execution Endpoints
+        // ====================================================================
+
+        case 'wordpress_blog_get_execution_log':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            $articleId = $_GET['article_id'] ?? '';
+            if (empty($articleId)) {
+                sendError('Article ID required', 400);
+            }
+
+            try {
+                // Read execution log from file system
+                $logDir = __DIR__ . '/logs/wordpress_blog';
+                $logFiles = glob($logDir . "/article_{$articleId}_*.json");
+
+                if (empty($logFiles)) {
+                    sendError('Execution log not found', 404);
+                }
+
+                // Get the most recent log file
+                usort($logFiles, function($a, $b) {
+                    return filemtime($b) - filemtime($a);
+                });
+                $logFile = $logFiles[0];
+
+                $logData = json_decode(file_get_contents($logFile), true);
+
+                if (!$logData) {
+                    sendError('Failed to read execution log', 500);
+                }
+
+                sendResponse([
+                    'success' => true,
+                    'execution_log' => $logData
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error retrieving execution log: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_get_queue_status':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            try {
+                $stats = $wordpressBlogQueueService->getQueueStatistics();
+
+                sendResponse([
+                    'success' => true,
+                    'status' => $stats
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error retrieving queue status: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_get_metrics':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            try {
+                $days = isset($_GET['days']) ? intval($_GET['days']) : 7;
+
+                if (!$wordpressBlogOrchestrator) {
+                    sendError('WordPress Blog Orchestrator not available', 503);
+                }
+
+                $metrics = $wordpressBlogOrchestrator->getProcessingStatistics($days);
+
+                sendResponse([
+                    'success' => true,
+                    'metrics' => $metrics
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error retrieving metrics: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 400);
+            }
+            break;
+
+        case 'wordpress_blog_health_check':
+            if ($method !== 'GET') {
+                sendError('Method not allowed', 405);
+            }
+            requirePermission($authenticatedUser, 'view_blog', $adminAuth);
+
+            try {
+                if (!$wordpressBlogOrchestrator) {
+                    sendError('WordPress Blog Orchestrator not available', 503);
+                }
+
+                $health = $wordpressBlogOrchestrator->healthCheck();
+
+                sendResponse([
+                    'success' => true,
+                    'health' => $health
+                ]);
+            } catch (Exception $e) {
+                log_admin('Error performing health check: ' . $e->getMessage(), 'error');
+                sendError($e->getMessage(), 500);
             }
             break;
 

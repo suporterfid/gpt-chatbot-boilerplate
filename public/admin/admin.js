@@ -1924,7 +1924,10 @@ function navigateTo(page) {
         'audit': 'Audit Log',
         'audit-conversations': 'Chat History',
         'settings': 'General Settings',
-        'webhook-testing': 'Webhook Testing'
+        'webhook-testing': 'Webhook Testing',
+        'wp-blog-configs': 'Blog Configurations',
+        'wp-blog-queue': 'Article Queue',
+        'wp-blog-metrics': 'Blog Metrics'
     };
 
     const pageTitle = document.getElementById('page-title');
@@ -1970,7 +1973,10 @@ function loadCurrentPage() {
         'billing': loadBillingPage,
         'audit': loadAuditPage,
         'audit-conversations': loadAuditConversationsPage,
-        'settings': loadSettingsPage
+        'settings': loadSettingsPage,
+        'wp-blog-configs': loadWordPressBlogConfigsPage,
+        'wp-blog-queue': loadWordPressBlogQueuePage,
+        'wp-blog-metrics': loadWordPressBlogMetricsPage
     };
 
     const loader = pages[currentPage];
@@ -6808,4 +6814,48 @@ async function handleDeactivateUserClick(event) {
 
     console.log('[agentTester] Módulo inicializado');
 })();
+
+// ==================== WordPress Blog Pages ====================
+
+function loadWordPressBlogConfigsPage() {
+    if (typeof initWordPressBlogConfigUI === 'function') {
+        initWordPressBlogConfigUI();
+    } else {
+        console.error('WordPress Blog Config UI not loaded');
+        document.getElementById('page-content').innerHTML = `
+            <div class="error-state">
+                <p>WordPress Blog Configuration UI module not loaded.</p>
+                <p class="error-hint">Please ensure wordpress-blog-config.js is included in the page.</p>
+            </div>
+        `;
+    }
+}
+
+function loadWordPressBlogQueuePage() {
+    if (typeof initWordPressBlogQueueUI === 'function') {
+        initWordPressBlogQueueUI();
+    } else {
+        console.error('WordPress Blog Queue UI not loaded');
+        document.getElementById('page-content').innerHTML = `
+            <div class="error-state">
+                <p>WordPress Blog Queue UI module not loaded.</p>
+                <p class="error-hint">Please ensure wordpress-blog-queue.js is included in the page.</p>
+            </div>
+        `;
+    }
+}
+
+function loadWordPressBlogMetricsPage() {
+    if (typeof initWordPressBlogMetricsUI === 'function') {
+        initWordPressBlogMetricsUI();
+    } else {
+        console.error('WordPress Blog Metrics UI not loaded');
+        document.getElementById('page-content').innerHTML = `
+            <div class="error-state">
+                <p>WordPress Blog Metrics UI module not loaded.</p>
+                <p class="error-hint">Please ensure wordpress-blog-metrics.js is included in the page.</p>
+            </div>
+        `;
+    }
+}
 
