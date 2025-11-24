@@ -1294,7 +1294,7 @@ curl -b cookies.txt "http://seu-dominio/admin-api.php?action=list_dead_letter_qu
 - [PHASE1_DB_AGENT.md](PHASE1_DB_AGENT.md) - Agentes e banco de dados
 - [PHASE2_ADMIN_UI.md](PHASE2_ADMIN_UI.md) - Interface administrativa
 - [PHASE3_WORKERS_WEBHOOKS.md](PHASE3_WORKERS_WEBHOOKS.md) - Workers e RBAC
-- [api.md](api.md) - Referência completa da API (37 endpoints)
+- [api.md](api.md) - Referência completa da API (190+ endpoints)
 - [customization-guide.md](customization-guide.md) - Guia de customização (English)
 
 **Recursos Avançados:**

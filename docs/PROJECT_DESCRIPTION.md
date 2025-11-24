@@ -365,14 +365,23 @@ docker-compose up -d
   - File upload support
   - Agent selection via `agent_id`
 
-### Admin API (37 endpoints)
-- **Agents**: create, read, update, delete, list, set default
+### Admin API (190+ endpoints)
+- **Agents**: create, read, update, delete, list, set default, whitelabel publishing
 - **Prompts**: create, version, sync, list, delete
 - **Vector Stores**: create, list, delete, upload files, list files, delete files
 - **Jobs**: list, stats, retry, cancel, dead letter queue operations
 - **Users**: create, list, update, delete, change password
 - **API Keys**: generate, list, revoke
 - **Files**: list, upload, delete
+- **Multi-Tenancy**: tenant CRUD, suspend, activate, usage stats, quotas
+- **LeadSense CRM**: leads, pipelines, notes, scoring
+- **WordPress Blog**: 24 endpoints for automated content generation (config, articles, queue, metrics)
+- **Channel Management**: WhatsApp integration, consent management
+- **Prompt Builder**: AI-powered prompt generation
+- **Audit & Compliance**: audit logs, data export, GDPR/CCPA compliance
+- **Webhook Management**: subscriber management, logs, statistics
+- **Resource Authorization**: permission management
+- **Agent Types**: specialized agent discovery and configuration
 - **System**: health, metrics
 
 ### Webhooks

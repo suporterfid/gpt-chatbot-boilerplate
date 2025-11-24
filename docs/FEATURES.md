@@ -125,10 +125,13 @@ Located at `/public/admin/`, the Admin UI provides:
 ### Admin API
 
 Token-protected REST API for programmatic access:
-- 37 endpoints across all resources
+- 190+ endpoints across all resources
 - Rate limiting (300 req/min default)
-- Complete CRUD operations
+- Complete CRUD operations for agents, prompts, vector stores, files
+- Multi-tenancy, billing, and usage tracking
+- LeadSense CRM and WordPress Blog automation
 - Job management and monitoring
+- Audit logging and compliance features
 
 See [PHASE2_ADMIN_UI.md](PHASE2_ADMIN_UI.md) for details.
 
@@ -282,6 +285,35 @@ See [WHATSAPP_INTEGRATION.md](WHATSAPP_INTEGRATION.md) for details.
 
 See [LEADSENSE_QUICKSTART.md](LEADSENSE_QUICKSTART.md) for quick setup, [leadsense-overview.md](leadsense-overview.md) for architecture, [leadsense-api.md](leadsense-api.md) for API reference, and [LEADSENSE_CRM.md](LEADSENSE_CRM.md) for CRM details.
 
+### WordPress Blog Automation
+
+AI-powered content generation and automated publishing to WordPress sites:
+
+**Features:**
+- **Automated Article Generation**: Multi-chapter SEO-optimized blog posts
+- **AI Image Generation**: Automatic featured and inline images
+- **Queue Management**: Background processing for content generation
+- **Internal Link Management**: Automated internal linking strategy
+- **Category & Tag Management**: Automatic categorization and tagging
+- **Publishing Integration**: Direct publishing via WordPress XML-RPC or REST API
+- **Execution Logging**: Detailed logs of all generation and publishing steps
+- **Metrics & Monitoring**: Performance tracking and health checks
+
+**24 Admin API Endpoints:**
+- Configuration management (create, update, delete, list)
+- Article queue management (add, update, requeue, list)
+- Internal link management
+- Category and tag management
+- Execution logs and metrics
+- Health monitoring
+
+**UI Components:**
+- Blog configuration interface at `/public/admin/wordpress-blog-config.html`
+- Queue management at `/public/admin/wordpress-blog-queue.html`
+- Metrics dashboard at `/public/admin/wordpress-blog-metrics.html`
+
+See [WORDPRESS_BLOG_SETUP.md](WORDPRESS_BLOG_SETUP.md) for setup guide, [WORDPRESS_BLOG_API.md](WORDPRESS_BLOG_API.md) for API reference, and [WORDPRESS_BLOG_OPERATIONS.md](WORDPRESS_BLOG_OPERATIONS.md) for operational procedures.
+
 ### Prompt Builder
 
 - **AI-powered prompt generation**
@@ -387,6 +419,7 @@ See [deployment.md](deployment.md) for details.
 | Multi-Tenancy | ❌ | ❌ | ✅ |
 | WhatsApp Integration | ❌ | ❌ | ✅ |
 | LeadSense | ❌ | ❌ | ✅ |
+| WordPress Blog Automation | ❌ | ❌ | ✅ |
 | Compliance Features | ❌ | ❌ | ✅ |
 | Whitelabel Publishing | ❌ | ❌ | ✅ |
 

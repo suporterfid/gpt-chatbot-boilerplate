@@ -28,6 +28,8 @@ This document provides comprehensive documentation for the Admin API endpoints u
 - [Job Queue Management](#job-queue-management)
 - [Resource Authorization](#resource-authorization)
 - [Webhook Management](#webhook-management)
+- [WordPress Blog Management](#wordpress-blog-management)
+- [Agent Types & Discovery](#agent-types--discovery)
 - [Health & Status](#health--status)
 
 ## Authentication
@@ -4095,6 +4097,1097 @@ Retrieve webhook delivery logs.
       "created_at": "2025-01-20T10:30:00Z"
     }
   ]
+}
+```
+
+---
+
+## WordPress Blog Management
+
+Automate AI-powered blog content generation and publishing to WordPress sites. This comprehensive feature enables automated article creation with multi-chapter structure, AI-generated images, SEO optimization, and direct WordPress publishing.
+
+**Related Documentation:**
+- [WORDPRESS_BLOG_SETUP.md](WORDPRESS_BLOG_SETUP.md) - Setup and configuration guide
+- [WORDPRESS_BLOG_API.md](WORDPRESS_BLOG_API.md) - Detailed API reference
+- [WORDPRESS_BLOG_OPERATIONS.md](WORDPRESS_BLOG_OPERATIONS.md) - Operational procedures
+
+### Create Blog Configuration
+
+Create a new WordPress blog configuration for automated content generation.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_create_config`
+
+**Authentication:** Required (`admin` or `super-admin`)
+
+**Request:**
+```json
+{
+  "name": "Tech Blog Automation",
+  "wordpress_url": "https://myblog.com",
+  "wordpress_username": "admin",
+  "wordpress_password": "abcd efgh ijkl mnop qrst uvwx",
+  "openai_api_key": "sk-1234567890abcdef",
+  "openai_model": "gpt-4o",
+  "replicate_api_key": "r8_abcdef123456",
+  "target_word_count": 2500,
+  "max_internal_links": 5,
+  "google_drive_folder_id": "folder-id-here",
+  "tenant_id": "tenant_123"
+}
+```
+
+**Required Fields:**
+- `name` (string): Configuration name
+- `wordpress_url` (string): WordPress site URL with protocol
+- `wordpress_password` (string): WordPress application password
+- `openai_api_key` (string): OpenAI API key
+
+**Optional Fields:**
+- `wordpress_username` (string): WordPress username (default: "admin")
+- `openai_model` (string): Model to use (default: "gpt-4o")
+- `replicate_api_key` (string): For AI image generation
+- `target_word_count` (integer): Target article length (default: 2000)
+- `max_internal_links` (integer): Max internal links (default: 5)
+- `google_drive_folder_id` (string): For asset storage
+- `tenant_id` (string): For multi-tenant deployments
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "config_id": "wpcfg_abc123",
+    "name": "Tech Blog Automation",
+    "wordpress_url": "https://myblog.com",
+    "created_at": "2025-01-20T10:00:00Z"
+  }
+}
+```
+
+**Error Codes:**
+- `VALIDATION_ERROR`: Invalid configuration parameters
+- `DUPLICATE_CONFIG`: Configuration already exists
+- `CONNECTION_ERROR`: Cannot connect to WordPress site
+- `CREDENTIAL_ERROR`: Invalid WordPress credentials
+
+---
+
+### Get Blog Configuration
+
+Retrieve a specific blog configuration by ID.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_get_config&config_id={id}`
+
+**Query Parameters:**
+- `config_id` (required): Configuration ID
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "config_id": "wpcfg_abc123",
+    "name": "Tech Blog Automation",
+    "wordpress_url": "https://myblog.com",
+    "wordpress_username": "admin",
+    "openai_model": "gpt-4o",
+    "target_word_count": 2500,
+    "max_internal_links": 5,
+    "articles_generated": 45,
+    "status": "active",
+    "created_at": "2025-01-10T10:00:00Z",
+    "updated_at": "2025-01-20T10:00:00Z"
+  }
+}
+```
+
+---
+
+### List Blog Configurations
+
+Retrieve all WordPress blog configurations for the current tenant.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_list_configs`
+
+**Query Parameters:**
+- `tenant_id` (optional): Filter by tenant ID
+- `status` (optional): active, inactive, error
+- `page` (integer): Page number (default: 1)
+- `per_page` (integer): Items per page (default: 20)
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "configs": [
+      {
+        "config_id": "wpcfg_abc123",
+        "name": "Tech Blog",
+        "wordpress_url": "https://techblog.com",
+        "status": "active",
+        "articles_generated": 45,
+        "last_article_at": "2025-01-19T15:30:00Z",
+        "created_at": "2025-01-10T10:00:00Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "per_page": 20,
+      "total": 3,
+      "total_pages": 1
+    }
+  }
+}
+```
+
+---
+
+### Update Blog Configuration
+
+Update an existing blog configuration.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_update_config`
+
+**Request:**
+```json
+{
+  "config_id": "wpcfg_abc123",
+  "name": "Updated Tech Blog",
+  "target_word_count": 3000,
+  "max_internal_links": 8,
+  "status": "active"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Configuration updated successfully",
+  "data": {
+    "config_id": "wpcfg_abc123",
+    "updated_at": "2025-01-20T11:00:00Z"
+  }
+}
+```
+
+---
+
+### Delete Blog Configuration
+
+Delete a blog configuration (soft delete - articles remain).
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_delete_config`
+
+**Request:**
+```json
+{
+  "config_id": "wpcfg_abc123"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Configuration deleted successfully"
+}
+```
+
+---
+
+### Add Article to Queue
+
+Add a new article to the generation queue.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_add_article`
+
+**Request:**
+```json
+{
+  "config_id": "wpcfg_abc123",
+  "title": "Complete Guide to AI-Powered Content Generation",
+  "primary_keywords": ["AI content", "automation", "blog writing"],
+  "target_audience": "Content marketers and bloggers",
+  "tone": "professional",
+  "scheduled_for": "2025-01-25T09:00:00Z",
+  "categories": ["Technology", "AI"],
+  "tags": ["content generation", "automation", "AI writing"]
+}
+```
+
+**Required Fields:**
+- `config_id` (string): Configuration ID
+- `title` (string): Article title
+- `primary_keywords` (array): Main keywords for SEO
+
+**Optional Fields:**
+- `target_audience` (string): Target reader persona
+- `tone` (string): professional, casual, technical
+- `scheduled_for` (ISO 8601): Publish date/time
+- `categories` (array): WordPress categories
+- `tags` (array): WordPress tags
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "article_id": "art_xyz789",
+    "title": "Complete Guide to AI-Powered Content Generation",
+    "status": "queued",
+    "position_in_queue": 3,
+    "estimated_completion": "2025-01-20T14:30:00Z",
+    "created_at": "2025-01-20T10:00:00Z"
+  }
+}
+```
+
+---
+
+### Get Article Status
+
+Retrieve the status of a specific article in the queue.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_get_article&article_id={id}`
+
+**Query Parameters:**
+- `article_id` (required): Article ID
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "article_id": "art_xyz789",
+    "title": "Complete Guide to AI-Powered Content Generation",
+    "status": "generating",
+    "progress": {
+      "current_step": "writing_chapter_3",
+      "total_steps": 8,
+      "percent_complete": 37
+    },
+    "wordpress_post_id": null,
+    "wordpress_url": null,
+    "created_at": "2025-01-20T10:00:00Z",
+    "started_at": "2025-01-20T10:15:00Z",
+    "completed_at": null
+  }
+}
+```
+
+**Status Values:**
+- `queued`: Waiting in queue
+- `generating`: Content generation in progress
+- `publishing`: Publishing to WordPress
+- `completed`: Successfully published
+- `failed`: Generation or publishing failed
+
+---
+
+### List Articles
+
+Retrieve all articles for a configuration or tenant.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_list_articles`
+
+**Query Parameters:**
+- `config_id` (optional): Filter by configuration
+- `status` (optional): queued, generating, publishing, completed, failed
+- `page` (integer): Page number (default: 1)
+- `per_page` (integer): Items per page (default: 20)
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "articles": [
+      {
+        "article_id": "art_xyz789",
+        "config_id": "wpcfg_abc123",
+        "title": "Complete Guide to AI-Powered Content",
+        "status": "completed",
+        "wordpress_post_id": 12345,
+        "wordpress_url": "https://myblog.com/2025/01/guide-ai-content",
+        "word_count": 2543,
+        "images_generated": 4,
+        "internal_links_added": 5,
+        "created_at": "2025-01-20T10:00:00Z",
+        "completed_at": "2025-01-20T11:30:00Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "per_page": 20,
+      "total": 45,
+      "total_pages": 3
+    }
+  }
+}
+```
+
+---
+
+### Update Article
+
+Update article metadata or republish.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_update_article`
+
+**Request:**
+```json
+{
+  "article_id": "art_xyz789",
+  "title": "Updated: Complete Guide to AI Content",
+  "categories": ["Technology", "AI", "Content Marketing"],
+  "tags": ["AI", "automation", "content"]
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Article updated successfully"
+}
+```
+
+---
+
+### Delete Article
+
+Delete an article from the queue (and optionally from WordPress).
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_delete_article`
+
+**Request:**
+```json
+{
+  "article_id": "art_xyz789",
+  "delete_from_wordpress": true
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Article deleted from queue and WordPress"
+}
+```
+
+---
+
+### Requeue Article
+
+Re-add a failed article to the generation queue.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_requeue_article`
+
+**Request:**
+```json
+{
+  "article_id": "art_xyz789",
+  "reset_progress": true
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "article_id": "art_xyz789",
+    "status": "queued",
+    "position_in_queue": 2
+  }
+}
+```
+
+---
+
+### Add Internal Link
+
+Add an internal link configuration for automated linking.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_add_internal_link`
+
+**Request:**
+```json
+{
+  "config_id": "wpcfg_abc123",
+  "anchor_text": "AI content generation",
+  "target_url": "https://myblog.com/ai-content-guide",
+  "keyword_triggers": ["AI content", "automated writing"]
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "link_id": "link_123",
+    "created_at": "2025-01-20T10:00:00Z"
+  }
+}
+```
+
+---
+
+### List Internal Links
+
+Retrieve all internal link configurations.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_list_internal_links&config_id={id}`
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "links": [
+      {
+        "link_id": "link_123",
+        "anchor_text": "AI content generation",
+        "target_url": "https://myblog.com/ai-content-guide",
+        "keyword_triggers": ["AI content", "automated writing"],
+        "times_used": 12,
+        "created_at": "2025-01-15T10:00:00Z"
+      }
+    ],
+    "total": 15
+  }
+}
+```
+
+---
+
+### Update Internal Link
+
+Update an internal link configuration.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_update_internal_link`
+
+**Request:**
+```json
+{
+  "link_id": "link_123",
+  "anchor_text": "Updated anchor text",
+  "target_url": "https://myblog.com/new-url"
+}
+```
+
+---
+
+### Delete Internal Link
+
+Remove an internal link configuration.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_delete_internal_link`
+
+**Request:**
+```json
+{
+  "link_id": "link_123"
+}
+```
+
+---
+
+### Add Category
+
+Add a category to a configuration.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_add_category`
+
+**Request:**
+```json
+{
+  "config_id": "wpcfg_abc123",
+  "category_name": "Technology"
+}
+```
+
+---
+
+### Get Categories
+
+Retrieve all categories for a configuration.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_get_categories&config_id={id}`
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "categories": ["Technology", "AI", "Content Marketing", "SEO"]
+  }
+}
+```
+
+---
+
+### Remove Category
+
+Remove a category from a configuration.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_remove_category`
+
+**Request:**
+```json
+{
+  "config_id": "wpcfg_abc123",
+  "category_name": "Technology"
+}
+```
+
+---
+
+### Add Tag
+
+Add a tag to a configuration.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_add_tag`
+
+**Request:**
+```json
+{
+  "config_id": "wpcfg_abc123",
+  "tag_name": "automation"
+}
+```
+
+---
+
+### Get Tags
+
+Retrieve all tags for a configuration.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_get_tags&config_id={id}`
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "tags": ["automation", "AI", "content", "writing", "SEO"]
+  }
+}
+```
+
+---
+
+### Remove Tag
+
+Remove a tag from a configuration.
+
+**Endpoint:** `POST /admin-api.php?action=wordpress_blog_remove_tag`
+
+**Request:**
+```json
+{
+  "config_id": "wpcfg_abc123",
+  "tag_name": "automation"
+}
+```
+
+---
+
+### Get Execution Log
+
+Retrieve detailed execution logs for an article.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_get_execution_log&article_id={id}`
+
+**Query Parameters:**
+- `article_id` (required): Article ID
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "article_id": "art_xyz789",
+    "logs": [
+      {
+        "timestamp": "2025-01-20T10:15:00Z",
+        "level": "info",
+        "step": "structure_generation",
+        "message": "Generated article structure with 6 chapters",
+        "details": {
+          "chapters": 6,
+          "estimated_words": 2500
+        }
+      },
+      {
+        "timestamp": "2025-01-20T10:18:30Z",
+        "level": "info",
+        "step": "chapter_writing",
+        "message": "Completed chapter 1: Introduction",
+        "details": {
+          "chapter": 1,
+          "word_count": 420
+        }
+      },
+      {
+        "timestamp": "2025-01-20T11:25:00Z",
+        "level": "info",
+        "step": "publishing",
+        "message": "Published to WordPress successfully",
+        "details": {
+          "post_id": 12345,
+          "url": "https://myblog.com/2025/01/guide"
+        }
+      }
+    ],
+    "total_logs": 45
+  }
+}
+```
+
+---
+
+### Get Queue Status
+
+Get current queue status and statistics.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_get_queue_status`
+
+**Query Parameters:**
+- `config_id` (optional): Filter by configuration
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "queue_depth": 5,
+    "articles_by_status": {
+      "queued": 3,
+      "generating": 2,
+      "publishing": 0,
+      "completed": 42,
+      "failed": 1
+    },
+    "estimated_wait_time": "45 minutes",
+    "processor_status": "running",
+    "last_processed": "2025-01-20T11:30:00Z"
+  }
+}
+```
+
+---
+
+### Get Metrics
+
+Retrieve performance metrics for blog automation.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_get_metrics`
+
+**Query Parameters:**
+- `config_id` (optional): Filter by configuration
+- `start_date` (ISO 8601): Start date
+- `end_date` (ISO 8601): End date
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "period": {
+      "start": "2025-01-01T00:00:00Z",
+      "end": "2025-01-20T23:59:59Z"
+    },
+    "articles_generated": 45,
+    "total_words": 112500,
+    "average_word_count": 2500,
+    "average_generation_time": "1.5 hours",
+    "success_rate": 97.8,
+    "images_generated": 180,
+    "internal_links_added": 225,
+    "openai_api_cost": 45.67,
+    "replicate_api_cost": 12.30,
+    "top_categories": [
+      {"name": "Technology", "count": 20},
+      {"name": "AI", "count": 15}
+    ]
+  }
+}
+```
+
+---
+
+### Health Check
+
+Check WordPress Blog automation system health.
+
+**Endpoint:** `GET /admin-api.php?action=wordpress_blog_health_check`
+
+**Query Parameters:**
+- `config_id` (optional): Check specific configuration
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "overall_health": "healthy",
+    "components": {
+      "queue_processor": {
+        "status": "running",
+        "last_heartbeat": "2025-01-20T11:29:45Z"
+      },
+      "wordpress_connection": {
+        "status": "connected",
+        "latency_ms": 234
+      },
+      "openai_api": {
+        "status": "available",
+        "latency_ms": 567
+      },
+      "replicate_api": {
+        "status": "available",
+        "latency_ms": 890
+      },
+      "google_drive": {
+        "status": "connected",
+        "latency_ms": 145
+      }
+    },
+    "warnings": [],
+    "errors": []
+  }
+}
+```
+
+**Health Status Values:**
+- `healthy`: All systems operational
+- `degraded`: Some components slow or unavailable
+- `unhealthy`: Critical components failing
+
+---
+
+## Agent Types & Discovery
+
+Manage specialized agent types and discover available agent configurations for advanced multi-agent workflows.
+
+**Related Documentation:**
+- [SPECIALIZED_AGENTS_SPECIFICATION.md](specs/SPECIALIZED_AGENTS_SPECIFICATION.md) - Complete specification
+- [agents/README.md](../agents/README.md) - Agent development guide
+
+### List Agent Types
+
+Retrieve all available specialized agent types.
+
+**Endpoint:** `GET /admin-api.php?action=list_agent_types`
+
+**Authentication:** Required
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "agent_types": [
+      {
+        "type_id": "wordpress_blog",
+        "name": "WordPress Blog Automation",
+        "description": "AI-powered blog content generation and publishing",
+        "version": "1.0.0",
+        "capabilities": [
+          "content_generation",
+          "image_generation",
+          "wordpress_publishing",
+          "seo_optimization"
+        ],
+        "required_config": [
+          "wordpress_url",
+          "wordpress_credentials",
+          "openai_api_key"
+        ],
+        "status": "active"
+      },
+      {
+        "type_id": "data_analyst",
+        "name": "Data Analysis Agent",
+        "description": "Analyze datasets and generate insights",
+        "version": "1.0.0",
+        "capabilities": [
+          "data_analysis",
+          "visualization",
+          "statistical_modeling"
+        ],
+        "required_config": [
+          "openai_api_key"
+        ],
+        "status": "active"
+      }
+    ],
+    "total": 5
+  }
+}
+```
+
+---
+
+### Get Agent Type
+
+Retrieve detailed information about a specific agent type.
+
+**Endpoint:** `GET /admin-api.php?action=get_agent_type&type_id={type_id}`
+
+**Query Parameters:**
+- `type_id` (required): Agent type identifier
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "type_id": "wordpress_blog",
+    "name": "WordPress Blog Automation",
+    "description": "AI-powered blog content generation and publishing",
+    "version": "1.0.0",
+    "capabilities": [
+      "content_generation",
+      "image_generation",
+      "wordpress_publishing"
+    ],
+    "required_config": [
+      "wordpress_url",
+      "wordpress_credentials",
+      "openai_api_key"
+    ],
+    "optional_config": [
+      "replicate_api_key",
+      "google_drive_folder_id",
+      "target_word_count"
+    ],
+    "configuration_schema": {
+      "wordpress_url": {
+        "type": "string",
+        "format": "url",
+        "required": true,
+        "description": "WordPress site URL"
+      },
+      "target_word_count": {
+        "type": "integer",
+        "default": 2000,
+        "min": 500,
+        "max": 10000,
+        "description": "Target article length"
+      }
+    },
+    "endpoints": [
+      "wordpress_blog_create_config",
+      "wordpress_blog_add_article"
+    ],
+    "documentation_url": "docs/WORDPRESS_BLOG_SETUP.md",
+    "status": "active"
+  }
+}
+```
+
+---
+
+### Validate Agent Configuration
+
+Validate agent configuration before creating/updating.
+
+**Endpoint:** `POST /admin-api.php?action=validate_agent_config`
+
+**Request:**
+```json
+{
+  "type_id": "wordpress_blog",
+  "configuration": {
+    "wordpress_url": "https://myblog.com",
+    "wordpress_username": "admin",
+    "wordpress_password": "app-password",
+    "openai_api_key": "sk-1234567890",
+    "target_word_count": 2500
+  }
+}
+```
+
+**Response (Valid):**
+```json
+{
+  "status": "success",
+  "data": {
+    "valid": true,
+    "warnings": [
+      "replicate_api_key not provided - image generation will be disabled"
+    ]
+  }
+}
+```
+
+**Response (Invalid):**
+```json
+{
+  "status": "error",
+  "data": {
+    "valid": false,
+    "errors": [
+      {
+        "field": "wordpress_url",
+        "message": "Invalid URL format"
+      },
+      {
+        "field": "openai_api_key",
+        "message": "API key format invalid (must start with 'sk-')"
+      }
+    ],
+    "warnings": []
+  }
+}
+```
+
+---
+
+### Get Agent Configuration
+
+Retrieve configuration for a specific agent instance.
+
+**Endpoint:** `GET /admin-api.php?action=get_agent_config&agent_id={agent_id}`
+
+**Query Parameters:**
+- `agent_id` (required): Agent instance ID
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "agent_id": "agent_abc123",
+    "type_id": "wordpress_blog",
+    "name": "My Tech Blog Agent",
+    "configuration": {
+      "wordpress_url": "https://techblog.com",
+      "wordpress_username": "admin",
+      "openai_model": "gpt-4o",
+      "target_word_count": 2500,
+      "max_internal_links": 5
+    },
+    "status": "active",
+    "created_at": "2025-01-15T10:00:00Z",
+    "updated_at": "2025-01-20T11:00:00Z"
+  }
+}
+```
+
+---
+
+### Save Agent Configuration
+
+Create or update agent configuration for a specialized agent type.
+
+**Endpoint:** `POST /admin-api.php?action=save_agent_config`
+
+**Request:**
+```json
+{
+  "agent_id": "agent_abc123",
+  "type_id": "wordpress_blog",
+  "name": "My Tech Blog Agent",
+  "configuration": {
+    "wordpress_url": "https://techblog.com",
+    "wordpress_username": "admin",
+    "wordpress_password": "app-password",
+    "openai_api_key": "sk-1234567890",
+    "openai_model": "gpt-4o",
+    "target_word_count": 2500
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "agent_id": "agent_abc123",
+    "message": "Agent configuration saved successfully",
+    "updated_at": "2025-01-20T11:00:00Z"
+  }
+}
+```
+
+---
+
+### Delete Agent Configuration
+
+Delete a specialized agent configuration.
+
+**Endpoint:** `POST /admin-api.php?action=delete_agent_config`
+
+**Request:**
+```json
+{
+  "agent_id": "agent_abc123"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Agent configuration deleted successfully"
+}
+```
+
+---
+
+### Discover Agents
+
+Discover all available agent configurations across types.
+
+**Endpoint:** `GET /admin-api.php?action=discover_agents`
+
+**Query Parameters:**
+- `type_id` (optional): Filter by agent type
+- `status` (optional): active, inactive, error
+- `tenant_id` (optional): Filter by tenant
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "agents": [
+      {
+        "agent_id": "agent_abc123",
+        "type_id": "wordpress_blog",
+        "type_name": "WordPress Blog Automation",
+        "name": "Tech Blog Agent",
+        "status": "active",
+        "tenant_id": "tenant_123",
+        "last_activity": "2025-01-20T10:30:00Z",
+        "created_at": "2025-01-15T10:00:00Z"
+      },
+      {
+        "agent_id": "agent_xyz789",
+        "type_id": "data_analyst",
+        "type_name": "Data Analysis Agent",
+        "name": "Sales Data Analyzer",
+        "status": "active",
+        "tenant_id": "tenant_123",
+        "last_activity": "2025-01-19T14:20:00Z",
+        "created_at": "2025-01-10T09:00:00Z"
+      }
+    ],
+    "total": 8,
+    "by_type": {
+      "wordpress_blog": 3,
+      "data_analyst": 2,
+      "customer_support": 3
+    }
+  }
 }
 ```
 

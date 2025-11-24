@@ -860,6 +860,9 @@ iostat -x 1 5
 - [COMPLIANCE_OPERATIONS.md](COMPLIANCE_OPERATIONS.md) - GDPR/LGPD procedures
 - [BILLING_METERING.md](BILLING_METERING.md) - Billing operations
 - [TENANT_RATE_LIMITING.md](TENANT_RATE_LIMITING.md) - Rate limiting details
+- [WORDPRESS_BLOG_OPERATIONS.md](WORDPRESS_BLOG_OPERATIONS.md) - WordPress Blog automation operations
+- [LEADSENSE_QUICKSTART.md](LEADSENSE_QUICKSTART.md) - LeadSense CRM operations
+- [WHATSAPP_INTEGRATION.md](WHATSAPP_INTEGRATION.md) - WhatsApp channel operations
 
 ### External Links
 

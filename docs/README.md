@@ -60,6 +60,14 @@ Welcome to the GPT Chatbot Boilerplate documentation! This directory contains co
 - [LEADSENSE_CRM.md](LEADSENSE_CRM.md) - CRM extension with visual pipelines
 - [leadsense-privacy.md](leadsense-privacy.md) - Privacy controls and PII handling
 
+### WordPress Blog Automation
+- [WORDPRESS_BLOG_SETUP.md](WORDPRESS_BLOG_SETUP.md) - Setup and configuration guide
+- [WORDPRESS_BLOG_API.md](WORDPRESS_BLOG_API.md) - Complete API reference (24 endpoints)
+- [WORDPRESS_BLOG_OPERATIONS.md](WORDPRESS_BLOG_OPERATIONS.md) - Daily operations and monitoring
+- [WORDPRESS_BLOG_IMPLEMENTATION.md](WORDPRESS_BLOG_IMPLEMENTATION.md) - Technical implementation details
+- [WORDPRESS_BLOG_RELEASE_CHECKLIST.md](WORDPRESS_BLOG_RELEASE_CHECKLIST.md) - Pre-deployment checklist
+- [specs/WORDPRESS_BLOG_AUTOMATION_PRO_AGENTE_SPEC.md](specs/WORDPRESS_BLOG_AUTOMATION_PRO_AGENTE_SPEC.md) - Complete technical specification
+
 ### Billing & Metering
 - [BILLING_METERING.md](BILLING_METERING.md) - Usage tracking, quotas, and billing system
 - [MULTI_TENANT_BILLING.md](MULTI_TENANT_BILLING.md) - Per-tenant billing and usage aggregation
@@ -116,6 +124,7 @@ Located in [ops/](ops/):
 - **Implement multi-tenancy** → [MULTI_TENANCY.md](MULTI_TENANCY.md)
 - **Handle GDPR/LGPD compliance** → [COMPLIANCE_OPERATIONS.md](COMPLIANCE_OPERATIONS.md)
 - **Track leads automatically** → [LEADSENSE_QUICKSTART.md](LEADSENSE_QUICKSTART.md)
+- **Automate WordPress blog content** → [WORDPRESS_BLOG_SETUP.md](WORDPRESS_BLOG_SETUP.md)
 - **Bill customers** → [BILLING_METERING.md](BILLING_METERING.md)
 - **Publish whitelabel agents** → [WHITELABEL_PUBLISHING.md](WHITELABEL_PUBLISHING.md)
 - **Troubleshoot issues** → [ops/incident_runbook.md](ops/incident_runbook.md)

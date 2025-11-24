@@ -16,7 +16,7 @@ Complete backend administration API for managing the platform.
 **Audience:** System administrators, backend developers, DevOps engineers
 
 **Key Features:**
-- 90+ administrative endpoints
+- 190+ administrative endpoints
 - User and authentication management
 - Agent configuration and management
 - Whitelabel publishing and branding
@@ -25,9 +25,11 @@ Complete backend administration API for managing the platform.
 - Usage tracking and billing
 - Prompt and vector store management
 - LeadSense CRM integration
+- WordPress Blog automation (24 endpoints for AI-powered content generation)
 - AI-powered prompt builder
 - Audit logging and compliance (GDPR/CCPA)
 - Job queue and webhook management
+- Specialized agent types and discovery
 
 **[View Complete Admin API Documentation →](admin-api.md)**
 
