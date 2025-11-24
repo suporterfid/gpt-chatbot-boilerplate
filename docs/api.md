@@ -194,6 +194,9 @@ curl -X POST "https://your-domain.com/admin-api.php?action=create_agent" \
           │  │  User & Agent CRUD         │     │
           │  │  Billing & Usage Tracking  │     │
           │  │  Audit & Compliance        │     │
+          │  │  WordPress Blog Automation │     │
+          │  │  LeadSense CRM             │     │
+          │  │  Multi-Tenancy             │     │
           │  └────────────────────────────┘     │
           └─────────────────────────────────────┘
 ```
