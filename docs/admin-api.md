@@ -1,6 +1,6 @@
 # Admin API Documentation
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 **Last Updated:** January 2025
 
 This document provides comprehensive documentation for the Admin API endpoints used to manage the GPT Chatbot platform.
@@ -5316,6 +5316,6 @@ For additional help:
 
 ---
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 **Last Updated:** January 2025
 **API Stability:** Stable (no breaking changes in v1.x)

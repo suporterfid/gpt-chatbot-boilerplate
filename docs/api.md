@@ -1,6 +1,6 @@
 # API Documentation - GPT Chatbot Boilerplate
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 **Last Updated:** January 2025
 
 Welcome to the comprehensive API documentation for the GPT Chatbot Boilerplate platform - a production-ready, enterprise-grade chatbot solution with multi-tenancy, whitelabel publishing, and advanced AI capabilities.
@@ -853,7 +853,7 @@ See [Specialized Agents Specification](../SPECIALIZED_AGENTS_SPECIFICATION.md) f
 
 ---
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 **Last Updated:** January 2025
 **API Stability:** Stable (no breaking changes in v1.x)
 

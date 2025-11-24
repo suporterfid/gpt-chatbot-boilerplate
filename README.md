@@ -2,7 +2,7 @@
 
 An open-source, production-ready boilerplate for embedding GPT-powered chatbots on any website. Features dual API support (Chat Completions + Responses API), real-time streaming, agent management, multi-tenancy, and comprehensive admin tools.
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PHP Version](https://img.shields.io/badge/PHP-8.0%2B-blue)](https://www.php.net/)
 [![Tests](https://img.shields.io/badge/tests-183%20passing-green)](tests/)
@@ -29,7 +29,7 @@ An open-source, production-ready boilerplate for embedding GPT-powered chatbots 
 **Deploying to production?** Start here:
 
 1. 📋 **[PRODUCTION_SECURITY_CHECKLIST.md](PRODUCTION_SECURITY_CHECKLIST.md)** - Complete this first (**MANDATORY**)
-2. 📖 **[PRODUCTION_RELEASE_NOTES.md](PRODUCTION_RELEASE_NOTES.md)** - v1.0.0 production deployment guide
+2. 📖 **[PRODUCTION_RELEASE_NOTES.md](PRODUCTION_RELEASE_NOTES.md)** - v1.0.1 production deployment guide
 3. ⚙️ **[.env.production](.env.production)** - Production environment template
 4. 🐳 **[docker-compose.prod.yml](docker-compose.prod.yml)** - Production Docker configuration
 5. 📝 **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes

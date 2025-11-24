@@ -1,6 +1,6 @@
 # JavaScript Client API Documentation
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 **Last Updated:** January 2025
 
 This document provides comprehensive documentation for the JavaScript client library used to integrate the chatbot widget into websites.
@@ -1683,6 +1683,6 @@ For additional help:
 
 ---
 
-**Version:** 1.0.0
+**Version:** 1.0.1
 **Last Updated:** January 2025
 **License:** MIT
